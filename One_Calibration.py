@@ -30,6 +30,26 @@ def one_calibration_pycox(
     return one_calibration(predictions, true_event_times, uncensor_status, target_time, num_bins, method)
 
 
+def one_calibration_sksurv(
+        predicted_survival_curves: pd.DataFrame,
+        event_time: NumericArrayLike,
+        event_indicator: NumericArrayLike,
+        target_time: Numeric,
+        num_bins: int = 10,
+        method: str = "DN"
+) -> (float, list, list):
+    # Checking the format of the data
+    true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
+    predictions = []
+    for i in range(predicted_survival_curves.shape[0]):
+        predict_prob = predict_prob_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y,
+                                               target_time)
+        predictions.append(predict_prob)
+    predictions = np.array(predictions)
+
+    return one_calibration(predictions, true_event_times, uncensor_status, target_time, num_bins, method)
+
+
 def one_calibration(
         predictions: np.ndarray,
         event_time: np.ndarray,
@@ -69,8 +89,7 @@ def one_calibration(
             mean_prob = np.mean(binned_predictions[b])
             km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
             event_probability = 1 - km_model.predict(target_time)
-            hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (
-                    bin_size * mean_prob * (1 - mean_prob))
+            hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (bin_size * mean_prob * (1 - mean_prob))
         else:
             error = "Please enter one of 'Uncensored','DN' for method."
             raise TypeError(error)

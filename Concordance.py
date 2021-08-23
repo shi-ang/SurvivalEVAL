@@ -32,7 +32,35 @@ def concordance_pycox(
     # get median/mean survival time from the predicted curve
     predicted_times = []
     for i in range(survival_curves.shape[0]):
+        print(i)
         predicted_time = predict_method(survival_curves[i, :], time_coordinates)
+        predicted_times.append(predicted_time)
+    predicted_times = np.array(predicted_times)
+
+    return concordance(predicted_times, event_time, event_indicator, ties)
+
+
+def concordance_sksurv(
+        predicted_survival_curves: np.ndarray,
+        event_time: NumericArrayLike,
+        event_indicator: NumericArrayLike,
+        ties: str = "None",
+        predicted_time_method: str = "Median"
+) -> (float, float, int):
+    event_time, event_indicator = check_and_convert(event_time, event_indicator)
+
+    if predicted_time_method == "Median":
+        predict_method = predict_median_survival_time
+    elif predicted_time_method == "Mean":
+        predict_method = predict_mean_survival_time
+    else:
+        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
+        raise TypeError(error)
+
+    # get median/mean survival time from the predicted curve
+    predicted_times = []
+    for i in range(predicted_survival_curves.shape[0]):
+        predicted_time = predict_method(predicted_survival_curves[i].x, predicted_survival_curves[i].y)
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
 

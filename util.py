@@ -217,7 +217,7 @@ def predict_median_survival_time(survival_curve, times_coordinate: np.ndarray):
     else:
         max_time = max(times_coordinate.tolist())
         slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
-        median_probability_time = max_time + (0.5 - spline(max_time)) / slope
+        median_probability_time = max_time + (0.5 - np.array(spline(max_time)).item()) / slope
 
     return median_probability_time
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.integrate import trapezoid
+import matplotlib.pyplot as plt
 
 from custom_types import NumericArrayLike
 from util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
@@ -131,13 +132,14 @@ def single_brier_score(
     return b_score
 
 
-def integrated_brier_score(
+def integrated_brier_score_pycox(
         predicted_survival_curves: pd.DataFrame,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
         train_event_times: NumericArrayLike,
         train_event_indicators: NumericArrayLike,
-        num_points: int = None
+        num_points: int = None,
+        draw_figure: bool = False
 ) -> float:
     """
 
@@ -178,9 +180,17 @@ def integrated_brier_score(
     # solution 1, implemented using metrics multiplication, this is geometrically faster than solution 2
     b_scores = brier_multiple_points_pycox(predicted_survival_curves, event_times, event_indicators,
                                            train_event_times, train_event_indicators, time_points)
+    if np.isnan(b_scores).any():
+        print("Time-dependent Brier Score contains nan")
+        print(b_scores)
     integral_value = trapezoid(b_scores, time_points)
     ibs_score = integral_value / time_range
 
+    if draw_figure:
+        plt.plot(time_points, b_scores, 'bo-')
+        plt.xlabel('Time')
+        plt.ylabel('Brier Score')
+        plt.show()
     ##########################
     # solution 2, implemented by iteratively call single_brier_score_pycox()
     # b_scores = []
@@ -261,7 +271,157 @@ def brier_multiple_points_pycox(
     weight_cat1[np.isnan(weight_cat1)] = 0
     # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
     # contain both censored and uncensored individuals.
-    weight_cat2 = (event_times_mat > target_times_mat) / ipc_model.predict(target_times_mat)
+    ipc_target_pred = ipc_model.predict(target_times_mat)
+    # Catch if denominator is 0.
+    ipc_target_pred[ipc_target_pred == 0] = np.inf
+    weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
+    # predict returns NA if the passed in time is greater than any of the times used to build
+    # the inverse probability of censoring model.
+    weight_cat2[np.isnan(weight_cat2)] = 0
+
+    ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
+    brier_scores = np.mean(ipcw_square_error_mat, axis=0)
+    return brier_scores
+
+
+def integrated_brier_score_sksurv(
+        predicted_survival_curves: pd.DataFrame,
+        event_times: NumericArrayLike,
+        event_indicators: NumericArrayLike,
+        train_event_times: NumericArrayLike,
+        train_event_indicators: NumericArrayLike,
+        num_points: int = None,
+        draw_figure: bool = False
+) -> float:
+    """
+
+:param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+        Predicted survival curves for the testing samples
+        DataFrame index represents the time coordinates for the given curves.
+        DataFrame value represents the survival probabilities.
+    :param event_times: structured array, shape = (n_samples, )
+        Actual event/censor time for the testing samples.
+    :param event_indicators: structured array, shape = (n_samples, )
+        Binary indicators of censoring for the testing samples
+    :param train_event_times:structured array, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    :param train_event_indicators: structured array, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples
+    :param num_points: integer, default: None
+        The number of points to calculate the Integrated Brier Score.
+        Default None, which will use the test set true event times as the time points.
+    :return:
+    """
+    event_times, event_indicators = check_and_convert(event_times, event_indicators)
+    train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
+    max_target_time = np.amax(np.concatenate((event_times, train_event_times)))
+
+    # If number of target time is not indicated, then we use the censored times obtained from test set
+    if num_points is None:
+        # test_censor_status = 1 - event_indicators
+        censored_times = event_times[event_indicators == 0]
+        sorted_censored_times = np.sort(censored_times)
+        time_points = sorted_censored_times
+        time_range = np.amax(time_points) - np.amin(time_points)
+    else:
+        time_points = np.linspace(0, max_target_time, num_points)
+        time_range = max_target_time
+
+    # Get single brier score from multiple target times, and use trapezoidal integral to calculate ISB.
+    #########################
+    # solution 1, implemented using metrics multiplication, this is geometrically faster than solution 2
+    b_scores = brier_multiple_points_sksurv(predicted_survival_curves, event_times, event_indicators,
+                                           train_event_times, train_event_indicators, time_points)
+    if np.isnan(b_scores).any():
+        print("Time-dependent Brier Score contains nan")
+        print(b_scores)
+    integral_value = trapezoid(b_scores, time_points)
+    ibs_score = integral_value / time_range
+
+    if draw_figure:
+        plt.plot(time_points, b_scores, 'bo-')
+        plt.xlabel('Time')
+        plt.ylabel('Brier Score')
+        plt.show()
+    ##########################
+    # solution 2, implemented by iteratively call single_brier_score_pycox()
+    # b_scores = []
+    # for i in range(len(time_points)):
+    #     b_score = single_brier_score_pycox(predicted_survival_curves, event_times, event_indicators,
+    #                                        train_event_times, train_event_indicators, time_points[i])
+    #     b_scores.append(b_score)
+    # b_scores = np.array(b_scores)
+    # integral_value = trapezoid(b_scores, time_points)
+    # ibs_score = integral_value / time_range
+
+    return ibs_score
+
+
+def brier_multiple_points_sksurv(
+        predicted_survival_curves: pd.DataFrame,
+        event_times: NumericArrayLike,
+        event_indicators: NumericArrayLike,
+        train_event_times: NumericArrayLike,
+        train_event_indicators: NumericArrayLike,
+        target_times: np.ndarray
+) -> np.ndarray:
+    """
+    Calculate multiple Brier scores at multiple specific times.
+
+    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+        Predicted survival curves for the testing samples
+        DataFrame index represents the time coordinates for the given curves.
+        DataFrame value represents the survival probabilities.
+    :param event_times: structured array, shape = (n_samples, )
+        Actual event/censor time for the testing samples.
+    :param event_indicators: structured array, shape = (n_samples, )
+        Binary indicators of censoring for the testing samples
+    :param train_event_times:structured array, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    :param train_event_indicators: structured array, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples
+    :param target_times: float, default: None
+        The specific time points for which to estimate the Brier scores.
+    :return:
+        Values of multiple Brier scores.
+    """
+    event_times, event_indicators = check_and_convert(event_times, event_indicators)
+    train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
+
+    predict_probs_mat = []
+    for i in range(predicted_survival_curves.shape[0]):
+        predict_probs = predict_multi_probs_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y, target_times).tolist()
+        predict_probs_mat.append(predict_probs)
+    predict_probs_mat = np.array(predict_probs_mat)
+
+    inverse_train_event_indicators = 1 - train_event_indicators
+
+    ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+    # sorted_test_event_times = np.argsort(event_times)
+
+    if target_times.ndim != 1:
+        error = "'time_grids' is not a one-dimensional array."
+        raise TypeError(error)
+
+    # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
+    target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
+    event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
+    event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
+    event_indicators_mat = event_indicators_mat.astype(bool)
+    # Category one calculates IPCW weight at observed time point.
+    # Category one is individuals with event time lower than the time of interest and were NOT censored.
+    ipc_pred = ipc_model.predict(event_times_mat)
+    # Catch if denominator is 0.
+    ipc_pred[ipc_pred == 0] = np.inf
+    weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
+    # Catch if event times goes over max training event time, i.e. predict gives NA
+    weight_cat1[np.isnan(weight_cat1)] = 0
+    # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
+    # contain both censored and uncensored individuals.
+    ipc_target_pred = ipc_model.predict(target_times_mat)
+    # Catch if denominator is 0.
+    ipc_target_pred[ipc_target_pred == 0] = np.inf
+    weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
     # predict returns NA if the passed in time is greater than any of the times used to build
     # the inverse probability of censoring model.
     weight_cat2[np.isnan(weight_cat2)] = 0

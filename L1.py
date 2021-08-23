@@ -63,6 +63,58 @@ def l1_loss_pycox(
                    train_event_indicators, method, log_scale)
 
 
+def l1_loss_sksurv(
+        predicted_survival_curves: pd.DataFrame,
+        event_times: NumericArrayLike,
+        event_indicators: NumericArrayLike,
+        train_event_times: Optional[NumericArrayLike] = None,
+        train_event_indicators: Optional[NumericArrayLike] = None,
+        method: str = "Hinge",
+        log_scale: bool = False,
+        predicted_time_method: str = "Median"
+) -> float:
+    """
+
+    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+        Predicted survival curves for the testing samples
+        DataFrame index represents the time coordinates for the given curves.
+        DataFrame value represents the survival probabilities.
+    :param event_times: structured array, shape = (n_samples, )
+        Actual event/censor time for the testing samples.
+    :param event_indicators: structured array, shape = (n_samples, )
+        Binary indicators of censoring for the testing samples
+    :param train_event_times:structured array, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    :param train_event_indicators: structured array, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples
+    :param method: string, default: "Hinge"
+    :param log_scale: boolean, default: False
+    :param predicted_time_method: string, default: "Median"
+    :return:
+        Value for the calculated L1 loss.
+    """
+    event_times, event_indicators = check_and_convert(event_times, event_indicators)
+    if (train_event_times is not None) and (train_event_indicators is not None):
+        train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
+
+    if predicted_time_method == "Median":
+        predict_method = predict_median_survival_time
+    elif predicted_time_method == "Mean":
+        predict_method = predict_mean_survival_time
+    else:
+        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
+        raise TypeError(error)
+
+    # get median/mean survival time from the predicted curve
+    predicted_times = []
+    for i in range(predicted_survival_curves.shape[0]):
+        predicted_time = predict_method(predicted_survival_curves[i].x, predicted_survival_curves[i].y)
+        predicted_times.append(predicted_time)
+    predicted_times = np.array(predicted_times)
+    return l1_loss(predicted_times, event_times, event_indicators, train_event_times,
+                   train_event_indicators, method, log_scale)
+
+
 def l1_loss(
         predicted_times: np.ndarray,
         event_times: np.ndarray,
