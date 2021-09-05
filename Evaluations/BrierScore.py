@@ -3,8 +3,8 @@ import pandas as pd
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 
-from custom_types import NumericArrayLike
-from util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
+from Evaluations.custom_types import NumericArrayLike
+from Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
 
 
 def single_brier_score_pycox(
@@ -28,7 +28,7 @@ def single_brier_score_pycox(
         Actual event/censor time for the testing samples.
     :param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    :param train_event_times: structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     :param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
@@ -132,6 +132,69 @@ def single_brier_score(
     return b_score
 
 
+def brier_multiple_points(
+        predict_probs_mat: np.ndarray,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+        train_event_times: np.ndarray,
+        train_event_indicators: np.ndarray,
+        target_times: np.ndarray
+) -> np.ndarray:
+    """
+    Calculate multiple Brier scores at multiple specific times.
+
+    :param predict_probs_mat: structured array, shape = (n_samples, n_time_points)
+        Predicted probability array (2-D) for each instances at each time point.
+    :param event_times: structured array, shape = (n_samples, )
+        Actual event/censor time for the testing samples.
+    :param event_indicators: structured array, shape = (n_samples, )
+        Binary indicators of censoring for the testing samples
+    :param train_event_times:structured array, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    :param train_event_indicators: structured array, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples
+    :param target_times: float, default: None
+        The specific time points for which to estimate the Brier scores.
+    :return:
+        Values of multiple Brier scores.
+    """
+    inverse_train_event_indicators = 1 - train_event_indicators
+
+    ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+    # sorted_test_event_times = np.argsort(event_times)
+
+    if target_times.ndim != 1:
+        error = "'time_grids' is not a one-dimensional array."
+        raise TypeError(error)
+
+    # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
+    target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
+    event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
+    event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
+    event_indicators_mat = event_indicators_mat.astype(bool)
+    # Category one calculates IPCW weight at observed time point.
+    # Category one is individuals with event time lower than the time of interest and were NOT censored.
+    ipc_pred = ipc_model.predict(event_times_mat)
+    # Catch if denominator is 0.
+    ipc_pred[ipc_pred == 0] = np.inf
+    weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
+    # Catch if event times goes over max training event time, i.e. predict gives NA
+    weight_cat1[np.isnan(weight_cat1)] = 0
+    # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
+    # contain both censored and uncensored individuals.
+    ipc_target_pred = ipc_model.predict(target_times_mat)
+    # Catch if denominator is 0.
+    ipc_target_pred[ipc_target_pred == 0] = np.inf
+    weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
+    # predict returns NA if the passed in time is greater than any of the times used to build
+    # the inverse probability of censoring model.
+    weight_cat2[np.isnan(weight_cat2)] = 0
+
+    ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
+    brier_scores = np.mean(ipcw_square_error_mat, axis=0)
+    return brier_scores
+
+
 def integrated_brier_score_pycox(
         predicted_survival_curves: pd.DataFrame,
         event_times: NumericArrayLike,
@@ -216,10 +279,10 @@ def brier_multiple_points_pycox(
     """
     Calculate multiple Brier scores at multiple specific times.
 
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    :param predicted_survival_curves: pd.DataFrame, shape = (n_time_points, n_samples)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
-        DataFrame value represents the survival probabilities.
+        DataFrame value represents transpose of the survival probabilities.
     :param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     :param event_indicators: structured array, shape = (n_samples, )
@@ -247,41 +310,43 @@ def brier_multiple_points_pycox(
         predict_probs_mat.append(predict_probs)
     predict_probs_mat = np.array(predict_probs_mat)
 
-    inverse_train_event_indicators = 1 - train_event_indicators
-
-    ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
-    # sorted_test_event_times = np.argsort(event_times)
-
-    if target_times.ndim != 1:
-        error = "'time_grids' is not a one-dimensional array."
-        raise TypeError(error)
-
-    # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
-    target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
-    event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
-    event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
-    event_indicators_mat = event_indicators_mat.astype(bool)
-    # Category one calculates IPCW weight at observed time point.
-    # Category one is individuals with event time lower than the time of interest and were NOT censored.
-    ipc_pred = ipc_model.predict(event_times_mat)
-    # Catch if denominator is 0.
-    ipc_pred[ipc_pred == 0] = np.inf
-    weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
-    # Catch if event times goes over max training event time, i.e. predict gives NA
-    weight_cat1[np.isnan(weight_cat1)] = 0
-    # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-    # contain both censored and uncensored individuals.
-    ipc_target_pred = ipc_model.predict(target_times_mat)
-    # Catch if denominator is 0.
-    ipc_target_pred[ipc_target_pred == 0] = np.inf
-    weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-    # predict returns NA if the passed in time is greater than any of the times used to build
-    # the inverse probability of censoring model.
-    weight_cat2[np.isnan(weight_cat2)] = 0
-
-    ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
-    brier_scores = np.mean(ipcw_square_error_mat, axis=0)
-    return brier_scores
+    return brier_multiple_points(predict_probs_mat, event_times, event_indicators, train_event_times,
+                                 train_event_indicators, target_times)
+    # inverse_train_event_indicators = 1 - train_event_indicators
+    #
+    # ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+    # # sorted_test_event_times = np.argsort(event_times)
+    #
+    # if target_times.ndim != 1:
+    #     error = "'time_grids' is not a one-dimensional array."
+    #     raise TypeError(error)
+    #
+    # # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
+    # target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
+    # event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
+    # event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
+    # event_indicators_mat = event_indicators_mat.astype(bool)
+    # # Category one calculates IPCW weight at observed time point.
+    # # Category one is individuals with event time lower than the time of interest and were NOT censored.
+    # ipc_pred = ipc_model.predict(event_times_mat)
+    # # Catch if denominator is 0.
+    # ipc_pred[ipc_pred == 0] = np.inf
+    # weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
+    # # Catch if event times goes over max training event time, i.e. predict gives NA
+    # weight_cat1[np.isnan(weight_cat1)] = 0
+    # # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
+    # # contain both censored and uncensored individuals.
+    # ipc_target_pred = ipc_model.predict(target_times_mat)
+    # # Catch if denominator is 0.
+    # ipc_target_pred[ipc_target_pred == 0] = np.inf
+    # weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
+    # # predict returns NA if the passed in time is greater than any of the times used to build
+    # # the inverse probability of censoring model.
+    # weight_cat2[np.isnan(weight_cat2)] = 0
+    #
+    # ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
+    # brier_scores = np.mean(ipcw_square_error_mat, axis=0)
+    # return brier_scores
 
 
 def integrated_brier_score_sksurv(

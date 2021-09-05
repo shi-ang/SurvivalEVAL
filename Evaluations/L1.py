@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 
-from custom_types import NumericArrayLike
-from util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
+from Evaluations.custom_types import NumericArrayLike
+from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
 
 
 def l1_loss_pycox(
@@ -108,7 +108,7 @@ def l1_loss_sksurv(
     # get median/mean survival time from the predicted curve
     predicted_times = []
     for i in range(predicted_survival_curves.shape[0]):
-        predicted_time = predict_method(predicted_survival_curves[i].x, predicted_survival_curves[i].y)
+        predicted_time = predict_method(predicted_survival_curves[i].y, predicted_survival_curves[i].x)
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
     return l1_loss(predicted_times, event_times, event_indicators, train_event_times,

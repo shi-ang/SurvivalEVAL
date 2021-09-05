@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import chi2
 
-from custom_types import Numeric, NumericArrayLike
-from util import check_and_convert, KaplanMeier, predict_prob_from_curve
+from Evaluations.custom_types import Numeric, NumericArrayLike
+from Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve
 
 
 def one_calibration_pycox(
@@ -42,7 +42,7 @@ def one_calibration_sksurv(
     true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
     predictions = []
     for i in range(predicted_survival_curves.shape[0]):
-        predict_prob = predict_prob_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y,
+        predict_prob = predict_prob_from_curve(predicted_survival_curves[i].y, predicted_survival_curves[i].x,
                                                target_time)
         predictions.append(predict_prob)
     predictions = np.array(predictions)

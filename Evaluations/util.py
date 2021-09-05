@@ -6,7 +6,7 @@ import rpy2.robjects as robjects
 import scipy.integrate as integrate
 from dataclasses import InitVar, dataclass, field
 
-from custom_types import NumericArrayLike
+from Evaluations.custom_types import NumericArrayLike
 
 
 def check_and_convert(*args):

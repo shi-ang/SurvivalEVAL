@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import sksurv.metrics as metrics
 
-from custom_types import NumericArrayLike
-from util import check_and_convert, predict_mean_survival_time, predict_median_survival_time
+from Evaluations.custom_types import NumericArrayLike
+from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time
 
 
 def concordance_pycox(
@@ -32,7 +32,6 @@ def concordance_pycox(
     # get median/mean survival time from the predicted curve
     predicted_times = []
     for i in range(survival_curves.shape[0]):
-        print(i)
         predicted_time = predict_method(survival_curves[i, :], time_coordinates)
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
@@ -60,7 +59,7 @@ def concordance_sksurv(
     # get median/mean survival time from the predicted curve
     predicted_times = []
     for i in range(predicted_survival_curves.shape[0]):
-        predicted_time = predict_method(predicted_survival_curves[i].x, predicted_survival_curves[i].y)
+        predicted_time = predict_method(predicted_survival_curves[i].y, predicted_survival_curves[i].x)
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
 

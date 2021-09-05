@@ -3,8 +3,8 @@ import pandas as pd
 from scipy.stats import chisquare
 # from pysurvival.models.survival_forest import RandomSurvivalForestModel
 
-from custom_types import NumericArrayLike
-from util import check_and_convert, predict_prob_from_curve
+from Evaluations.custom_types import NumericArrayLike
+from Evaluations.util import check_and_convert, predict_prob_from_curve
 
 
 def d_calibration_pycox(
@@ -31,23 +31,27 @@ def d_calibration_pycox(
     survival_curves = predicted_survival_curves.values.T
     survival_curves[survival_curves < 0] = 0
 
-    quantile = np.linspace(1, 0, num_bins + 1)
-
     predict_probs = []
     for i in range(survival_curves.shape[0]):
         predict_prob = predict_prob_from_curve(survival_curves[i, :], time_coordinates, true_event_times[i])
         predict_probs.append(predict_prob)
     predict_probs = np.array(predict_probs)
+    return d_calibration(predict_probs, uncensor_status, num_bins)
 
-    uncensored_probabilities = predict_probs[uncensor_status.astype(bool)]
-    uncensored_position = np.digitize(uncensored_probabilities, quantile)
-    uncensored_position[uncensored_position == 0] = 1     # class probability==1 to the first bin
 
-    uncensored_binning = np.zeros([num_bins])
-    for i in range(len(uncensored_position)):
-        uncensored_binning[uncensored_position[i] - 1] += 1
+def d_calibration(predict_probs, event_indicators, num_bins: int = 10):
+    quantile = np.linspace(1, 0, num_bins + 1)
+    censor_indicators = 1 - event_indicators
 
-    censored_probabilities = predict_probs[censor_status.astype(bool)]
+    event_probabilities = predict_probs[event_indicators.astype(bool)]
+    event_position = np.digitize(event_probabilities, quantile)
+    event_position[event_position == 0] = 1     # class probability==1 to the first bin
+
+    event_binning = np.zeros([num_bins])
+    for i in range(len(event_position)):
+        event_binning[event_position[i] - 1] += 1
+
+    censored_probabilities = predict_probs[censor_indicators.astype(bool)]
 
     censor_binning = np.zeros([num_bins])
     if len(censored_probabilities) > 0:
@@ -55,9 +59,9 @@ def d_calibration_pycox(
             partial_binning = create_censor_binning(censored_probabilities[i], num_bins)
             censor_binning += partial_binning
 
-    combine_binning = uncensored_binning + censor_binning
+    combine_binning = event_binning + censor_binning
     _, pvalue = chisquare(combine_binning)
-    return combine_binning, pvalue
+    return pvalue, combine_binning
 
 
 def d_calibration_sksurv(
@@ -83,30 +87,32 @@ def d_calibration_sksurv(
 
     predict_probs = []
     for i in range(predicted_survival_curves.shape[0]):
-        predict_prob = predict_prob_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y,
+        predict_prob = predict_prob_from_curve(predicted_survival_curves[i].y, predicted_survival_curves[i].x,
                                                true_event_times[i])
         predict_probs.append(predict_prob)
     predict_probs = np.array(predict_probs)
 
-    uncensored_probabilities = predict_probs[uncensor_status.astype(bool)]
-    uncensored_position = np.digitize(uncensored_probabilities, quantile)
-    uncensored_position[uncensored_position == 0] = 1     # class probability==1 to the first bin
+    return d_calibration(predict_probs, uncensor_status, num_bins)
 
-    uncensored_binning = np.zeros([num_bins])
-    for i in range(len(uncensored_position)):
-        uncensored_binning[uncensored_position[i] - 1] += 1
-
-    censored_probabilities = predict_probs[censor_status.astype(bool)]
-
-    censor_binning = np.zeros([num_bins])
-    if len(censored_probabilities) > 0:
-        for i in range(len(censored_probabilities)):
-            partial_binning = create_censor_binning(censored_probabilities[i], num_bins)
-            censor_binning += partial_binning
-
-    combine_binning = uncensored_binning + censor_binning
-    _, pvalue = chisquare(combine_binning)
-    return combine_binning, pvalue
+    # uncensored_probabilities = predict_probs[uncensor_status.astype(bool)]
+    # uncensored_position = np.digitize(uncensored_probabilities, quantile)
+    # uncensored_position[uncensored_position == 0] = 1     # class probability==1 to the first bin
+    #
+    # uncensored_binning = np.zeros([num_bins])
+    # for i in range(len(uncensored_position)):
+    #     uncensored_binning[uncensored_position[i] - 1] += 1
+    #
+    # censored_probabilities = predict_probs[censor_status.astype(bool)]
+    #
+    # censor_binning = np.zeros([num_bins])
+    # if len(censored_probabilities) > 0:
+    #     for i in range(len(censored_probabilities)):
+    #         partial_binning = create_censor_binning(censored_probabilities[i], num_bins)
+    #         censor_binning += partial_binning
+    #
+    # combine_binning = uncensored_binning + censor_binning
+    # _, pvalue = chisquare(combine_binning)
+    # return combine_binning, pvalue
 
 
 
@@ -132,26 +138,27 @@ def d_calibration_pysurvival(model, X, T, E, num_bins=10) -> (np.ndarray, float)
         predict_prob = predict_prob_from_curve(survival_curves[i, :], time_coordinates, true_event_times[i])
         predict_probs.append(predict_prob)
     predict_probs = np.array(predict_probs)
+    return d_calibration(predict_probs, uncensor_status, num_bins)
 
-    uncensoredProbabilities = predict_probs[uncensor_status.astype(bool)]
-    uncensoredPosition = np.digitize(uncensoredProbabilities, quantile)
-    uncensoredPosition[uncensoredPosition == 0] = 1     # class probability==1 to the first bin
-
-    uncensoredBinning = np.zeros([num_bins])
-    for i in range(len(uncensoredPosition)):
-        uncensoredBinning[uncensoredPosition[i] - 1] += 1
-
-    censoredProbabilities = predict_probs[censor_status.astype(bool)]
-
-    censor_binning = np.zeros([num_bins])
-    if len(censoredProbabilities) > 0:
-        for i in range(len(censoredProbabilities)):
-            partial_binning = create_censor_binning(censoredProbabilities[i], num_bins)
-            censor_binning += partial_binning
-
-    combine_binning = uncensoredBinning + censor_binning
-    _, pvalue = chisquare(combine_binning)
-    return combine_binning, pvalue
+    # uncensoredProbabilities = predict_probs[uncensor_status.astype(bool)]
+    # uncensoredPosition = np.digitize(uncensoredProbabilities, quantile)
+    # uncensoredPosition[uncensoredPosition == 0] = 1     # class probability==1 to the first bin
+    #
+    # uncensoredBinning = np.zeros([num_bins])
+    # for i in range(len(uncensoredPosition)):
+    #     uncensoredBinning[uncensoredPosition[i] - 1] += 1
+    #
+    # censoredProbabilities = predict_probs[censor_status.astype(bool)]
+    #
+    # censor_binning = np.zeros([num_bins])
+    # if len(censoredProbabilities) > 0:
+    #     for i in range(len(censoredProbabilities)):
+    #         partial_binning = create_censor_binning(censoredProbabilities[i], num_bins)
+    #         censor_binning += partial_binning
+    #
+    # combine_binning = uncensoredBinning + censor_binning
+    # _, pvalue = chisquare(combine_binning)
+    # return combine_binning, pvalue
 
 
 def create_censor_binning(probability, num_bins) -> np.ndarray:
