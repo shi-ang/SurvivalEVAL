@@ -136,7 +136,12 @@ class BaseEvaluator:
     ) -> (float, float, int):
         """
 
-        :param ties:
+        :param ties: str, default = "None"
+            A string indicating the way ties should be handled. Options: "None" will throw out all ties in
+            survival time and all ties from risk scores. "Time" includes ties in survival time but removes ties
+            in risk scores. "Risk" includes ties in risk scores but not in survival time. "All" includes all
+            ties (both in survival time and in risk scores). Note the concordance calculation is given by
+            (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
         :param predicted_time_method:
         :return:
         """
@@ -253,7 +258,7 @@ class BaseEvaluator:
             predicted_time_method: str = "Median"
     ) -> float:
         """
-
+        Calculate the L1 loss for the test set.
         :param method: string, default: "Hinge"
         :param log_scale: boolean, default: False
         :param predicted_time_method: string, default: "Median"
@@ -291,7 +296,7 @@ class BaseEvaluator:
     def d_calibration(
             self,
             num_bins: int = 10
-    ) -> (np.ndarray, float):
+    ) -> (float, np.ndarray):
         """
         :param num_bins:
         :return:

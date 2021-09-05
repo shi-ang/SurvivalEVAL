@@ -7,8 +7,11 @@ Concordance, Brier score, L1 loss, 1-Calibration, and D-Calibration. Please also
 
 ## Concordance Index (C-index)
 Concordance Index identifies the “comparable” pairs of patients and calculates the percentage of correctly ranked pairs to assess a survival model’s performance. 
-Given two predicted survival curves of a paired patients, it compares the predicted median survival times and marks that pair as correct if the model's prediction about who died first matches with the reality. 
-Please note that there are multiple definition for the concordance index, . 
+Given two predicted survival curves of a paired patients, it compares the predicted median/mean survival times and marks that pair as correct if the model's prediction about who died first matches with the reality. 
+There are multiple definition for the concordance index, 
+[pycox's](https://github.com/havakv/pycox) C-index compares the predicted probabilities, 
+[PySurvival's](https://square.github.io/pysurvival/index.html) compares the risk score. 
+However, our c-index definition uses the predicted median/mean survival times as the risk score.  
 
 While every pair of the uncensored patients are “comparable”, only those censored patients whose censoring time is greater than the event time of any uncensored patient are considered comparable to that uncensored patient. 
 Thus, C-index ignores censored patients who fail to form “comparable” pairs. 
@@ -16,7 +19,8 @@ Please note that C-index does not measure how close a model’s estimated surviv
 
 ## Brier Score (BS) and Integrated Brier Score (IBS)
 IBS measures both discrimination and calibration of survival prediction models across several time points. 
-It is computed as the integration of the (single-time) Brier score across all time points and a smaller IBS value is preferred over the larger value. 
+It is computed as the integration of the (single-time) Brier score across all the time points. 
+A smaller IBS value is preferred over the larger value. 
 The Brier score, at a specific time-point, is computed as the mean squared error between the observed event (binary indicator variable) and the predicted event probability at that time-point. 
 It is meaningful in the sense that the square root of the Brier score is the distance between the observed and predicted event on the probability scale. 
 This python implementation uses IPCW weighting to handle the censored instances. Please refer to [Assessment and Comparison of Prognostic Classification Schemes for Survival Data](https://pubmed.ncbi.nlm.nih.gov/10474158/) for the detail of IPCW weighting.
@@ -31,13 +35,16 @@ This python package implemented three different l1 loss metrics for different wa
 3. L1-margin loss “de-censors” the censored patients, by using their expected survival time (based on the Kaplan-Meier distribution on the training set). The expected survival time is estimated by the censored time plus the median residual time of the KM curve starting from the censored time.
 
 ## One-time Calibration (1-calibration)
-Additionally we have the observed and expected probabilities (see Figure 7 in Haider et al.). Note there is an error in the text, it claims the plotted values are Oj and njpj -- it is actually Oj/nj and pj.
-
+Calibration measures the confidence of the model. 
+The detailed explanation for the algorithm implementation can be found in [Effective Ways to Build and Evaluate Individual Survival Distributions](https://jmlr.org/papers/volume21/18-772/18-772.pdf) and [A tutorial on calibration measurements and calibration models for clinical prediction models](https://academic.oup.com/jamia/article/27/4/621/5762806).
+The output is a p-value of Hosmer-Lemeshow goodness-of-fit test at a target time. 
+Models with p-value higher than 0.05 can be considered as well-calibrated model at that time.
 
 ## Distribution Calibration (D-calibration)
 [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) proposed distribution calibration (D-calibration) test for determining if a model that produces ISDs is meaningful. 
 D-calibration splits the time-axis into a fixed number of intervals and compares the actual number of events with the predicted number of events within each interval. 
 A well D-calibrated model is the one where the predicted number of events within each time interval is statistically similar to the observed number.
+Models with p-value higher than 0.05 can be considered as well-calibrated model across the survival distribution.
 
 D-calibration quantifies this comparison of predicted and actual events within each time interval. 
 The details of D-calibration calculations and ways to incorporate censored instances into D-calibration computation appear in Appendix B and in [Effective Ways to Build and Evaluate Individual Survival Distributions](https://jmlr.org/papers/volume21/18-772/18-772.pdf).
@@ -91,3 +98,4 @@ See the [Examples](Examples) for more usage examples.
 2. Graphical calibration curves
 3. IPCW weighted L1 loss
 4. Expand l1 loss to l2 loss.
+Please create an issue if you want me to implement any other evaluation metrics.

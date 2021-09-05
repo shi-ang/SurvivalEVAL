@@ -73,9 +73,23 @@ def concordance(
         ties: str = "None"
 ) -> (float, float, int):
 
+    """
+    :param predicted_survival_time:
+    :param event_time:
+    :param event_indicator:
+    :param ties:
+        A string indicating the way ties should be handled. Options: "None" will throw out all ties in
+        survival time and all ties from risk scores. "Time" includes ties in survival time but removes ties
+        in risk scores. "Risk" includes ties in risk scores but not in survival time. "All" includes all
+        ties (both in survival time and in risk scores). Note the concordance calculation is given by
+        (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
+    :return:
+    """
     # the scikit-survival concordance function only takes risk scores to calculate.
     # So at first we should transfer the predicted time -> risk score.
     # The risk score should be higher for subjects that live shorter (i.e. lower average survival time).
+
+
     risk = -1 * predicted_survival_time
     event_indicator = event_indicator.astype(bool)
     cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
