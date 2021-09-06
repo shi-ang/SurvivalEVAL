@@ -30,8 +30,8 @@ Please also note that IBS is identical to the [Continuous Ranked Probability Sco
 An obvious metric would be “L1 loss” –  the absolute difference between the actual and predicted survival times (e.g. median of an ISD).
 This requires using the “actual survival time”, which is trivial for uncensored instances, but problematic for censored individuals. 
 This python package implemented three different l1 loss metrics for different ways of handling censored instances. 
-1. L1-uncensored loss simply discard all the censored individuals and compute the l1 loss for all the uncensored instances.
-2. L1-hinge loss calculates the censored l1-loss using the following manner: If the predicted survival time is smaller than the censored time, then `l1_loss = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `l1-loss = 0`. 
+1. L1-uncensored loss simply discards all the censored individuals and compute the l1 loss for all the uncensored instances.
+2. L1-hinge loss calculates the censored l1-loss using the following manner. For a censored instance, if the predicted survival time is smaller than the censored time, then `l1_loss = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `l1-loss = 0`. 
 3. L1-margin loss “de-censors” the censored patients, by using their expected survival time (based on the Kaplan-Meier distribution on the training set). The expected survival time is estimated by the censored time plus the median residual time of the KM curve starting from the censored time.
 
 ## One-time Calibration (1-calibration)

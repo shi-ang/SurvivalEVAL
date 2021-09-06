@@ -28,7 +28,7 @@ class BaseEvaluator:
             train_event_indicators: Optional[NumericArrayLike] = None
     ):
         """
-        Initialized the Evaluator
+        Initialize the Evaluator
         :param predicted_survival_curves: structured array, shape = (n_samples, n_time_points)
             Predicted survival curves for the testing samples.
         :param time_coordinates: structured array, shape = (n_time_points, )
@@ -300,6 +300,7 @@ class BaseEvaluator:
         """
         :param num_bins:
         :return:
+            (p-value, counts in bins)
         """
         predict_probs = []
         for i in range(self.predicted_curves.shape[0]):
@@ -348,7 +349,7 @@ class LifelinesEvaluator(PycoxEvaluator):
             train_event_indicators: Optional[NumericArrayLike] = None
     ):
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
-                                             train_event_indicators)
+                                                 train_event_indicators)
 
 
 class ScikitSurvivalEvaluator(BaseEvaluator):
@@ -368,29 +369,13 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
         :param train_event_times:
         :param train_event_indicators:
         """
-        super().__init__(test_event_times, test_event_indicators, train_event_times, train_event_indicators)
-        self._time_coordinates = surv[0].x
+        time_coordinates = surv[0].x
         predict_curves = []
         for i in range(len(surv)):
             predict_curve = surv[i].y
-            if False in (self.time_coordinates == surv[i].x):
+            if False in (time_coordinates == surv[i].x):
                 raise KeyError("{}-th survival curve does not have same time coordinates".format(i))
             predict_curves.append(predict_curve)
-        self._predicted_curves = np.array(predict_curves)
-
-
-class PysurvivalEvaluator(BaseEvaluator):
-    def __init__(
-            self,
-            model,
-            test_covariates,
-            test_event_times: NumericArrayLike,
-            test_event_indicators: NumericArrayLike,
-            train_event_times: Optional[NumericArrayLike] = None,
-            train_event_indicators: Optional[NumericArrayLike] = None
-    ):
-        super().__init__(test_event_times, test_event_indicators, train_event_times, train_event_indicators)
-        # computing the Survival curves
-        self._predicted_curves = model.predict_survival(test_covariates, None)
-        # Extracting the time buckets
-        self._time_coordinates = model.times
+        predicted_curves = np.array(predict_curves)
+        super(ScikitSurvivalEvaluator, self).__init__(predicted_curves, time_coordinates, test_event_times,
+                                                      test_event_indicators, train_event_times, train_event_indicators)
