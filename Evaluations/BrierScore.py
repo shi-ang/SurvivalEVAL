@@ -90,11 +90,11 @@ def single_brier_score(
     inverse_train_event_indicators = 1 - train_event_indicators
     ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
 
-    # Category one calculates IPCW weight at observed time point.
-    # Category one is individuals with event time lower than the time of interest and were NOT censored.
     ipc_pred = ipc_model.predict(event_times)
     # Catch if denominator is 0.
     ipc_pred[ipc_pred == 0] = np.inf
+    # Category one calculates IPCW weight at observed time point.
+    # Category one is individuals with event time lower than the time of interest and were NOT censored.
     weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
     # Catch if event times goes over max training event time, i.e. predict gives NA
     weight_cat1[np.isnan(weight_cat1)] = 0

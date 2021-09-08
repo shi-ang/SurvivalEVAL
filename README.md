@@ -96,6 +96,5 @@ See the [Examples](Examples) for more usage examples.
 ## Expected Deliveries in the Future
 1. Time-dependent concordance index (AUC)
 2. Graphical calibration curves
-3. IPCW weighted L1 loss
-4. Expand l1 loss to l2 loss.
+3. Expand l1 loss to l2 loss.
 Please create an issue if you want me to implement any other evaluation metrics.

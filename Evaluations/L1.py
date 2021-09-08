@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Optional
 
 from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
+from Evaluations.util import check_and_convert, KaplanMeier, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
 
 
 def l1_loss_pycox(

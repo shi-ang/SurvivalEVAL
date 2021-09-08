@@ -129,6 +129,16 @@ class BaseEvaluator:
         predict_probs_mat = np.array(predict_probs_mat)
         return predict_probs_mat
 
+    def plot_survival_curves(
+            self,
+            curve_indices,
+            color=None,
+            ordered: bool=True,
+            xlim=None,
+            title: str=''
+    ):
+        raise NotImplementedError
+
     def concordance(
             self,
             ties: str = "None",
