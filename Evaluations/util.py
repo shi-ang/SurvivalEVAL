@@ -53,7 +53,7 @@ def check_and_convert(*args):
             elif isinstance(arg, pd.DataFrame):
                 x = (arg.values.astype(np.double),)
             elif isinstance(arg, torch.Tensor):
-                x = (arg.numpy().astype(np.double),)
+                x = (arg.cpu().numpy().astype(np.double),)
             else:
                 error = """{arg} is not a valid data format. Only use 'list', 'tuple', 'np.ndarray', 'torch.Tensor', 
                         'pd.Series', 'pd.DataFrame'""".format(arg=type(arg))

@@ -12,7 +12,7 @@ def d_calibration_pycox(
         event_time: NumericArrayLike,
         event_indicator: NumericArrayLike,
         num_bins: int = 10
-) -> (np.ndarray, float):
+) -> (float, np.ndarray):
     """
 
     :param predicted_survival_curves:
@@ -68,7 +68,7 @@ def d_calibration_sksurv(
         event_time: NumericArrayLike,
         event_indicator: NumericArrayLike,
         num_bins: int = 10
-) -> (np.ndarray, float):
+) -> (float, np.ndarray):
     """
 
     :param predicted_survival_curves:
