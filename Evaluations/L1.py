@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Optional
+import scipy.integrate as integrate
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, KaplanMeier, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
@@ -151,9 +152,33 @@ def l1_loss(
         # Each best guess value has a confidence weight = 1 - KM(censoring time).
         # The earlier the patient got censored, the lower the confident weight is.
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+        km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities))/(0 - max(km_model.survival_times)))
+        if np.isinf(km_linear_zero):
+            km_linear_zero = max(km_model.survival_times)
+        predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
+
+        def _km_linear_predict(time):
+            slope = (1 - min(km_model.survival_probabilities)) / (0 - max(km_model.survival_times))
+
+            # predict_prob = np.empty_like(time)
+            # before_last_time_idx = time <= max(km_model.survival_times)
+            # after_last_time_idx = time > max(km_model.survival_times)
+            # predict_prob[before_last_time_idx] = km_model.predict(time[before_last_time_idx])
+            # predict_prob[after_last_time_idx] = np.clip(1 + time[after_last_time_idx] * slope, a_min=0, a_max=None)
+            if time <= max(km_model.survival_times):
+                predict_prob = km_model.predict(time)
+            else:
+                predict_prob = max(1 + time * slope, 0)
+            return predict_prob
+
+        def _compute_best_guess(time):
+            return time + integrate.quad(_km_linear_predict, time, km_linear_zero,
+                                         limit=2000)[0] / km_model.predict(time)
+
         censor_times = event_times[~event_indicators]
         weights = 1 - km_model.predict(censor_times)
-        best_guesses = km_model.best_guess(censor_times)
+        best_guesses = km_model.best_guess_revise(censor_times)
+        best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
         scores = np.empty(predicted_times.size)
         if log_scale:

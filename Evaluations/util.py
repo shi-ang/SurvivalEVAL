@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import warnings
+import numba
 import rpy2.robjects as robjects
 import scipy.integrate as integrate
 from dataclasses import InitVar, dataclass, field
@@ -294,6 +295,7 @@ class KaplanMeierArea(KaplanMeier):
     area_times: np.array = field(init=False)
     area_probabilities: np.array = field(init=False)
     area: np.array = field(init=False)
+    km_linear_zero: float = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
         super().__post_init__(event_times, event_indicators)
@@ -311,6 +313,7 @@ class KaplanMeierArea(KaplanMeier):
         self.area_times = np.append(area_times, np.inf)
         self.area_probabilities = area_probabilities
         self.area = np.append(area, 0)
+        self.km_linear_zero = -1 / ((1 - min(self.survival_probabilities))/(0 - max(self.survival_times)))
 
     def best_guess(self, censor_times: np.array):
         surv_prob = self.predict(censor_times)
@@ -320,8 +323,42 @@ class KaplanMeierArea(KaplanMeier):
             censor_indexes - 1,
             censor_indexes,
         )
-        censor_area = (
-                              self.area_times[censor_indexes] - censor_times
+        censor_area = (self.area_times[censor_indexes] - censor_times
                       ) * self.area_probabilities[censor_indexes - 1]
         censor_area += self.area[censor_indexes]
         return censor_times + censor_area / surv_prob
+
+    def _km_linear_predict(self, times):
+        slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
+
+        predict_prob = np.empty_like(times)
+        before_last_time_idx = times <= max(self.survival_times)
+        after_last_time_idx = times > max(self.survival_times)
+        predict_prob[before_last_time_idx] = self.predict(times[before_last_time_idx])
+        predict_prob[after_last_time_idx] = np.clip(1 + times[after_last_time_idx] * slope, a_min=0, a_max=None)
+        # if time <= max(self.survival_times):
+        #     predict_prob = self.predict(time)
+        # else:
+        #     predict_prob = max(1 + time * slope, 0)
+        return predict_prob
+
+    def _compute_best_guess(self, time: float):
+        """
+        Given a censor time, compute the decensor event time based on the residual mean survival time on KM curves.
+        :param time:
+        :return:
+        """
+        # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
+        # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
+        time_range = np.linspace(time, self.km_linear_zero, 2000)
+        best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
+        # best_guess = time + integrate.quad(self._km_linear_predict, time, self.km_linear_zero,
+        #                                    limit=2000)[0] / self.predict(time)
+        return best_guess
+
+    def best_guess_revise(self, censor_times: np.array):
+        bg_times = np.zeros_like(censor_times)
+        for i in range(len(censor_times)):
+            bg_times[i] = self._compute_best_guess(censor_times[i])
+        return bg_times
+
