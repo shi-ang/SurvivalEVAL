@@ -193,7 +193,7 @@ def predict_mean_survival_time(survival_curve, times_coordinate: np.ndarray):
 def predict_median_survival_time(survival_curve, times_coordinate: np.ndarray):
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
-        warnings.warn("All the predicted probabilities are 1, the integral will be infinite.")
+        warnings.warn("All the predicted probabilities are 1, the median survival time will be infinite.")
         return np.inf
 
     x = robjects.FloatVector(times_coordinate)

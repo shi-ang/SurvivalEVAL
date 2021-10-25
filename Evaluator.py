@@ -369,7 +369,8 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
             test_event_times: NumericArrayLike,
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
-            train_event_indicators: Optional[NumericArrayLike] = None
+            train_event_indicators: Optional[NumericArrayLike] = None,
+            with_drop=None
     ):
         """
 
@@ -387,5 +388,15 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
                 raise KeyError("{}-th survival curve does not have same time coordinates".format(i))
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
+        # If some survival curves are all ones, we should do something.
+        if np.any(predicted_curves[:, len(time_coordinates) - 1] == 1):
+            idx_need_fix = predicted_curves[:, len(time_coordinates) - 1] == 1
+            max_prob_at_end = np.max(predicted_curves[~idx_need_fix,
+                                                      len(time_coordinates) - 1])
+            # max_prob_at_end + (1 - max_prob_at_end) * 0.9
+            predicted_curves[idx_need_fix, len(time_coordinates) - 1] = max(0.1 * max_prob_at_end + 0.9, 0.99)
+        if with_drop is not None:
+            time_coordinates = np.concatenate([time_coordinates, np.array([with_drop])], 0)
+            predicted_curves = np.concatenate([predicted_curves, np.zeros([len(predicted_curves), 1])], 1)
         super(ScikitSurvivalEvaluator, self).__init__(predicted_curves, time_coordinates, test_event_times,
                                                       test_event_indicators, train_event_times, train_event_indicators)
