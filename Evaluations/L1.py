@@ -123,7 +123,8 @@ def l1_loss(
         train_event_times: Optional[np.ndarray] = None,
         train_event_indicators: Optional[np.ndarray] = None,
         method: str = "Hinge",
-        log_scale: bool = False
+        log_scale: bool = False,
+        base_age: np.ndarray = None
 ) -> float:
 
     event_indicators = event_indicators.astype(bool)
@@ -145,7 +146,7 @@ def l1_loss(
         return np.mean(np.abs(scores))
     elif method == "Margin":
         if train_event_times is None or train_event_indicators is None:
-            error = "If 'margin' is chosen, training set values must be included."
+            error = "If 'Margin' is chosen, training set values must be included."
             raise ValueError(error)
 
         # Calculate the best guess survival time given the KM curve and censoring time of that patient
@@ -174,6 +175,34 @@ def l1_loss(
         def _compute_best_guess(time):
             return time + integrate.quad(_km_linear_predict, time, km_linear_zero,
                                          limit=2000)[0] / km_model.predict(time)
+
+        censor_times = event_times[~event_indicators]
+        weights = 1 - km_model.predict(censor_times)
+        best_guesses = km_model.best_guess_revise(censor_times)
+        best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
+
+        scores = np.empty(predicted_times.size)
+        if log_scale:
+            scores[event_indicators] = np.log(event_times[event_indicators]) - np.log(predicted_times[event_indicators])
+            scores[~event_indicators] = weights * (np.log(best_guesses) - np.log(predicted_times[~event_indicators]))
+        else:
+            scores[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
+            scores[~event_indicators] = weights * (best_guesses - predicted_times[~event_indicators])
+        weighted_multiplier = 1 / (np.sum(event_indicators) + np.sum(weights))
+        return weighted_multiplier * np.sum(np.abs(scores))
+    elif method == "Margin_bound":
+        if train_event_times is None or train_event_indicators is None or base_age is None:
+            error = "If 'margin' is chosen, training set values or baseline age must be included."
+            raise ValueError(error)
+
+        # Calculate the best guess survival time given the KM curve and censoring time of that patient
+        # Each best guess value has a confidence weight = 1 - KM(censoring time).
+        # The earlier the patient got censored, the lower the confident weight is.
+        km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+        avg_age = base_age.mean()
+        km_linear_zero = (120 - avg_age) * 12
+        km_model.survival_times = np.append(km_model.survival_times, km_linear_zero)
+        km_model.survival_probabilities = np.append(km_model.survival_probabilities, 0)
 
         censor_times = event_times[~event_indicators]
         weights = 1 - km_model.predict(censor_times)
