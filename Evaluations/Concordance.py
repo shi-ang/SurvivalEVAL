@@ -119,6 +119,7 @@ def concordance(
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
         event_times[~event_indicators] = best_guesses
+        event_indicators = np.ones(event_times.shape).astype(bool)
     else:
         raise TypeError("Method for calculating concordance is unrecognized.")
 
