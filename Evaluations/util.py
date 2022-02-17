@@ -156,7 +156,10 @@ def predict_multi_probs_from_curve(
     return predict_probabilities
 
 
-def predict_mean_survival_time(survival_curve, times_coordinate: np.ndarray):
+def predict_mean_survival_time(
+        survival_curve: np.ndarray,
+        times_coordinate: np.ndarray
+):
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
         warnings.warn("All the predicted probabilities are 1, the integral will be infinite.")
@@ -190,7 +193,10 @@ def predict_mean_survival_time(survival_curve, times_coordinate: np.ndarray):
     return mean_survival_time
 
 
-def predict_median_survival_time(survival_curve, times_coordinate: np.ndarray):
+def predict_median_survival_time(
+        survival_curve: np.ndarray,
+        times_coordinate: np.ndarray
+):
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
         warnings.warn("All the predicted probabilities are 1, the median survival time will be infinite.")
@@ -223,10 +229,12 @@ def predict_median_survival_time(survival_curve, times_coordinate: np.ndarray):
     return median_probability_time
 
 
-def stratified_folds_survival(dataset: pd.DataFrame,
-                              event_times: np.ndarray,
-                              event_indicators: np.ndarray,
-                              number_folds: int = 5):
+def stratified_folds_survival(
+        dataset: pd.DataFrame,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+        number_folds: int = 5
+):
     event_times, event_indicators = event_times.tolist(), event_indicators.tolist()
     assert len(event_indicators) == len(event_times)
 
