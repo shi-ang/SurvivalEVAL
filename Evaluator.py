@@ -268,7 +268,11 @@ class BaseEvaluator:
             censored_times = self.event_times[self.event_indicators == 0]
             sorted_censored_times = np.sort(censored_times)
             time_points = sorted_censored_times
-            time_range = np.amax(time_points) - np.amin(time_points)
+            if time_points.size == 0:
+                raise ValueError("You don't have censor data in the testset, "
+                                 "please provide \"num_points\" for calculating IBS")
+            else:
+                time_range = np.amax(time_points) - np.amin(time_points)
         else:
             time_points = np.linspace(0, max_target_time, num_points)
             time_range = max_target_time
