@@ -437,6 +437,9 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
                 raise KeyError("{}-th survival curve does not have same time coordinates".format(i))
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
+        if time_coordinates[0] != 0:
+            time_coordinates = np.concatenate([np.array([0]), time_coordinates], 0)
+            predicted_curves = np.concatenate([np.ones([len(predicted_curves), 1]), predicted_curves], 1)
         # If some survival curves are all ones, we should do something.
         if np.any(predicted_curves[:, len(time_coordinates) - 1] == 1):
             idx_need_fix = predicted_curves[:, len(time_coordinates) - 1] == 1
