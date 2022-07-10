@@ -268,7 +268,11 @@ class BaseEvaluator:
             censored_times = self.event_times[self.event_indicators == 0]
             sorted_censored_times = np.sort(censored_times)
             time_points = sorted_censored_times
-            time_range = np.amax(time_points) - np.amin(time_points)
+            if time_points.size == 0:
+                raise ValueError("You don't have censor data in the testset, "
+                                 "please provide \"num_points\" for calculating IBS")
+            else:
+                time_range = np.amax(time_points) - np.amin(time_points)
         else:
             time_points = np.linspace(0, max_target_time, num_points)
             time_range = max_target_time
@@ -433,6 +437,9 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
                 raise KeyError("{}-th survival curve does not have same time coordinates".format(i))
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
+        if time_coordinates[0] != 0:
+            time_coordinates = np.concatenate([np.array([0]), time_coordinates], 0)
+            predicted_curves = np.concatenate([np.ones([len(predicted_curves), 1]), predicted_curves], 1)
         # If some survival curves are all ones, we should do something.
         if np.any(predicted_curves[:, len(time_coordinates) - 1] == 1):
             idx_need_fix = predicted_curves[:, len(time_coordinates) - 1] == 1
