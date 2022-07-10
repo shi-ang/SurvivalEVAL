@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import chisquare
-# from pysurvival.models.survival_forest import RandomSurvivalForestModel
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, predict_prob_from_curve

@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import sksurv.metrics as metrics
 from typing import Optional
 
 from Evaluations.custom_types import NumericArrayLike

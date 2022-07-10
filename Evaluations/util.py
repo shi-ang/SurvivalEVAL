@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import torch
 import warnings
-import numba
 import rpy2.robjects as robjects
 import scipy.integrate as integrate
 from dataclasses import InitVar, dataclass, field
