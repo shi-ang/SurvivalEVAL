@@ -287,8 +287,7 @@ class KaplanMeier:
             self.survival_probabilities[counter] = survival_probability
             counter += 1
         self.cumulative_dens = 1 - self.survival_probabilities
-        self.probability_dens = np.diff(self.cumulative_dens)
-        self.probability_dens = np.append(0, self.probability_dens)
+        self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
     def predict(self, prediction_times: np.array):
         probability_index = np.digitize(prediction_times, self.survival_times)
