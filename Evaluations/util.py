@@ -261,6 +261,8 @@ class KaplanMeier:
     event_indicators: InitVar[np.array]
     survival_times: np.array = field(init=False)
     survival_probabilities: np.array = field(init=False)
+    cumulative_dens: np.array = field(init=False)
+    probability_dens: np.array = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
         index = np.lexsort((event_indicators, event_times))
@@ -284,6 +286,8 @@ class KaplanMeier:
             survival_probability *= 1 - event_num / population
             self.survival_probabilities[counter] = survival_probability
             counter += 1
+        self.cumulative_dens = 1 - self.survival_probabilities
+        self.probability_dens = np.diff(self.cumulative_dens)
 
     def predict(self, prediction_times: np.array):
         probability_index = np.digitize(prediction_times, self.survival_times)
