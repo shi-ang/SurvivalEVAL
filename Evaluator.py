@@ -96,45 +96,6 @@ class BaseEvaluator:
         predicted_times = np.array(predicted_times)
         return predicted_times
 
-    def predict_time_from_curve_bound(
-            self,
-            base_age: np.ndarray,
-            predict_method: Callable,
-            unit: str = "Month"
-    ) -> np.ndarray:
-        """
-        Predict time from curve, while upper bounded the survival curve with 120-year-old.
-        :param base_age:
-        :param predict_method:
-        :param unit: Unit for the survival curves. Year, Month, or, Day
-        :return:
-        """
-        if (predict_method is not predict_mean_survival_time) and (predict_method is not predict_median_survival_time):
-            error = "Prediction method must be 'predict_mean_survival_time' or 'predict_median_survival_time', " \
-                    "got '{}' instead".format(predict_method.__name__)
-            raise TypeError(error)
-
-        # if base_age.shape != self.predicted_curves.shape:
-        #     error = "Baseline age must have same shape as 'self.predicted_curves'".format(predict_method.__name__)
-        #     raise TypeError(error)
-
-        if unit == "Year":
-            scale_factor = 1
-        elif unit == "Month":
-            scale_factor = 12
-        elif unit == "Day":
-            scale_factor = 365
-        else:
-            raise ValueError("The Unit parameter is not desired type.")
-
-        predicted_times = []
-        for i in range(self.predicted_curves.shape[0]):
-            predicted_time = predict_method(np.append(self.predicted_curves[i, :], 0),
-                                            np.append(self.time_coordinates, (120-base_age[i]) * scale_factor))
-            predicted_times.append(predicted_time)
-        predicted_times = np.array(predicted_times)
-        return predicted_times
-
     def predict_probability_from_curve(
             self,
             target_time: float
@@ -312,8 +273,7 @@ class BaseEvaluator:
             self,
             method: str = "Hinge",
             log_scale: bool = False,
-            predicted_time_method: str = "Median",
-            base_age: np.ndarray = None
+            predicted_time_method: str = "Median"
     ) -> float:
         """
         Calculate the L1 loss for the test set.
@@ -332,10 +292,9 @@ class BaseEvaluator:
             raise TypeError(error)
 
         # get median/mean survival time from the predicted curve
-        # predicted_times = self.predict_time_from_curve_bound(base_age, predict_method)
         predicted_times = self.predict_time_from_curve(predict_method)
         return l1_loss(predicted_times, self.event_times, self.event_indicators, self.train_event_times,
-                       self.train_event_indicators, method, log_scale, base_age)
+                       self.train_event_indicators, method, log_scale)
 
     def one_calibration(
             self,

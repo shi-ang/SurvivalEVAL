@@ -362,7 +362,11 @@ class KaplanMeierArea(KaplanMeier):
         # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
         # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
         time_range = np.linspace(time, self.km_linear_zero, 2000)
-        best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
+        if self.predict(time) == 0:
+            best_guess = time
+        else:
+            best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
+
         # best_guess = time + integrate.quad(self._km_linear_predict, time, self.km_linear_zero,
         #                                    limit=2000)[0] / self.predict(time)
         return best_guess

@@ -123,8 +123,7 @@ def l1_loss(
         train_event_times: Optional[np.ndarray] = None,
         train_event_indicators: Optional[np.ndarray] = None,
         method: str = "Hinge",
-        log_scale: bool = False,
-        base_age: np.ndarray = None
+        log_scale: bool = False
 ) -> float:
 
     event_indicators = event_indicators.astype(bool)
@@ -156,7 +155,7 @@ def l1_loss(
         km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities))/(0 - max(km_model.survival_times)))
         if np.isinf(km_linear_zero):
             km_linear_zero = max(km_model.survival_times)
-        predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
+        # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
 
         def _km_linear_predict(time):
             slope = (1 - min(km_model.survival_probabilities)) / (0 - max(km_model.survival_times))
@@ -190,34 +189,107 @@ def l1_loss(
             scores[~event_indicators] = weights * (best_guesses - predicted_times[~event_indicators])
         weighted_multiplier = 1 / (np.sum(event_indicators) + np.sum(weights))
         return weighted_multiplier * np.sum(np.abs(scores))
-    elif method == "Margin_bound":
-        if train_event_times is None or train_event_indicators is None or base_age is None:
-            error = "If 'margin' is chosen, training set values or baseline age must be included."
+    elif method == "IPCW":
+        if train_event_times is None or train_event_indicators is None:
+            error = "If 'ipcw' is chosen, training set values must be included."
             raise ValueError(error)
 
         # Calculate the best guess survival time given the KM curve and censoring time of that patient
         # Each best guess value has a confidence weight = 1 - KM(censoring time).
         # The earlier the patient got censored, the lower the confident weight is.
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
-        avg_age = base_age.mean()
-        km_linear_zero = (120 - avg_age) * 12
-        km_model.survival_times = np.append(km_model.survival_times, km_linear_zero)
-        km_model.survival_probabilities = np.append(km_model.survival_probabilities, 0)
+        km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities))/(0 - max(km_model.survival_times)))
+        if np.isinf(km_linear_zero):
+            km_linear_zero = max(km_model.survival_times)
+        # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
 
         censor_times = event_times[~event_indicators]
-        weights = 1 - km_model.predict(censor_times)
-        best_guesses = km_model.best_guess_revise(censor_times)
-        best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
-
-        scores = np.empty(predicted_times.size)
+        weights = np.ones(event_times.size)
+        weights[~event_indicators] = 1 - km_model.predict(censor_times)
+        best_guesses = np.empty(shape=event_times.size)
+        for i in range(event_times.size):
+            if event_indicators[i] == 1:
+                best_guesses[i] = event_times[i]
+            else:
+                # Numpy will throw a warning if afterward_event_times are all false. TODO: consider change the code.
+                afterward_event_idx = train_event_times[train_event_indicators == 1] > event_times[i]
+                best_guesses[i] = np.mean(train_event_times[train_event_indicators == 1][afterward_event_idx])
+        # NaN values are generated because there are no events after the censor times
+        nan_idx = np.argwhere(np.isnan(best_guesses))
+        predicted_times = np.delete(predicted_times, nan_idx)
+        best_guesses = np.delete(best_guesses, nan_idx)
+        weights = np.delete(weights, nan_idx)
         if log_scale:
-            scores[event_indicators] = np.log(event_times[event_indicators]) - np.log(predicted_times[event_indicators])
-            scores[~event_indicators] = weights * (np.log(best_guesses) - np.log(predicted_times[~event_indicators]))
+            scores = np.log(best_guesses) - np.log(predicted_times)
         else:
-            scores[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
-            scores[~event_indicators] = weights * (best_guesses - predicted_times[~event_indicators])
-        weighted_multiplier = 1 / (np.sum(event_indicators) + np.sum(weights))
-        return weighted_multiplier * np.sum(np.abs(scores))
+            scores = best_guesses - predicted_times
+        weighted_multiplier = 1 / np.sum(weights)
+        return weighted_multiplier * np.sum(np.abs(scores) * weights)
+    elif method == "Pseudo_obs":
+        if train_event_times is None or train_event_indicators is None:
+            error = "If 'pseudo_observation' is chosen, training set values must be included."
+            raise ValueError(error)
+
+        # Calculate the best guess survival time given the KM curve and censoring time of that patient
+        # Each best guess value has a confidence weight = 1 - KM(censoring time).
+        # The earlier the patient got censored, the lower the confident weight is.
+        km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+        km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities))/(0 - max(km_model.survival_times)))
+        if np.isinf(km_linear_zero):
+            km_linear_zero = max(km_model.survival_times)
+        # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
+
+        censor_times = event_times[~event_indicators]
+        weights = np.ones(event_times.size)
+        weights[~event_indicators] = 1 - km_model.predict(censor_times)
+        best_guesses = np.empty(shape=event_times.size)
+        test_data_size = event_times.size
+        sub_expect_time = km_model._compute_best_guess(0)
+        train_data_size = train_event_times.size
+        total_event_time = np.empty(shape=train_data_size + 1)
+        total_event_indicator = np.empty(shape=train_data_size + 1)
+        total_event_time[0:-1] = train_event_times
+        total_event_indicator[0:-1] = train_event_indicators
+        for i in range(test_data_size):
+            if event_indicators[i] == 1:
+                best_guesses[i] = event_times[i]
+            else:
+                total_event_time[-1] = event_times[i]
+                total_event_indicator[-1] = event_indicators[i]
+                total_km_model = KaplanMeierArea(total_event_time, total_event_indicator)
+                total_expect_time = total_km_model._compute_best_guess(0)
+                best_guesses[i] = (train_data_size + 1) * total_expect_time - train_data_size * sub_expect_time
+        if log_scale:
+            scores = np.log(best_guesses) - np.log(predicted_times)
+        else:
+            scores = best_guesses - predicted_times
+        weighted_multiplier = 1 / np.sum(weights)
+        return weighted_multiplier * np.sum(np.abs(scores) * weights)
     else:
-        error = """Please enter one of 'Uncensored', 'Hinge', or 'Margin' for L1 loss type."""
-        raise TypeError(error)
+        raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW', "
+                         "or 'Pseudo_obs'.")
+
+
+if __name__ == "__main__":
+    # Test the functions
+    train_t = np.array([0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                        26, 27, 28, 29, 30, 31, 32, 33, 34,  60, 61, 62, 63, 64, 65, 66, 67,
+                        74, 75, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93,
+                        98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+                        117, 118, 119, 120, 120, 120, 121, 121, 124, 125, 126, 127, 128, 129,
+                        136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
+                        155, 156, 157, 158, 159, 161, 182, 183, 186, 190, 191, 192, 192, 192,
+                        193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 202, 203,
+                        204, 202, 203, 204, 212, 213, 214, 215, 216, 217, 222, 223, 224])
+    train_e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+                        1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                        0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+                        0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
+                        0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
+                        1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0,
+                        0, 0, 1, 1, 0, 0, 0, 0, 0, 0])
+    t = np.array([5, 10, 19, 31, 43, 59, 63, 75, 97, 113, 134, 151, 163, 176, 182, 195, 200, 210, 220])
+    e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
+    predict_time = np.array([18, 19, 5, 12, 75, 100, 120, 85, 36, 95, 170, 41, 200, 210, 260, 86, 100, 120, 140])
+    l1 = l1_loss(predict_time, t, e, train_t, train_e, method='IPCW')
+    print(l1)
