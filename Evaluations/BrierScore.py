@@ -101,11 +101,11 @@ def single_brier_score(
     # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
     # contain both censored and uncensored individuals.
     weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
-    # predict returns NA if the passed in time is greater than any of the times used to build the inverse probability
+    # predict returns NA if the passed-in time is greater than any of the times used to build the inverse probability
     # of censoring model.
     weight_cat2[np.isnan(weight_cat2)] = 0
 
-    b_score = np.mean(np.square(predict_probs) * weight_cat1 + np.square(1 - predict_probs) * weight_cat2)
+    b_score = (np.square(predict_probs) * weight_cat1 + np.square(1 - predict_probs) * weight_cat2).mean()
     ###########################
     # Here we are ordering event times and then using predict with level.chaos = 1 which returns
     # predictions ordered by time.

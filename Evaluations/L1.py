@@ -135,14 +135,14 @@ def l1_loss(
             scores = np.log(event_times[event_indicators]) - np.log(predicted_times[event_indicators])
         else:
             scores = event_times[event_indicators] - predicted_times[event_indicators]
-        return np.mean(np.abs(scores))
+        return np.abs(scores).mean()
     elif method == "Hinge":
         if log_scale:
             scores = np.log(event_times) - np.log(predicted_times)
         else:
             scores = event_times - predicted_times
         scores[~event_indicators] = np.maximum(scores[~event_indicators], 0)
-        return np.mean(np.abs(scores))
+        return np.abs(scores).mean()
     elif method == "Margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set values must be included."
@@ -189,7 +189,7 @@ def l1_loss(
             scores[~event_indicators] = weights * (best_guesses - predicted_times[~event_indicators])
         weighted_multiplier = 1 / (np.sum(event_indicators) + np.sum(weights))
         return weighted_multiplier * np.sum(np.abs(scores))
-    elif method == "IPCW":
+    elif method == "IPCW-v1":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'ipcw' is chosen, training set values must be included."
             raise ValueError(error)
@@ -225,6 +225,22 @@ def l1_loss(
             scores = best_guesses - predicted_times
         weighted_multiplier = 1 / np.sum(weights)
         return weighted_multiplier * np.sum(np.abs(scores) * weights)
+    elif method == "IPCW-v2":
+        if train_event_times is None or train_event_indicators is None:
+            error = "If 'ipcw' is chosen, training set values must be included."
+            raise ValueError(error)
+        # Use KM to estimate the censor distribution
+        inverse_train_event_indicators = 1 - train_event_indicators
+
+        ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
+        ipc_pred = ipc_model.predict(event_times)
+        # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
+        ipc_pred[ipc_pred == 0] = np.inf
+        if log_scale:
+            scores = np.log(event_times) - np.log(predicted_times)
+        else:
+            scores = event_times - predicted_times
+        return (np.abs(scores)[event_indicators] / ipc_pred[event_indicators]).mean()
     elif method == "Pseudo_obs":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'pseudo_observation' is chosen, training set values must be included."
@@ -266,7 +282,7 @@ def l1_loss(
         weighted_multiplier = 1 / np.sum(weights)
         return weighted_multiplier * np.sum(np.abs(scores) * weights)
     else:
-        raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW', "
+        raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-v1', 'IPCW-v2' "
                          "or 'Pseudo_obs'.")
 
 
