@@ -1,11 +1,14 @@
+from typing import Union
 import numpy as np
 import pandas as pd
 import warnings
 from typing import Optional, Callable
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
+from abc import ABC
+from functools import cached_property
 
-from Evaluations.custom_types import Numeric, NumericArrayLike
+from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert
 from Evaluations.util import predict_mean_survival_time, predict_median_survival_time
 from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve
@@ -17,7 +20,7 @@ from Evaluations.One_Calibration import one_calibration
 from Evaluations.D_Calibration import d_calibration
 
 
-class BaseEvaluator:
+class SurvivalEvaluator:
     def __init__(
             self,
             predicted_survival_curves: NumericArrayLike,
@@ -25,7 +28,8 @@ class BaseEvaluator:
             test_event_times: NumericArrayLike,
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
-            train_event_indicators: Optional[NumericArrayLike] = None
+            train_event_indicators: Optional[NumericArrayLike] = None,
+            predict_time_method: str = "Median"
     ):
         """
         Initialize the Evaluator
@@ -51,11 +55,21 @@ class BaseEvaluator:
 
         if (train_event_times is not None) and (train_event_indicators is not None):
             train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
-        else:
-            warnings.warn("Train set information is missing. Evaluator cannot perform single time Brier score, "
-                          "integrated Brier score, and L1-margin loss analysis")
         self.train_event_times = train_event_times
         self.train_event_indicators = train_event_indicators
+
+        if predict_time_method == "Median":
+            self.predict_time_method = predict_median_survival_time
+        elif predict_time_method == "Mean":
+            self.predict_time_method = predict_mean_survival_time
+        else:
+            error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
+            raise TypeError(error)
+
+    def _error_trainset(self, method_name: str):
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError("Train set information is missing. "
+                            "Evaluator cannot perform {} evaluation.".format(method_name))
 
     @property
     def predicted_curves(self):
@@ -65,6 +79,7 @@ class BaseEvaluator:
     def predicted_curves(self, val):
         print("Setter called. Resetting predicted curves for this evaluator.")
         self._predicted_curves = val
+        self._clear_cache()
 
     @property
     def time_coordinates(self):
@@ -74,15 +89,31 @@ class BaseEvaluator:
     def time_coordinates(self, val):
         print("Setter called. Resetting time coordinates for this evaluator.")
         self._time_coordinates = val
+        self._clear_cache()
+
+    @cached_property
+    def predicted_event_times(self):
+        return self.predict_time_from_curve(self.predict_time_method)
+
+    def _clear_cache(self):
+        # See how to clear cache in functools:
+        # https://docs.python.org/3/library/functools.html#functools.cached_property
+        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
+        self.__dict__.pop('predicted_event_times', None)
 
     def predict_time_from_curve(
             self,
             predict_method: Callable,
     ) -> np.ndarray:
         """
-
-        :param predict_method:
-        :return:
+        Predict survival time from survival curves.
+        :param predict_method: Callable
+            A function that takes in a survival curve and returns a predicted survival time.
+            There are two build-in methods: 'predict_median_survival_time' and 'predict_mean_survival_time'.
+            'predict_median_survival_time' uses the median of the survival curve as the predicted survival time.
+            'predict_mean_survival_time' uses the expected time of the survival curve as the predicted survival time.
+        :return: np.ndarray
+            Predicted survival time for each sample.
         """
         if (predict_method is not predict_mean_survival_time) and (predict_method is not predict_median_survival_time):
             error = "Prediction method must be 'predict_mean_survival_time' or 'predict_median_survival_time', " \
@@ -98,16 +129,33 @@ class BaseEvaluator:
 
     def predict_probability_from_curve(
             self,
-            target_time: float
+            target_time: Union[float, int, np.ndarray],
     ) -> np.ndarray:
         """
-
-        :param target_time:
-        :return:
+        Predict a probability of event at a given time point from a predicted curve. Each predicted curve will only
+        have one corresponding probability. Note that this method is different from the
+        'predict_multi_probabilities_from_curve' method, which predicts the multiple probabilities at multiple time
+        points from a predicted curve.
+        :param target_time: float, int, or array-like, shape = (n_samples, )
+            Time point(s) at which the probability of event is to be predicted. If float or int, the same time point is
+            used for all samples. If array-like, each sample will have it own target time. The length of the array must
+            be the same as the number of samples.
+        :return: array-like, shape = (n_samples, )
+            Predicted probabilities of event at the target time point(s).
         """
+        if isinstance(target_time, (float, int)):
+            target_time = target_time * np.ones_like(self.event_times)
+        elif isinstance(target_time, np.ndarray):
+            assert target_time.ndim == 1, "Target time must be a 1D array"
+            assert target_time.shape[0] == self.predicted_curves.shape[0], "Target time must have the same length as " \
+                                                                           "the number of samples"
+        else:
+            error = "Target time must be a float, int, or 1D array, got '{}' instead".format(type(target_time))
+            raise TypeError(error)
+
         predict_probs = []
         for i in range(self.predicted_curves.shape[0]):
-            predict_prob = predict_prob_from_curve(self.predicted_curves[i, :], self.time_coordinates, target_time)
+            predict_prob = predict_prob_from_curve(self.predicted_curves[i, :], self.time_coordinates, target_time[i])
             predict_probs.append(predict_prob)
         predict_probs = np.array(predict_probs)
         return predict_probs
@@ -117,9 +165,11 @@ class BaseEvaluator:
             target_times: np.ndarray
     ) -> np.ndarray:
         """
-
-        :param target_times:
-        :return:
+        Predict the probability of event at multiple time points from the predicted curve.
+        param target_times: array-like, shape = (n_target_times)
+            Time points at which the probability of event is to be predicted.
+        :return: array-like, shape = (n_samples, n_target_times)
+            Predicted probabilities of event at the target time points.
         """
         predict_probs_mat = []
         for i in range(self.predicted_curves.shape[0]):
@@ -133,55 +183,76 @@ class BaseEvaluator:
             self,
             curve_indices,
             color=None,
-            ordered: bool=True,
-            xlim=None,
-            title: str=''
+            xlim: tuple = None,
+            ylim: tuple = None,
+            xlabel: str = 'Time',
+            ylabel: str = 'Survival probability',
+            figsize: tuple = (8, 6),
     ):
-        raise NotImplementedError
+        """Plot survival curves."""
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.plot(self.time_coordinates, self.predicted_curves[curve_indices, :].T, color=color, label=curve_indices)
+        if ylim is None:
+            ax.set_ylim(0, 1.02)
+        else:
+            ax.set_ylim(ylim)
+
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.legend()
+        return fig, ax
 
     def concordance(
             self,
-            method: str = "Comparable",
             ties: str = "None",
-            predicted_time_method: str = "Median"
+            pair_method: str = "Comparable"
     ) -> (float, float, int):
         """
-
-        :param method: str, default = "Comparable"
-            A string indicating the concordance method. "Comparable" or "Margin"
+        Calculate the concordance index between the predicted survival times and the true survival times.
         :param ties: str, default = "None"
-            A string indicating the way ties should be handled. Options: "None" will throw out all ties in
-            survival time and all ties from risk scores. "Time" includes ties in survival time but removes ties
-            in risk scores. "Risk" includes ties in risk scores but not in survival time. "All" includes all
-            ties (both in survival time and in risk scores). Note the concordance calculation is given by
+            A string indicating the way ties should be handled.
+            Options: "None" (default), "Time", "Risk", or "All"
+            "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
+            "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
+            "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
+            "All" includes all ties.
+            Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        :param predicted_time_method:
-        :return:
+        :param pair_method: str, default = "Comparable"
+            A string indicating the method for constructing the pairs of samples.
+            Options: "Comparable" (default) or "Margin"
+            "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
+            event time of all other samples. The pairs are only constructed between samples with comparable
+            event times. For example, if sample i has a censor time of 10, then the pairs are constructed by
+            comparing the predicted survival time of sample i with the event time of all samples with event
+            time of 10 or less.
+            "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
+            will be calculated and used to construct the pairs.
+        :return: (float, float, int)
+            The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # Choose prediction method based on the input argument
-        if predicted_time_method == "Median":
-            predict_method = predict_median_survival_time
-        elif predicted_time_method == "Mean":
-            predict_method = predict_mean_survival_time
-        else:
-            error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-            raise TypeError(error)
+        if pair_method == "Margin" and (self.train_event_times is None or self.train_event_indicators is None):
+            self._error_trainset("margin concordance")
 
-        predicted_times = self.predict_time_from_curve(predict_method)
-        return concordance(predicted_times, self.event_times, self.event_indicators, self.train_event_times,
-                       self.train_event_indicators, method, ties)
+        return concordance(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
+                           self.train_event_indicators, pair_method, ties)
 
     def brier_score(
             self,
-            target_time: float = None
+            target_time: Optional[Union[int, float]] = None
     ) -> float:
         """
-
-        :param target_time:
-        :return:
+        Calculate the Brier score at a given time point from the predicted survival curve.
+        :param target_time: float, int, or None, default = None
+            Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
+            median time of all the event/censor times from the training and test sets.
+        :return: float
+            The Brier score at the target time point.
         """
-        if (self.train_event_times is None) or (self.train_event_indicators is None):
-            raise ValueError("Don't have information for training set, cannot do IPCW weighting")
+        self._error_trainset("Brier score (BS)")
 
         if target_time is None:
             target_time = np.quantile(np.concatenate((self.event_times, self.train_event_times)), 0.5)
@@ -202,6 +273,8 @@ class BaseEvaluator:
         :return:
             Values of multiple Brier scores.
         """
+        self._error_trainset("Brier score (BS)")
+
         predict_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 
         return brier_multiple_points(predict_probs_mat, self.event_times, self.event_indicators, self.train_event_times,
@@ -218,8 +291,7 @@ class BaseEvaluator:
         :param draw_figure:
         :return:
         """
-        if (self.train_event_times is None) or (self.train_event_indicators is None):
-            raise ValueError("Don't have information for training set, cannot do IPCW weighting")
+        self._error_trainset("Integrated Brier Score (IBS)")
 
         max_target_time = np.amax(np.concatenate((self.event_times, self.train_event_times)))
 
@@ -272,41 +344,38 @@ class BaseEvaluator:
     def l1_loss(
             self,
             method: str = "Hinge",
-            log_scale: bool = False,
-            predicted_time_method: str = "Median"
+            log_scale: bool = False
     ) -> float:
         """
         Calculate the L1 loss for the test set.
         :param method: string, default: "Hinge"
+            The method used to calculate the L1 loss.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"
         :param log_scale: boolean, default: False
-        :param predicted_time_method: string, default: "Median"
-        :return:
-            Value for the calculated L1 loss.
+            Whether to use log scale for the time axis.
+        :return: float
+            The L1 loss for the test set.
         """
-        if predicted_time_method == "Median":
-            predict_method = predict_median_survival_time
-        elif predicted_time_method == "Mean":
-            predict_method = predict_mean_survival_time
-        else:
-            error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-            raise TypeError(error)
-
-        # get median/mean survival time from the predicted curve
-        predicted_times = self.predict_time_from_curve(predict_method)
-        return l1_loss(predicted_times, self.event_times, self.event_indicators, self.train_event_times,
+        return l1_loss(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
                        self.train_event_indicators, method, log_scale)
 
     def one_calibration(
             self,
-            target_time: Numeric,
+            target_time: Union[float, int],
             num_bins: int = 10,
             method: str = "DN"
     ) -> (float, list, list):
         """
-        :param target_time:
-        :param num_bins:
-        :param method:
-        :return:
+        Calculate the one calibration score at a given time point from the predicted survival curve.
+        :param target_time: float, int
+            Time point at which the one calibration score is to be calculated.
+        :param num_bins: int, default: 10
+            Number of bins used to calculate the one calibration score.
+        :param method: string, default: "DN"
+            The method used to calculate the one calibration score.
+            Options: "Uncensored", or "DN" (default)
+        :return: float, list, list
+            (p-value, observed probabilities, expected probabilities)
         """
         predict_probs = self.predict_probability_from_curve(target_time)
         return one_calibration(predict_probs, self.event_times, self.event_indicators, target_time, num_bins, method)
@@ -316,30 +385,28 @@ class BaseEvaluator:
             num_bins: int = 10
     ) -> (float, np.ndarray):
         """
-        :param num_bins:
-        :return:
+        Calculate the D calibration score from the predicted survival curve.
+        :param num_bins: int, default: 10
+            Number of bins used to calculate the D calibration score.
+        :return: float, np.ndarray
             (p-value, counts in bins)
         """
-        predict_probs = []
-        for i in range(self.predicted_curves.shape[0]):
-            predict_prob = predict_prob_from_curve(self.predicted_curves[i, :], self.time_coordinates,
-                                                   self.event_times[i])
-            predict_probs.append(predict_prob)
-        predict_probs = np.array(predict_probs)
+        predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
 
 
-class PycoxEvaluator(BaseEvaluator):
+class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
             self,
             surv: pd.DataFrame,
             test_event_times: NumericArrayLike,
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
-            train_event_indicators: Optional[NumericArrayLike] = None
+            train_event_indicators: Optional[NumericArrayLike] = None,
+            predict_time_method: str = "Median"
     ):
         """
-
+        Evaluator for survival models in PyCox packages.
         :param surv: pd.DataFrame, shape = (n_time_points, n_samples)
             Predicted survival curves for the testing samples
             DataFrame index represents the time coordinates for the given curves.
@@ -348,29 +415,41 @@ class PycoxEvaluator(BaseEvaluator):
         :param test_event_indicators:
         :param train_event_times:
         :param train_event_indicators:
+        :param predict_time_method: string, default: "median"
         """
         time_coordinates = surv.index.values
         predicted_survival_curves = surv.values.T
         # Pycox models can sometimes obtain -0 as survival probabilities. Need to convert that to 0.
         predicted_survival_curves[predicted_survival_curves < 0] = 0
         super(PycoxEvaluator, self).__init__(predicted_survival_curves, time_coordinates, test_event_times,
-                                             test_event_indicators, train_event_times, train_event_indicators)
+                                             test_event_indicators, train_event_times, train_event_indicators,
+                                             predict_time_method)
 
 
-class LifelinesEvaluator(PycoxEvaluator):
+class LifelinesEvaluator(PycoxEvaluator, ABC):
     def __init__(
             self,
             surv: pd.DataFrame,
             test_event_times: NumericArrayLike,
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
-            train_event_indicators: Optional[NumericArrayLike] = None
+            train_event_indicators: Optional[NumericArrayLike] = None,
+            predict_time_method: str = "Median"
     ):
+        """
+        Evaluator for survival models in Lifelines packages.
+        :param surv:
+        :param test_event_times:
+        :param test_event_indicators:
+        :param train_event_times:
+        :param train_event_indicators:
+        :param predict_time_method: string, default: "median"
+        """
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
-                                                 train_event_indicators)
+                                                 train_event_indicators, predict_time_method)
 
 
-class ScikitSurvivalEvaluator(BaseEvaluator):
+class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
     def __init__(
             self,
             surv: np.ndarray,
@@ -378,15 +457,16 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
-            with_drop=None
+            predict_time_method: str = "Median"
     ):
         """
-
+        Evaluator for survival models in scikit-survival packages.
         :param surv:
         :param test_event_times:
         :param test_event_indicators:
         :param train_event_times:
         :param train_event_indicators:
+        :param predict_time_method: string, default: "median"
         """
         time_coordinates = surv[0].x
         predict_curves = []
@@ -406,9 +486,6 @@ class ScikitSurvivalEvaluator(BaseEvaluator):
                                                       len(time_coordinates) - 1])
             # max_prob_at_end + (1 - max_prob_at_end) * 0.9
             predicted_curves[idx_need_fix, len(time_coordinates) - 1] = max(0.1 * max_prob_at_end + 0.9, 0.99)
-        if with_drop is not None:
-            # This is a experimental test, will be deleted afterwards.
-            time_coordinates = np.concatenate([time_coordinates, np.array([with_drop])], 0)
-            predicted_curves = np.concatenate([predicted_curves, np.zeros([len(predicted_curves), 1])], 1)
         super(ScikitSurvivalEvaluator, self).__init__(predicted_curves, time_coordinates, test_event_times,
-                                                      test_event_indicators, train_event_times, train_event_indicators)
+                                                      test_event_indicators, train_event_times, train_event_indicators,
+                                                      predict_time_method)

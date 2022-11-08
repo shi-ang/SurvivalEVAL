@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Optional
+import warnings
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
@@ -13,7 +14,8 @@ def concordance_pycox(
         ties: str = "None",
         predicted_time_method: str = "Median"
 ) -> (float, float, int):
-
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     event_time, event_indicator = check_and_convert(event_time, event_indicator)
     # Extracting the time buckets
     time_coordinates = predicted_survival_curves.index.values
@@ -36,7 +38,7 @@ def concordance_pycox(
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
 
-    return concordance(predicted_times, event_time, event_indicator, ties)
+    return concordance(predicted_times, event_time, event_indicator, ties=ties)
 
 
 def concordance_sksurv(
@@ -46,6 +48,8 @@ def concordance_sksurv(
         ties: str = "None",
         predicted_time_method: str = "Median"
 ) -> (float, float, int):
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     event_time, event_indicator = check_and_convert(event_time, event_indicator)
 
     if predicted_time_method == "Median":
@@ -63,7 +67,7 @@ def concordance_sksurv(
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
 
-    return concordance(predicted_times, event_time, event_indicator, ties)
+    return concordance(predicted_times, event_time, event_indicator, ties=ties)
 
 
 def concordance(
@@ -72,24 +76,41 @@ def concordance(
         event_indicators: np.ndarray,
         train_event_times: Optional[np.ndarray] = None,
         train_event_indicators: Optional[np.ndarray] = None,
-        method: str = "Comparable",
+        pair_method: str = "Comparable",
         ties: str = "Risk"
 ) -> (float, float, int):
-
     """
-    :param predicted_times:
-    :param event_times:
-    :param event_indicators:
-    :param train_event_times:
-    :param train_event_indicators:
-    :param method:
-    :param ties:
-        A string indicating the way ties should be handled. Options: "None" will throw out all ties in
-        survival time and all ties from risk scores. "Time" includes ties in survival time but removes ties
-        in risk scores. "Risk" includes ties in risk scores but not in survival time. "All" includes all
-        ties (both in survival time and in risk scores). Note the concordance calculation is given by
+    Calculate the concordance index between the predicted survival times and the true survival times.
+    :param predicted_times: array-like, shape = (n_samples,)
+        The predicted survival times.
+    :param event_times: array-like, shape = (n_samples,)
+        The true survival times.
+    :param event_indicators: array-like, shape = (n_samples,)
+        The event indicators of the true survival times.
+    :param train_event_times: array-like, shape = (n_train_samples,)
+        The true survival times of the training set.
+    :param train_event_indicators: array-like, shape = (n_train_samples,)
+        The event indicators of the true survival times of the training set.
+    :param pair_method: str, optional (default="Comparable")
+        A string indicating the method for constructing the pairs of samples.
+        "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
+        event time of all other samples. The pairs are only constructed between samples with comparable
+        event times. For example, if sample i has a censor time of 10, then the pairs are constructed by
+        comparing the predicted survival time of sample i with the event time of all samples with event
+        time of 10 or less.
+        "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
+        will be calculated and used to construct the pairs.
+    :param ties: str, optional (default="Risk")
+        A string indicating the way ties should be handled.
+        Options: "None" (default), "Time", "Risk", or "All"
+        "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
+        "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
+        "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
+        "All" includes all ties.
+        Note the concordance calculation is given by
         (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-    :return:
+    :return: (float, float, int)
+        The concordance index, the number of concordant pairs, and the number of total pairs.
     """
     # the scikit-survival concordance function only takes risk scores to calculate.
     # So at first we should transfer the predicted time -> risk score.
@@ -97,13 +118,13 @@ def concordance(
 
     event_indicators = event_indicators.astype(bool)
 
-    if method == "Comparable":
-        risk = -1 * predicted_times
+    if pair_method == "Comparable":
+        risks = -1 * predicted_times
         partial_weights = None
         bg_event_times = None
-    elif method == "Margin":
+    elif pair_method == "Margin":
         if train_event_times is None or train_event_indicators is None:
-            error = "If 'Margin' is chosen, training set values must be included."
+            error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)
 
         train_event_indicators = train_event_indicators.astype(bool)
@@ -113,7 +134,7 @@ def concordance(
         if np.isinf(km_linear_zero):
             km_linear_zero = max(km_model.survival_times)
         predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
-        risk = -1 * predicted_times
+        risks = -1 * predicted_times
 
         censor_times = event_times[~event_indicators]
         partial_weights = np.ones_like(event_indicators, dtype=float)
@@ -131,7 +152,7 @@ def concordance(
     # cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
     #     event_indicators, event_times, estimate=risk)
     cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = _estimate_concordance_index(
-        event_indicators, event_times, estimate=risk, bg_event_time=bg_event_times, partial_weights=partial_weights)
+        event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
     if ties == "None":
         total_pairs = concordant_pairs + discordant_pairs
         cindex = concordant_pairs / total_pairs

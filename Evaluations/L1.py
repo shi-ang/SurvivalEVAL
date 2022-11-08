@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 import scipy.integrate as integrate
+import warnings
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
@@ -37,6 +38,8 @@ def l1_loss_pycox(
     :return:
         Value for the calculated L1 loss.
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     if (train_event_times is not None) and (train_event_indicators is not None):
         train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
@@ -94,6 +97,8 @@ def l1_loss_sksurv(
     :return:
         Value for the calculated L1 loss.
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     if (train_event_times is not None) and (train_event_indicators is not None):
         train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)

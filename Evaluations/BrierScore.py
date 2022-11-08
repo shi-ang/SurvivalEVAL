@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
+import warnings
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
@@ -37,6 +38,8 @@ def single_brier_score_pycox(
     :return:
         Value of the brier score.
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
 
@@ -223,6 +226,8 @@ def integrated_brier_score_pycox(
         Default None, which will use the test set true event times as the time points.
     :return:
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
     max_target_time = np.amax(np.concatenate((event_times, train_event_times)))
@@ -296,6 +301,8 @@ def brier_multiple_points_pycox(
     :return:
         Values of multiple Brier scores.
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
     # Extracting the time buckets
@@ -377,6 +384,8 @@ def integrated_brier_score_sksurv(
         Default None, which will use the test set true event times as the time points.
     :return:
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
     max_target_time = np.amax(np.concatenate((event_times, train_event_times)))
@@ -450,6 +459,8 @@ def brier_multiple_points_sksurv(
     :return:
         Values of multiple Brier scores.
     """
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     event_times, event_indicators = check_and_convert(event_times, event_indicators)
     train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
 

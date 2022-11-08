@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2
+import warnings
 
 from Evaluations.custom_types import Numeric, NumericArrayLike
 from Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve
@@ -14,6 +15,8 @@ def one_calibration_pycox(
         num_bins: int = 10,
         method: str = "DN"
 ) -> (float, list, list):
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     # Checking the format of the data
     true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
     # Extracting the time buckets
@@ -38,6 +41,8 @@ def one_calibration_sksurv(
         num_bins: int = 10,
         method: str = "DN"
 ) -> (float, list, list):
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     # Checking the format of the data
     true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
     predictions = []

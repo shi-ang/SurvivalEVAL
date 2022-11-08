@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import chisquare
+import warnings
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert, predict_prob_from_curve
@@ -20,7 +21,8 @@ def d_calibration_pycox(
     :param num_bins:
     :return:
     """
-
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     # Checking the format of the data
     true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
     # Extracting the time buckets
@@ -76,7 +78,8 @@ def d_calibration_sksurv(
     :param num_bins:
     :return:
     """
-
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
     # Checking the format of the data
     true_event_times, uncensor_status = check_and_convert(event_time, event_indicator)
 
@@ -91,6 +94,8 @@ def d_calibration_sksurv(
 
 
 def d_calibration_pysurvival(model, X, T, E, num_bins=10) -> (np.ndarray, float):
+    warnings.warn("This function is deprecated and might be deleted in the future. "
+                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
     # Checking the format of the data
     true_event_times, uncensor_status = check_and_convert(T, E)
     # computing the Survival function
