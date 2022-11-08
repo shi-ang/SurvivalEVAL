@@ -4,7 +4,8 @@ from typing import Optional
 import warnings
 
 from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
+from Evaluations.util import (check_and_convert, KaplanMeierArea,
+                              predict_mean_survival_time, predict_median_survival_time)
 
 
 def concordance_pycox(
@@ -81,17 +82,17 @@ def concordance(
 ) -> (float, float, int):
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
-    :param predicted_times: array-like, shape = (n_samples,)
+    param predicted_times: array-like, shape = (n_samples,)
         The predicted survival times.
-    :param event_times: array-like, shape = (n_samples,)
+    param event_times: array-like, shape = (n_samples,)
         The true survival times.
-    :param event_indicators: array-like, shape = (n_samples,)
+    param event_indicators: array-like, shape = (n_samples,)
         The event indicators of the true survival times.
-    :param train_event_times: array-like, shape = (n_train_samples,)
+    param train_event_times: array-like, shape = (n_train_samples,)
         The true survival times of the training set.
-    :param train_event_indicators: array-like, shape = (n_train_samples,)
+    param train_event_indicators: array-like, shape = (n_train_samples,)
         The event indicators of the true survival times of the training set.
-    :param pair_method: str, optional (default="Comparable")
+    param pair_method: str, optional (default="Comparable")
         A string indicating the method for constructing the pairs of samples.
         "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
         event time of all other samples. The pairs are only constructed between samples with comparable
@@ -100,7 +101,7 @@ def concordance(
         time of 10 or less.
         "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
         will be calculated and used to construct the pairs.
-    :param ties: str, optional (default="Risk")
+    param ties: str, optional (default="Risk")
         A string indicating the way ties should be handled.
         Options: "None" (default), "Time", "Risk", or "All"
         "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -184,7 +185,7 @@ def _estimate_concordance_index(
         partial_weights: np.ndarray = None,
         tied_tol: float = 1e-8
 ):
-    order = np.argsort(event_time, kind = "stable")
+    order = np.argsort(event_time, kind="stable")
 
     comparable, tied_time, weight = _get_comparable(event_indicator, event_time, order)
 
@@ -227,7 +228,6 @@ def _estimate_concordance_index(
         # denominator += w_i * mask.sum()
         numerator += n_con + 0.5 * n_ties
         denominator += np.dot(w_i, mask.T)
-
 
         tied_risk += n_ties
         concordant += n_con

@@ -14,12 +14,24 @@ def d_calibration_pycox(
         num_bins: int = 10
 ) -> (float, np.ndarray):
     """
+    Calculate the D-Calibration score for PyCox models.
+    Parameters
+    ----------
+    predicted_survival_curves: pd.DataFrame
+        The predicted survival curves from the PyCox model.
+    event_time: NumericArrayLike
+        The true event times.
+    event_indicator: NumericArrayLike
+        The true event indicators.
+    num_bins: int
+        The number of bins to use for the D-Calibration score.
 
-    :param predicted_survival_curves:
-    :param event_time:
-    :param event_indicator:
-    :param num_bins:
-    :return:
+    Returns
+    -------
+    float
+        The D-Calibration score.
+    np.ndarray
+        The binning of the D-Calibration score.
     """
     warnings.warn("This function is deprecated and might be deleted in the future. "
                   "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)

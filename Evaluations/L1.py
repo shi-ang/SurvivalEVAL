@@ -5,7 +5,8 @@ import scipy.integrate as integrate
 import warnings
 
 from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert, predict_mean_survival_time, predict_median_survival_time, KaplanMeierArea
+from Evaluations.util import (check_and_convert, KaplanMeierArea,
+                              predict_mean_survival_time, predict_median_survival_time)
 
 
 def l1_loss_pycox(
@@ -19,22 +20,22 @@ def l1_loss_pycox(
         predicted_time_method: str = "Median"
 ) -> float:
     """
-
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    Calculate the L1 loss for the predicted survival curves from PyCox models.
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param method: string, default: "Hinge"
-    :param log_scale: boolean, default: False
-    :param predicted_time_method: string, default: "Median"
+    param method: string, default: "Hinge"
+    param log_scale: boolean, default: False
+    param predicted_time_method: string, default: "Median"
     :return:
         Value for the calculated L1 loss.
     """
@@ -78,22 +79,22 @@ def l1_loss_sksurv(
         predicted_time_method: str = "Median"
 ) -> float:
     """
-
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    Calculate the L1 loss for the predicted survival curves from scikit-survival models.
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param method: string, default: "Hinge"
-    :param log_scale: boolean, default: False
-    :param predicted_time_method: string, default: "Median"
+    param method: string, default: "Hinge"
+    param log_scale: boolean, default: False
+    param predicted_time_method: string, default: "Median"
     :return:
         Value for the calculated L1 loss.
     """
@@ -130,7 +131,29 @@ def l1_loss(
         method: str = "Hinge",
         log_scale: bool = False
 ) -> float:
+    """
+    Calculate the L1 loss for the predicted survival times.
+    Parameters
+    ----------
+    predicted_times: np.ndarray, shape = (n_samples, )
+        Predicted survival times for the testing samples
+    event_times: np.ndarray, shape = (n_samples, )
+        Actual event/censor time for the testing samples.
+    event_indicators: np.ndarray, shape = (n_samples, )
+        Binary indicators of censoring for the testing samples
+    train_event_times: np.ndarray, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    train_event_indicators: np.ndarray, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples
+    method: string, default: "Hinge"
+        Type of l1 loss to use. Options are "Uncensored", "Hinge", "Margin", "IPCW-v1", "IPCW-v2", and "Pseudo_obs".
+    log_scale: boolean, default: False
+        Whether to use log scale for the loss function.
 
+    Returns
+    -------
+    Value for the calculated L1 loss.
+    """
     event_indicators = event_indicators.astype(bool)
     if train_event_indicators is not None:
         train_event_indicators = train_event_indicators.astype(bool)

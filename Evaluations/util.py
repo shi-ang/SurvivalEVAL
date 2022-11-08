@@ -88,8 +88,8 @@ def predict_prob_from_curve(
     see https://en.wikipedia.org/wiki/Monotone_cubic_interpolation. Also see help(splinefun).
 
     Note that we make an alteration to the method because if the last two time points
-    have the same probability (y value) then the spline is constant outside of the training data.
-    We need this to be a decreasing function outside the training data so instead we take the linear fit of (0,1)
+    have the same probability (y value) then the spline is constant outside the training time range.
+    We need this to be a decreasing function outside the training data, so instead we take the linear fit of (0,1)
     and the last time point we have (p,t*) and then apply this linear function to all points outside of our fit.
     """
     x = robjects.FloatVector(times_coordinate)
@@ -127,8 +127,8 @@ def predict_multi_probs_from_curve(
     see https://en.wikipedia.org/wiki/Monotone_cubic_interpolation. Also see help(splinefun).
 
     Note that we make an alteration to the method because if the last two time points
-    have the same probability (y value) then the spline is constant outside of the training data.
-    We need this to be a decreasing function outside the training data so instead we take the linear fit of (0,1)
+    have the same probability (y value) then the spline is constant outside the training time range.
+    We need this to be a decreasing function outside the training data, so instead we take the linear fit of (0,1)
     and the last time point we have (p,t*) and then apply this linear function to all points outside of our fit.
     """
     target_times = check_and_convert(target_times).astype(float).tolist()
@@ -334,8 +334,7 @@ class KaplanMeierArea(KaplanMeier):
             censor_indexes - 1,
             censor_indexes,
         )
-        censor_area = (self.area_times[censor_indexes] - censor_times
-                      ) * self.area_probabilities[censor_indexes - 1]
+        censor_area = (self.area_times[censor_indexes] - censor_times) * self.area_probabilities[censor_indexes - 1]
         censor_area += self.area[censor_indexes]
         return censor_times + censor_area / surv_prob
 
@@ -376,4 +375,3 @@ class KaplanMeierArea(KaplanMeier):
         for i in range(len(censor_times)):
             bg_times[i] = self._compute_best_guess(censor_times[i])
         return bg_times
-

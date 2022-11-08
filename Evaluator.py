@@ -33,17 +33,17 @@ class SurvivalEvaluator:
     ):
         """
         Initialize the Evaluator
-        :param predicted_survival_curves: structured array, shape = (n_samples, n_time_points)
+        param predicted_survival_curves: structured array, shape = (n_samples, n_time_points)
             Predicted survival curves for the testing samples.
-        :param time_coordinates: structured array, shape = (n_time_points, )
+        param time_coordinates: structured array, shape = (n_time_points, )
             Time coordinates for the given curves.
-        :param test_event_times: structured array, shape = (n_samples, )
+        param test_event_times: structured array, shape = (n_samples, )
             Actual event/censor time for the testing samples.
-        :param test_event_indicators: structured array, shape = (n_samples, )
+        param test_event_indicators: structured array, shape = (n_samples, )
             Binary indicators of censoring for the testing samples
-        :param train_event_times: structured array, shape = (n_train_samples, )
+        param train_event_times: structured array, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
-        :param train_event_indicators: structured array, shape = (n_train_samples, )
+        param train_event_indicators: structured array, shape = (n_train_samples, )
             Binary indicators of censoring for the training samples
         """
         self._predicted_curves = check_and_convert(predicted_survival_curves)
@@ -107,7 +107,7 @@ class SurvivalEvaluator:
     ) -> np.ndarray:
         """
         Predict survival time from survival curves.
-        :param predict_method: Callable
+        param predict_method: Callable
             A function that takes in a survival curve and returns a predicted survival time.
             There are two build-in methods: 'predict_median_survival_time' and 'predict_mean_survival_time'.
             'predict_median_survival_time' uses the median of the survival curve as the predicted survival time.
@@ -136,7 +136,7 @@ class SurvivalEvaluator:
         have one corresponding probability. Note that this method is different from the
         'predict_multi_probabilities_from_curve' method, which predicts the multiple probabilities at multiple time
         points from a predicted curve.
-        :param target_time: float, int, or array-like, shape = (n_samples, )
+        param target_time: float, int, or array-like, shape = (n_samples, )
             Time point(s) at which the probability of event is to be predicted. If float or int, the same time point is
             used for all samples. If array-like, each sample will have it own target time. The length of the array must
             be the same as the number of samples.
@@ -183,24 +183,23 @@ class SurvivalEvaluator:
             self,
             curve_indices,
             color=None,
-            xlim: tuple = None,
-            ylim: tuple = None,
-            xlabel: str = 'Time',
-            ylabel: str = 'Survival probability',
-            figsize: tuple = (8, 6),
+            x_lim: tuple = None,
+            y_lim: tuple = None,
+            x_label: str = 'Time',
+            y_label: str = 'Survival probability'
     ):
         """Plot survival curves."""
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots()
         ax.plot(self.time_coordinates, self.predicted_curves[curve_indices, :].T, color=color, label=curve_indices)
-        if ylim is None:
+        if y_lim is None:
             ax.set_ylim(0, 1.02)
         else:
-            ax.set_ylim(ylim)
+            ax.set_ylim(y_lim)
 
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
+        if x_lim is not None:
+            ax.set_xlim(x_lim)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
         ax.legend()
         return fig, ax
 
@@ -211,7 +210,7 @@ class SurvivalEvaluator:
     ) -> (float, float, int):
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
-        :param ties: str, default = "None"
+        param ties: str, default = "None"
             A string indicating the way ties should be handled.
             Options: "None" (default), "Time", "Risk", or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -220,7 +219,7 @@ class SurvivalEvaluator:
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        :param pair_method: str, default = "Comparable"
+        param pair_method: str, default = "Comparable"
             A string indicating the method for constructing the pairs of samples.
             Options: "Comparable" (default) or "Margin"
             "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
@@ -246,7 +245,7 @@ class SurvivalEvaluator:
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
-        :param target_time: float, int, or None, default = None
+        param target_time: float, int, or None, default = None
             Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
             median time of all the event/censor times from the training and test sets.
         :return: float
@@ -268,7 +267,7 @@ class SurvivalEvaluator:
     ) -> np.ndarray:
         """
         Calculate multiple Brier scores at multiple specific times.
-        :param target_times: float, default: None
+        param target_times: float, default: None
             The specific time points for which to estimate the Brier scores.
         :return:
             Values of multiple Brier scores.
@@ -286,10 +285,14 @@ class SurvivalEvaluator:
             draw_figure: bool = False
     ) -> float:
         """
-
-        :param num_points:
-        :param draw_figure:
-        :return:
+        Calculate the integrated Brier score (IBS) from the predicted survival curve.
+        param num_points: int, default = None
+            Number of points at which the Brier score is to be calculated. If None, the number of points is set to
+            the number of event/censor times from the training and test sets.
+        param draw_figure: bool, default = False
+            Whether to draw the figure of the IBS.
+        :return: float
+            The integrated Brier score.
         """
         self._error_trainset("Integrated Brier Score (IBS)")
 
@@ -348,10 +351,10 @@ class SurvivalEvaluator:
     ) -> float:
         """
         Calculate the L1 loss for the test set.
-        :param method: string, default: "Hinge"
+        param method: string, default: "Hinge"
             The method used to calculate the L1 loss.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"
-        :param log_scale: boolean, default: False
+        param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         :return: float
             The L1 loss for the test set.
@@ -367,11 +370,11 @@ class SurvivalEvaluator:
     ) -> (float, list, list):
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
-        :param target_time: float, int
+        param target_time: float, int
             Time point at which the one calibration score is to be calculated.
-        :param num_bins: int, default: 10
+        param num_bins: int, default: 10
             Number of bins used to calculate the one calibration score.
-        :param method: string, default: "DN"
+        param method: string, default: "DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
         :return: float, list, list
@@ -386,7 +389,7 @@ class SurvivalEvaluator:
     ) -> (float, np.ndarray):
         """
         Calculate the D calibration score from the predicted survival curve.
-        :param num_bins: int, default: 10
+        param num_bins: int, default: 10
             Number of bins used to calculate the D calibration score.
         :return: float, np.ndarray
             (p-value, counts in bins)
@@ -407,15 +410,20 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
     ):
         """
         Evaluator for survival models in PyCox packages.
-        :param surv: pd.DataFrame, shape = (n_time_points, n_samples)
+        param surv: pd.DataFrame, shape = (n_time_points, n_samples)
             Predicted survival curves for the testing samples
             DataFrame index represents the time coordinates for the given curves.
             DataFrame value represents transpose of the survival probabilities.
-        :param test_event_times:
-        :param test_event_indicators:
-        :param train_event_times:
-        :param train_event_indicators:
-        :param predict_time_method: string, default: "median"
+        param test_event_times: NumericArrayLike, shape = (n_samples,)
+            Event times for the testing samples.
+        param test_event_indicators: NumericArrayLike, shape = (n_samples,)
+            Event indicators for the testing samples.
+        param train_event_times: NumericArrayLike, shape = (n_samples,), optional
+            Event times for the training samples.
+        param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+            Event indicators for the training samples.
+        param predict_time_method: string, default: "median"
+            The method used to calculate the predicted event time.
         """
         time_coordinates = surv.index.values
         predicted_survival_curves = surv.values.T
@@ -438,12 +446,18 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
     ):
         """
         Evaluator for survival models in Lifelines packages.
-        :param surv:
-        :param test_event_times:
-        :param test_event_indicators:
-        :param train_event_times:
-        :param train_event_indicators:
-        :param predict_time_method: string, default: "median"
+        param surv: pd.DataFrame, shape = (n_time_points, n_samples)
+            Predicted survival curves for the testing samples
+        param test_event_times: NumericArrayLike, shape = (n_samples,)
+            Event times for the testing samples.
+        param test_event_indicators: NumericArrayLike, shape = (n_samples,)
+            Event indicators for the testing samples.
+        param train_event_times: NumericArrayLike, shape = (n_samples,), optional
+            Event times for the training samples.
+        param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+            Event indicators for the training samples.
+        param predict_time_method: string, default: "median"
+            The method used to calculate the predicted event time.
         """
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
                                                  train_event_indicators, predict_time_method)
@@ -461,12 +475,19 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
     ):
         """
         Evaluator for survival models in scikit-survival packages.
-        :param surv:
-        :param test_event_times:
-        :param test_event_indicators:
-        :param train_event_times:
-        :param train_event_indicators:
-        :param predict_time_method: string, default: "median"
+        param surv: np.ndarray, shape = (n_samples,)
+            Predicted survival curves for the testing samples. Each element is a scikit-survival customized object.
+            '.x' attribute is the time coordinates for the given curve. '.y' attribute is the survival probabilities.
+        param test_event_times: NumericArrayLike, shape = (n_samples,)
+            Event times for the testing samples.
+        param test_event_indicators: NumericArrayLike, shape = (n_samples,)
+            Event indicators for the testing samples.
+        param train_event_times: NumericArrayLike, shape = (n_samples,), optional
+            Event times for the training samples.
+        param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+            Event indicators for the training samples.
+        param predict_time_method: string, default: "median"
+            The method used to calculate the predicted event time.
         """
         time_coordinates = surv[0].x
         predict_curves = []

@@ -21,19 +21,19 @@ def single_brier_score_pycox(
 
     The time-dependent Brier score is the mean squared error at time point :math:`t`:
 
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times: structured array, shape = (n_train_samples, )
+    param train_event_times: structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param target_time: float, default: None
+    param target_time: float, default: None
         The specific time point for which to estimate the Brier score.
     :return:
         Value of the brier score.
@@ -72,17 +72,17 @@ def single_brier_score(
 ) -> float:
     """
 
-    :param predict_probs: numpy array, shape = (n_samples, )
+    param predict_probs: numpy array, shape = (n_samples, )
         Estimated survival probabilities at the specific time for the testing samples.
-    :param event_times: numpy array, shape = (n_samples, )
+    param event_times: numpy array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: numpy array, shape = (n_samples, )
+    param event_indicators: numpy array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:numpy array, shape = (n_train_samples, )
+    param train_event_times:numpy array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: numpy array, shape = (n_train_samples, )
+    param train_event_indicators: numpy array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param target_time: float, default: None
+    param target_time: float, default: None
         The specific time point for which to estimate the Brier score.
     :return:
         Values of the brier score.
@@ -208,22 +208,24 @@ def integrated_brier_score_pycox(
         draw_figure: bool = False
 ) -> float:
     """
-
-:param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    Calculate the integrated Brier score (IBS) for a set of predicted survival curves predicted from Pycox model.
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param num_points: integer, default: None
+    param num_points: integer, default: None
         The number of points to calculate the Integrated Brier Score.
         Default None, which will use the test set true event times as the time points.
+    param draw_figure: boolean, default: False
+        Whether to draw the figure of the Integrated Brier Score.
     :return:
     """
     warnings.warn("This function is deprecated and might be deleted in the future. "
@@ -284,19 +286,19 @@ def brier_multiple_points_pycox(
     """
     Calculate multiple Brier scores at multiple specific times.
 
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_time_points, n_samples)
+    param predicted_survival_curves: pd.DataFrame, shape = (n_time_points, n_samples)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents transpose of the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param target_times: float, default: None
+    param target_times: float, default: None
         The specific time points for which to estimate the Brier scores.
     :return:
         Values of multiple Brier scores.
@@ -319,41 +321,6 @@ def brier_multiple_points_pycox(
 
     return brier_multiple_points(predict_probs_mat, event_times, event_indicators, train_event_times,
                                  train_event_indicators, target_times)
-    # inverse_train_event_indicators = 1 - train_event_indicators
-    #
-    # ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
-    # # sorted_test_event_times = np.argsort(event_times)
-    #
-    # if target_times.ndim != 1:
-    #     error = "'time_grids' is not a one-dimensional array."
-    #     raise TypeError(error)
-    #
-    # # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
-    # target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
-    # event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
-    # event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
-    # event_indicators_mat = event_indicators_mat.astype(bool)
-    # # Category one calculates IPCW weight at observed time point.
-    # # Category one is individuals with event time lower than the time of interest and were NOT censored.
-    # ipc_pred = ipc_model.predict(event_times_mat)
-    # # Catch if denominator is 0.
-    # ipc_pred[ipc_pred == 0] = np.inf
-    # weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
-    # # Catch if event times goes over max training event time, i.e. predict gives NA
-    # weight_cat1[np.isnan(weight_cat1)] = 0
-    # # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-    # # contain both censored and uncensored individuals.
-    # ipc_target_pred = ipc_model.predict(target_times_mat)
-    # # Catch if denominator is 0.
-    # ipc_target_pred[ipc_target_pred == 0] = np.inf
-    # weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-    # # predict returns NA if the passed in time is greater than any of the times used to build
-    # # the inverse probability of censoring model.
-    # weight_cat2[np.isnan(weight_cat2)] = 0
-    #
-    # ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
-    # brier_scores = np.mean(ipcw_square_error_mat, axis=0)
-    # return brier_scores
 
 
 def integrated_brier_score_sksurv(
@@ -366,20 +333,20 @@ def integrated_brier_score_sksurv(
         draw_figure: bool = False
 ) -> float:
     """
-
-:param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    Calculate the integrated Brier score (IBS) for the predicted survival curves from the scikit-survival package.
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param num_points: integer, default: None
+    param num_points: integer, default: None
         The number of points to calculate the Integrated Brier Score.
         Default None, which will use the test set true event times as the time points.
     :return:
@@ -405,7 +372,7 @@ def integrated_brier_score_sksurv(
     #########################
     # solution 1, implemented using metrics multiplication, this is geometrically faster than solution 2
     b_scores = brier_multiple_points_sksurv(predicted_survival_curves, event_times, event_indicators,
-                                           train_event_times, train_event_indicators, time_points)
+                                            train_event_times, train_event_indicators, time_points)
     if np.isnan(b_scores).any():
         print("Time-dependent Brier Score contains nan")
         print(b_scores)
@@ -441,20 +408,19 @@ def brier_multiple_points_sksurv(
 ) -> np.ndarray:
     """
     Calculate multiple Brier scores at multiple specific times.
-
-    :param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
+    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
         Predicted survival curves for the testing samples
         DataFrame index represents the time coordinates for the given curves.
         DataFrame value represents the survival probabilities.
-    :param event_times: structured array, shape = (n_samples, )
+    param event_times: structured array, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    param event_indicators: structured array, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    param train_event_times:structured array, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    param train_event_indicators: structured array, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param target_times: float, default: None
+    param target_times: float, default: None
         The specific time points for which to estimate the Brier scores.
     :return:
         Values of multiple Brier scores.
@@ -466,7 +432,8 @@ def brier_multiple_points_sksurv(
 
     predict_probs_mat = []
     for i in range(predicted_survival_curves.shape[0]):
-        predict_probs = predict_multi_probs_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y, target_times).tolist()
+        predict_probs = predict_multi_probs_from_curve(predicted_survival_curves[i].x, predicted_survival_curves[i].y,
+                                                       target_times).tolist()
         predict_probs_mat.append(predict_probs)
     predict_probs_mat = np.array(predict_probs_mat)
 

@@ -63,7 +63,32 @@ def one_calibration(
         num_bins: int = 10,
         method: str = "DN"
 ) -> (float, list, list):
+    """
+    Compute the one calibration score for a given set of predictions and true event times.
+    Parameters
+    ----------
+    predictions: np.ndarray
+        The predicted probabilities at the time of interest.
+    event_time: np.ndarray
+        The true event times.
+    event_indicator: np.ndarray
+        The indicator of whether the event is observed or not.
+    target_time: Numeric
+        The time of interest.
+    num_bins: int
+        The number of bins to divide the predictions into.
+    method: str
+        The method to handle censored patients. The options are: "DN" (default), and "Uncensored".
 
+    Returns
+    -------
+    score: float
+        The one calibration score.
+    observed_probabilities: list
+        The observed probabilities in each bin.
+    expected_probabilities: list
+        The expected probabilities in each bin.
+    """
     predictions = 1 - predictions
     sorted_idx = np.argsort(-predictions)
     sorted_predictions = predictions[sorted_idx]
