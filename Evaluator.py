@@ -1,8 +1,7 @@
-from typing import Union
 import numpy as np
 import pandas as pd
 import warnings
-from typing import Optional, Callable
+from typing import Union, Optional, Callable
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 from abc import ABC
@@ -347,20 +346,23 @@ class SurvivalEvaluator:
     def l1_loss(
             self,
             method: str = "Hinge",
+            weighted: bool = True,
             log_scale: bool = False
     ) -> float:
         """
         Calculate the L1 loss for the test set.
         param method: string, default: "Hinge"
             The method used to calculate the L1 loss.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default: True
+            Whether to use weighting scheme for L1 loss.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         :return: float
             The L1 loss for the test set.
         """
         return l1_loss(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
-                       self.train_event_indicators, method, log_scale)
+                       self.train_event_indicators, method, weighted, log_scale)
 
     def one_calibration(
             self,

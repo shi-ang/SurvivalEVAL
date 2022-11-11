@@ -65,7 +65,7 @@ def l1_loss_pycox(
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
     return l1_loss(predicted_times, event_times, event_indicators, train_event_times,
-                   train_event_indicators, method, log_scale)
+                   train_event_indicators, method, True, log_scale)
 
 
 def l1_loss_sksurv(
@@ -119,7 +119,7 @@ def l1_loss_sksurv(
         predicted_times.append(predicted_time)
     predicted_times = np.array(predicted_times)
     return l1_loss(predicted_times, event_times, event_indicators, train_event_times,
-                   train_event_indicators, method, log_scale)
+                   train_event_indicators, method, True, log_scale)
 
 
 def l1_loss(
@@ -129,6 +129,7 @@ def l1_loss(
         train_event_times: Optional[np.ndarray] = None,
         train_event_indicators: Optional[np.ndarray] = None,
         method: str = "Hinge",
+        weighted: bool = True,
         log_scale: bool = False
 ) -> float:
     """
@@ -147,6 +148,8 @@ def l1_loss(
         Binary indicators of censoring for the training samples
     method: string, default: "Hinge"
         Type of l1 loss to use. Options are "Uncensored", "Hinge", "Margin", "IPCW-v1", "IPCW-v2", and "Pseudo_obs".
+    weighted: boolean, default: True
+        Whether to use weighting scheme for l1 loss.
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
 
@@ -165,12 +168,19 @@ def l1_loss(
             scores = event_times[event_indicators] - predicted_times[event_indicators]
         return np.abs(scores).mean()
     elif method == "Hinge":
+        weights = np.ones(predicted_times.size)
+        if weighted:
+            km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+            censor_times = event_times[~event_indicators]
+            weights[~event_indicators] = 1 - km_model.predict(censor_times)
+
         if log_scale:
             scores = np.log(event_times) - np.log(predicted_times)
         else:
             scores = event_times - predicted_times
         scores[~event_indicators] = np.maximum(scores[~event_indicators], 0)
-        return np.abs(scores).mean()
+        weighted_multiplier = 1 / (np.sum(event_indicators) + np.sum(weights))
+        return weighted_multiplier * np.sum(np.abs(scores * weights))
     elif method == "Margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set values must be included."
@@ -204,7 +214,10 @@ def l1_loss(
                                          limit=2000)[0] / km_model.predict(time)
 
         censor_times = event_times[~event_indicators]
-        weights = 1 - km_model.predict(censor_times)
+        if weighted:
+            weights = 1 - km_model.predict(censor_times)
+        else:
+            weights = np.ones(censor_times.size)
         best_guesses = km_model.best_guess_revise(censor_times)
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
@@ -233,7 +246,8 @@ def l1_loss(
 
         censor_times = event_times[~event_indicators]
         weights = np.ones(event_times.size)
-        weights[~event_indicators] = 1 - km_model.predict(censor_times)
+        if weighted:
+            weights[~event_indicators] = 1 - km_model.predict(censor_times)
         best_guesses = np.empty(shape=event_times.size)
         for i in range(event_times.size):
             if event_indicators[i] == 1:
@@ -285,7 +299,8 @@ def l1_loss(
 
         censor_times = event_times[~event_indicators]
         weights = np.ones(event_times.size)
-        weights[~event_indicators] = 1 - km_model.predict(censor_times)
+        if weighted:
+            weights[~event_indicators] = 1 - km_model.predict(censor_times)
         best_guesses = np.empty(shape=event_times.size)
         test_data_size = event_times.size
         sub_expect_time = km_model._compute_best_guess(0)
@@ -308,10 +323,10 @@ def l1_loss(
         else:
             scores = best_guesses - predicted_times
         weighted_multiplier = 1 / np.sum(weights)
-        return weighted_multiplier * np.sum(np.abs(scores) * weights)
+        return weighted_multiplier * np.sum(np.abs(scores * weights))
     else:
         raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-v1', 'IPCW-v2' "
-                         "or 'Pseudo_obs'.")
+                         "or 'Pseudo_obs'. Got '{}' instead.".format(method))
 
 
 if __name__ == "__main__":
