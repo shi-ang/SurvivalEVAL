@@ -170,6 +170,9 @@ def l1_loss(
     elif method == "Hinge":
         weights = np.ones(predicted_times.size)
         if weighted:
+            if train_event_times is None or train_event_indicators is None:
+                error = "If 'weighted' is True for calculating Hinge, training set values must be included."
+                raise ValueError(error)
             km_model = KaplanMeierArea(train_event_times, train_event_indicators)
             censor_times = event_times[~event_indicators]
             weights[~event_indicators] = 1 - km_model.predict(censor_times)
@@ -324,9 +327,31 @@ def l1_loss(
             scores = best_guesses - predicted_times
         weighted_multiplier = 1 / np.sum(weights)
         return weighted_multiplier * np.sum(np.abs(scores * weights))
+    elif method == "Pseudo_obs_pop":
+        if train_event_times is None or train_event_indicators is None:
+            error = "If 'Pseudo_obs_pop' is chosen, training set values must be included."
+            raise ValueError(error)
+
+        # Calculate the population best guess time given the KM curve.
+        # The population best guess time is identical for all people.
+        km_model = KaplanMeierArea(train_event_times, train_event_indicators)
+        sub_expect_time = km_model._compute_best_guess(0)
+        best_guesses = event_times.copy()
+        best_guesses[~event_indicators] = sub_expect_time
+        censor_times = event_times[~event_indicators]
+        weights = np.ones(event_times.size)
+        if weighted:
+            weights[~event_indicators] = 1 - km_model.predict(censor_times)
+
+        if log_scale:
+            scores = np.log(best_guesses) - np.log(predicted_times)
+        else:
+            scores = best_guesses - predicted_times
+        weighted_multiplier = 1 / np.sum(weights)
+        return weighted_multiplier * np.sum(np.abs(scores * weights))
     else:
         raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-v1', 'IPCW-v2' "
-                         "or 'Pseudo_obs'. Got '{}' instead.".format(method))
+                         "'Pseudo_obs', or 'Pseudo_obs_pop'. Got '{}' instead.".format(method))
 
 
 if __name__ == "__main__":
@@ -350,5 +375,5 @@ if __name__ == "__main__":
     t = np.array([5, 10, 19, 31, 43, 59, 63, 75, 97, 113, 134, 151, 163, 176, 182, 195, 200, 210, 220])
     e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
     predict_time = np.array([18, 19, 5, 12, 75, 100, 120, 85, 36, 95, 170, 41, 200, 210, 260, 86, 100, 120, 140])
-    l1 = l1_loss(predict_time, t, e, train_t, train_e, method='IPCW')
+    l1 = l1_loss(predict_time, t, e, train_t, train_e, method='Pseudo_obs')
     print(l1)
