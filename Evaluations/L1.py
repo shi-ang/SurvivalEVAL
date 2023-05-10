@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from typing import Optional
-import scipy.integrate as integrate
 import warnings
 
 from Evaluations.custom_types import NumericArrayLike
@@ -198,24 +197,6 @@ def l1_loss(
             km_linear_zero = max(km_model.survival_times)
         # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
 
-        def _km_linear_predict(time):
-            slope = (1 - min(km_model.survival_probabilities)) / (0 - max(km_model.survival_times))
-
-            # predict_prob = np.empty_like(time)
-            # before_last_time_idx = time <= max(km_model.survival_times)
-            # after_last_time_idx = time > max(km_model.survival_times)
-            # predict_prob[before_last_time_idx] = km_model.predict(time[before_last_time_idx])
-            # predict_prob[after_last_time_idx] = np.clip(1 + time[after_last_time_idx] * slope, a_min=0, a_max=None)
-            if time <= max(km_model.survival_times):
-                predict_prob = km_model.predict(time)
-            else:
-                predict_prob = max(1 + time * slope, 0)
-            return predict_prob
-
-        def _compute_best_guess(time):
-            return time + integrate.quad(_km_linear_predict, time, km_linear_zero,
-                                         limit=2000)[0] / km_model.predict(time)
-
         censor_times = event_times[~event_indicators]
         if weighted:
             weights = 1 - km_model.predict(censor_times)
@@ -306,7 +287,7 @@ def l1_loss(
             weights[~event_indicators] = 1 - km_model.predict(censor_times)
         best_guesses = np.empty(shape=event_times.size)
         test_data_size = event_times.size
-        sub_expect_time = km_model._compute_best_guess(0)
+        sub_expect_time = km_model.mean
         train_data_size = train_event_times.size
         total_event_time = np.empty(shape=train_data_size + 1)
         total_event_indicator = np.empty(shape=train_data_size + 1)
@@ -319,7 +300,7 @@ def l1_loss(
                 total_event_time[-1] = event_times[i]
                 total_event_indicator[-1] = event_indicators[i]
                 total_km_model = KaplanMeierArea(total_event_time, total_event_indicator)
-                total_expect_time = total_km_model._compute_best_guess(0)
+                total_expect_time = total_km_model.mean
                 best_guesses[i] = (train_data_size + 1) * total_expect_time - train_data_size * sub_expect_time
         if log_scale:
             scores = np.log(best_guesses) - np.log(predicted_times)
@@ -335,7 +316,7 @@ def l1_loss(
         # Calculate the population best guess time given the KM curve.
         # The population best guess time is identical for all people.
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
-        sub_expect_time = km_model._compute_best_guess(0)
+        sub_expect_time = km_model.mean
         best_guesses = event_times.copy()
         best_guesses[~event_indicators] = sub_expect_time
         censor_times = event_times[~event_indicators]

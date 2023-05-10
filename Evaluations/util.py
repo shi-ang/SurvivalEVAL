@@ -370,6 +370,10 @@ class KaplanMeierArea(KaplanMeier):
         #                                    limit=2000)[0] / self.predict(time)
         return best_guess
 
+    @property
+    def mean(self):
+        return self._compute_best_guess(0)
+
     def best_guess_revise(self, censor_times: np.array):
         bg_times = np.zeros_like(censor_times)
         for i in range(len(censor_times)):
