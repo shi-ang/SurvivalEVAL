@@ -14,8 +14,8 @@ from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_c
 
 from Evaluations.Concordance import concordance
 from Evaluations.BrierScore import single_brier_score, brier_multiple_points
-from Evaluations.L1 import l1_loss
-from Evaluations.One_Calibration import one_calibration
+from Evaluations.MeanError import mean_error
+from Evaluations.OneCalibration import one_calibration
 from Evaluations.D_Calibration import d_calibration
 
 
@@ -343,26 +343,65 @@ class SurvivalEvaluator:
             plt.show()
         return ibs_score
 
-    def l1_loss(
+    def mae(
             self,
             method: str = "Hinge",
             weighted: bool = True,
             log_scale: bool = False
     ) -> float:
         """
-        Calculate the L1 loss for the test set.
+        Calculate the MAE score for the test set.
         param method: string, default: "Hinge"
-            The method used to calculate the L1 loss.
+            The method used to calculate the MAE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
         param weighted: bool, default: True
-            Whether to use weighting scheme for L1 loss.
+            Whether to use weighting scheme for MAE.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         :return: float
-            The L1 loss for the test set.
+            The MAE score for the test set.
         """
-        return l1_loss(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
-                       self.train_event_indicators, method, weighted, log_scale)
+        return mean_error(
+            predicted_times=self.predicted_event_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            error_type="absolute",
+            method=method,
+            weighted=weighted,
+            log_scale=log_scale
+        )
+
+    def mse(
+            self,
+            method: str = "Hinge",
+            weighted: bool = True,
+            log_scale: bool = False
+    ) -> float:
+        """
+        Calculate the MAE score for the test set.
+        param method: string, default: "Hinge"
+            The method used to calculate the MAE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default: True
+            Whether to use weighting scheme for MAE.
+        param log_scale: boolean, default: False
+            Whether to use log scale for the time axis.
+        :return: float
+            The MAE score for the test set.
+        """
+        return mean_error(
+            predicted_times=self.predicted_event_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            error_type="squared",
+            method=method,
+            weighted=weighted,
+            log_scale=log_scale
+        )
 
     def one_calibration(
             self,

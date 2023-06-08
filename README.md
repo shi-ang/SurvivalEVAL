@@ -3,7 +3,7 @@
 This python-based package contains the most completeness evaluation methods for Survival Algorithms. 
 These evaluation metrics can be divided into five aspect
 (according to Haider's paper: [Effective Ways to Build and Evaluate Individual Survival Distributions](https://jmlr.org/papers/volume21/18-772/18-772.pdf)): 
-Concordance, Brier score, L1 loss, 1-Calibration, and D-Calibration. Please also refer to [Haider's repository](https://github.com/haiderstats/ISDEvaluation) for the original R-based implementation.
+Concordance, Brier score, MAE loss, 1-Calibration, and D-Calibration.
 
 ## Concordance Index (C-index)
 Concordance Index identifies the “comparable” pairs of patients and calculates the percentage of correctly ranked pairs to assess a survival model’s performance. 
@@ -26,13 +26,17 @@ It is meaningful in the sense that the square root of the Brier score is the dis
 This python implementation uses IPCW weighting to handle the censored instances. Please refer to [Assessment and Comparison of Prognostic Classification Schemes for Survival Data](https://pubmed.ncbi.nlm.nih.gov/10474158/) for the detail of IPCW weighting.
 Please also note that IBS is identical to the [Continuous Ranked Probability Score(CRPS)](https://arxiv.org/abs/1806.08324).
 
-## L1 loss
-An obvious metric would be “L1 loss” –  the absolute difference between the actual and predicted survival times (e.g. median of an ISD).
+## Mean Absolute Error (MAE) and Mean Squared Error (MSE)
+One straightforward metric would be “MAE” –  the absolute difference between the actual and predicted survival times (e.g. median of an ISD).
 This requires using the “actual survival time”, which is trivial for uncensored instances, but problematic for censored individuals. 
-This python package implemented three different l1 loss metrics for different ways of handling censored instances. 
-1. L1-uncensored loss simply discards all the censored individuals and compute the l1 loss for all the uncensored instances.
-2. L1-hinge loss calculates the censored l1-loss using the following manner. For a censored instance, if the predicted survival time is smaller than the censored time, then `l1_loss = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `l1-loss = 0`. 
-3. L1-margin loss “de-censors” the censored patients, by using their expected survival time (based on the Kaplan-Meier distribution on the training set). The expected survival time is estimated by the censored time plus the median residual time of the KM curve starting from the censored time.
+This python package implemented three different MAE (or MSE) loss metrics for different ways of handling censored instances. 
+1. MAE-Uncensored simply discards all the censored individuals and compute the MAE for all the uncensored instances.
+2. MAE-Hinge calculates the early prediction error. For a censored instance, if the predicted survival time is smaller than the censored time, then `l1_loss = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `l1-loss = 0`. 
+3. MAE-Margin “de-censors” the censored patients, by using their expected survival time (based on the Kaplan-Meier distribution on the training set). The expected survival time is estimated by the censored time plus the median residual time of the KM curve starting from the censored time.
+4. MAE-IPCW-D 
+5. MAE-IPCW-T
+6. MAE-PO
+
 
 ## One-time Calibration (1-calibration)
 Calibration measures the confidence of the model. 
@@ -50,6 +54,7 @@ D-calibration quantifies this comparison of predicted and actual events within e
 The details of D-calibration calculations and ways to incorporate censored instances into D-calibration computation appear in Appendix B and in [Effective Ways to Build and Evaluate Individual Survival Distributions](https://jmlr.org/papers/volume21/18-772/18-772.pdf).
 
 ## Quickstart Example
+
 ```python
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
@@ -83,7 +88,7 @@ cindex, _, _ = eval.concordance()
 # The largest event time is 52. So we use 53 time points (0, 1, ..., 52) to calculate the IBS
 ibs = eval.integrated_brier_score(num_points=53, draw_figure=True)
 
-l1 = eval.l1_loss(method="Margin")
+mae_score = eval.mae(method="Pseudo_obs")
 
 one_cal = eval.one_calibration(target_time=25)
 
@@ -94,7 +99,7 @@ See the [Examples](Examples) for more usage examples.
 
 
 ## Expected Deliveries in the Future
-1. Time-dependent concordance index (AUC)
-2. Graphical calibration curves
-3. Expand l1 loss to l2 loss.
+1. Time-dependent c-index (by Antolini) 
+2. time-specific c-index (AUC)
+
 Please create an issue if you want me to implement any other evaluation metrics.
