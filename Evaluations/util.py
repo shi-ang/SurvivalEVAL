@@ -352,7 +352,7 @@ class KaplanMeierArea(KaplanMeier):
         #     predict_prob = max(1 + time * slope, 0)
         return predict_prob
 
-    def _compute_best_guess(self, time: float):
+    def _compute_best_guess(self, time: float, restricted: bool = False):
         """
         Given a censor time, compute the decensor event time based on the residual mean survival time on KM curves.
         :param time:
@@ -360,14 +360,16 @@ class KaplanMeierArea(KaplanMeier):
         """
         # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
         # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
-        time_range = np.linspace(time, self.km_linear_zero, 2000)
+        if restricted:
+            last_time = max(self.survival_times)
+        else:
+            last_time = self.km_linear_zero
+        time_range = np.linspace(time, last_time, 2000)
         if self.predict(time) == 0:
             best_guess = time
         else:
             best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
 
-        # best_guess = time + integrate.quad(self._km_linear_predict, time, self.km_linear_zero,
-        #                                    limit=2000)[0] / self.predict(time)
         return best_guess
 
     @property
