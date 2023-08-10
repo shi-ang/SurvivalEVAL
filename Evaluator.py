@@ -28,7 +28,8 @@ class SurvivalEvaluator:
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
-            predict_time_method: str = "Median"
+            predict_time_method: str = "Median",
+            interpolation: str = "Hyman"
     ):
         """
         Initialize the Evaluator
@@ -44,6 +45,10 @@ class SurvivalEvaluator:
             Actual event/censor time for the training samples.
         param train_event_indicators: structured array, shape = (n_train_samples, )
             Binary indicators of censoring for the training samples
+        param predict_time_method: str, default = "Median"
+            Method for calculating predicted survival time. Available options are "Median" and "Mean".
+        param interpolation: str, default = "Hyman"
+            Method for interpolation. Available options are "Pchip" and "Hyman".
         """
         self._predicted_curves = check_and_convert(predicted_survival_curves)
         self._time_coordinates = check_and_convert(time_coordinates)
@@ -64,6 +69,8 @@ class SurvivalEvaluator:
         else:
             error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
             raise TypeError(error)
+
+        self.interpolation = interpolation
 
     def _error_trainset(self, method_name: str):
         if (self.train_event_times is None) or (self.train_event_indicators is None):
@@ -121,7 +128,7 @@ class SurvivalEvaluator:
 
         predicted_times = []
         for i in range(self.predicted_curves.shape[0]):
-            predicted_time = predict_method(self.predicted_curves[i, :], self.time_coordinates)
+            predicted_time = predict_method(self.predicted_curves[i, :], self.time_coordinates, self.interpolation)
             predicted_times.append(predicted_time)
         predicted_times = np.array(predicted_times)
         return predicted_times
@@ -154,7 +161,8 @@ class SurvivalEvaluator:
 
         predict_probs = []
         for i in range(self.predicted_curves.shape[0]):
-            predict_prob = predict_prob_from_curve(self.predicted_curves[i, :], self.time_coordinates, target_time[i])
+            predict_prob = predict_prob_from_curve(self.predicted_curves[i, :], self.time_coordinates,
+                                                   target_time[i], self.interpolation)
             predict_probs.append(predict_prob)
         predict_probs = np.array(predict_probs)
         return predict_probs
@@ -173,7 +181,7 @@ class SurvivalEvaluator:
         predict_probs_mat = []
         for i in range(self.predicted_curves.shape[0]):
             predict_probs = predict_multi_probs_from_curve(self.predicted_curves[i, :], self.time_coordinates,
-                                                           target_times).tolist()
+                                                           target_times, self.interpolation).tolist()
             predict_probs_mat.append(predict_probs)
         predict_probs_mat = np.array(predict_probs_mat)
         return predict_probs_mat

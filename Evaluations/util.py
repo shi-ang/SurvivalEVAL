@@ -5,8 +5,11 @@ import warnings
 import rpy2.robjects as robjects
 import scipy.integrate as integrate
 from dataclasses import InitVar, dataclass, field
+from scipy.interpolate import PchipInterpolator
 
 from Evaluations.custom_types import NumericArrayLike
+
+r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
 
 
 def check_and_convert(*args):
@@ -76,26 +79,49 @@ def check_and_convert(*args):
     return result
 
 
+def interpolated_survival_curve(times_coordinate, survival_curve, interpolation):
+    if interpolation == "Pchip":
+        spline = PchipInterpolator(times_coordinate, survival_curve)
+    elif interpolation == "Hyman":
+        x = robjects.FloatVector(times_coordinate)
+        y = robjects.FloatVector(survival_curve)
+        spline = r_splinefun(x, y, method='hyman')
+    else:
+        raise ValueError("interpolation must be one of ['Pchip', 'Hyman']")
+    return spline
+
+
 def predict_prob_from_curve(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
-        target_time: float
+        target_time: float,
+        interpolation: str = 'Hyman'
 ) -> float:
     """
-    Quote from ISDEvaluation/Evaluations/EvaluationHelperFunction.R
-    We need some type of predict function for survival curves - here we build a spline to fit the survival model curve.
-    This spline is the monotonic spline using the hyman filtering of the cubic Hermite spline method,
-    see https://en.wikipedia.org/wiki/Monotone_cubic_interpolation. Also see help(splinefun).
+    Predict the probability of survival at a given time point from the survival curve. The survival curve is
+    interpolated using the specified interpolation method ('Pchip' or 'Hyman'). If the target time is outside the
+    range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time
+    point.
 
-    Note that we make an alteration to the method because if the last two time points
-    have the same probability (y value) then the spline is constant outside the training time range.
-    We need this to be a decreasing function outside the training data, so instead we take the linear fit of (0,1)
-    and the last time point we have (p,t*) and then apply this linear function to all points outside of our fit.
+    Parameters
+    ----------
+    survival_curve: np.ndarray
+        Survival curve. 1-D array of survival probabilities.
+    times_coordinate: np.ndarray
+        Time points corresponding to the survival curve. 1-D array of time points.
+    target_time: float
+        Time point at which to predict the probability of survival.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['Pchip', 'Hyman']. Default: 'Pchip'.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        If 'Hyman', use the splinefun method from R with method='hyman'.
+
+    Returns
+    -------
+    predict_probability: float
+        Predicted probability of survival at the target time point.
     """
-    x = robjects.FloatVector(times_coordinate)
-    y = robjects.FloatVector(survival_curve)
-    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-    spline = r_splinefun(x, y, method='hyman')
+    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
     max_time = float(max(times_coordinate))
@@ -118,25 +144,35 @@ def predict_prob_from_curve(
 def predict_multi_probs_from_curve(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
-        target_times: NumericArrayLike
+        target_times: NumericArrayLike,
+        interpolation: str = 'Hyman'
 ) -> np.ndarray:
     """
-    Quote from ISDEvaluation/Evaluations/EvaluationHelperFunction.R
-    We need some type of predict function for survival curves - here we build a spline to fit the survival model curve.
-    This spline is the monotonic spline using the hyman filtering of the cubic Hermite spline method,
-    see https://en.wikipedia.org/wiki/Monotone_cubic_interpolation. Also see help(splinefun).
+    Predict the probability of survival at multiple time points from the survival curve. The survival curve is
+    interpolated using the specified interpolation method ('Pchip' or 'Hyman'). If the target time is outside the
+    range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time.
 
-    Note that we make an alteration to the method because if the last two time points
-    have the same probability (y value) then the spline is constant outside the training time range.
-    We need this to be a decreasing function outside the training data, so instead we take the linear fit of (0,1)
-    and the last time point we have (p,t*) and then apply this linear function to all points outside of our fit.
+    Parameters
+    ----------
+    survival_curve: np.ndarray
+        Survival curve. 1-D array of survival probabilities.
+    times_coordinate: np.ndarray
+        Time points corresponding to the survival curve. 1-D array of time points.
+    target_times: NumericArrayLike
+        Time points at which to predict the probability of survival.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['Pchip', 'Hyman']. Default: 'Pchip'.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        If 'Hyman', use the splinefun method from R with method='hyman'.
+
+    Returns
+    -------
+    predict_probabilities: np.ndarray
+        Predicted probabilities of survival at the target time points.
     """
     target_times = check_and_convert(target_times).astype(float).tolist()
 
-    x = robjects.FloatVector(times_coordinate)
-    y = robjects.FloatVector(survival_curve)
-    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-    spline = r_splinefun(x, y, method='hyman')
+    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
     max_time = float(max(times_coordinate))
@@ -157,20 +193,38 @@ def predict_multi_probs_from_curve(
 
 def predict_mean_survival_time(
         survival_curve: np.ndarray,
-        times_coordinate: np.ndarray
-):
+        times_coordinate: np.ndarray,
+        interpolation: str = "Hyman"
+) -> float:
+    """
+    Get the mean survival time from the survival curve. The mean survival time is defined as the area under the survival
+    curve. The curve is first interpolated by the given monotonic cubic interpolation method (Pchip or Hyman). Then the
+    curve gets extroplated by the linear function of (0, 1) and the last time point. The area is calculated by the
+    trapezoidal rule.
+    Parameters
+    ----------
+    survival_curve: np.ndarray
+        The survival curve of the sample. 1-D array.
+    times_coordinate: np.ndarray
+        The time coordinate of the survival curve. 1-D array.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['Pchip', 'Hyman']. Default: 'Pchip'.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        If 'Hyman', use the splinefun method from R with method='hyman'.
+    Returns
+    -------
+    mean_survival_time: float
+        The mean survival time.
+    """
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
         warnings.warn("All the predicted probabilities are 1, the integral will be infinite.")
         return np.inf
 
-    x = robjects.FloatVector(times_coordinate)
-    y = robjects.FloatVector(survival_curve)
-    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-    spline = r_splinefun(x, y, method='hyman')
+    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
-    max_time = max(times_coordinate.tolist())
+    max_time = float(max(times_coordinate))
 
     # simply calculate the slope by using the [0, 1] - [max_time, S(t|x)]
     slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
@@ -194,19 +248,36 @@ def predict_mean_survival_time(
 
 def predict_median_survival_time(
         survival_curve: np.ndarray,
-        times_coordinate: np.ndarray
-):
+        times_coordinate: np.ndarray,
+        interpolation: str = "Hyman"
+) -> float:
+    """
+    Get the median survival time from the survival curve. The median survival time is defined as the time point where
+    the survival curve crosses 0.5. The curve is first interpolated by the given monotonic cubic interpolation method
+    (Pchip or Hyman). Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
+    median survival time is calculated by finding the time point where the survival curve crosses 0.5.
+    Parameters
+    ----------
+    survival_curve: np.ndarray
+        The survival curve of the sample. 1-D array.
+    times_coordinate: np.ndarray
+        The time coordinate of the survival curve. 1-D array.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['Pchip', 'Hyman']. Default: 'Pchip'.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        If 'Hyman', use the splinefun method from R with method='hyman'.
+    Returns
+    -------
+    median_survival_time: float
+        The median survival time.
+    """
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
         warnings.warn("All the predicted probabilities are 1, the median survival time will be infinite.")
         return np.inf
 
-    x = robjects.FloatVector(times_coordinate)
-    y = robjects.FloatVector(survival_curve)
-    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-    spline = r_splinefun(x, y, method='hyman')
-
-    min_prob = min(spline(times_coordinate.tolist()))
+    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
+    min_prob = float(min(survival_curve))
 
     if 0.5 in survival_curve:
         median_probability_time = times_coordinate[np.where(survival_curve == 0.5)[0][0]]
@@ -214,14 +285,21 @@ def predict_median_survival_time(
         min_time_before_median = times_coordinate[np.where(survival_curve > 0.5)[0][-1]]
         max_time_after_median = times_coordinate[np.where(survival_curve < 0.5)[0][0]]
 
-        prob_range = robjects.FloatVector(
-            spline(np.linspace(min_time_before_median, max_time_after_median, num=1000).tolist()))
-        time_range = robjects.FloatVector(np.linspace(min_time_before_median, max_time_after_median, num=1000))
-        inverse_spline = r_splinefun(prob_range, time_range, method='hyman')
+        if interpolation == "Pchip":
+            # reverse the array because the PchipInterpolator requires the x to be strictly increasing
+            time_range = np.linspace(min_time_before_median, max_time_after_median, num=1000)
+            prob_range = spline(time_range)
+            inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
+        elif interpolation == "Hyman":
+            time_range = robjects.FloatVector(np.linspace(min_time_before_median, max_time_after_median, num=1000))
+            prob_range = robjects.FloatVector(spline(time_range))
+            inverse_spline = r_splinefun(prob_range, time_range, method='hyman')
+        else:
+            raise ValueError("interpolation should be one of ['Pchip', 'Hyman']")
         # Need to convert the R floatvector to numpy array and use .item() to obtain the single value
         median_probability_time = np.array(inverse_spline(0.5)).item()
     else:
-        max_time = max(times_coordinate.tolist())
+        max_time = float(max(times_coordinate))
         slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
         median_probability_time = max_time + (0.5 - np.array(spline(max_time)).item()) / slope
 
@@ -381,3 +459,33 @@ class KaplanMeierArea(KaplanMeier):
         for i in range(len(censor_times)):
             bg_times[i] = self._compute_best_guess(censor_times[i])
         return bg_times
+
+
+
+if __name__ == "__main__":
+    # Test the spline functions
+    from scipy.interpolate import CubicSpline
+    import matplotlib.pyplot as plt
+
+    times_coordinate = np.array([0, 5, 8, 10, 25, 30, 50])
+    survival_curve = np.array([1, 0.9, 0.88, 0.85, 0.7, 0.6, 0.4])
+
+    # print(predict_median_survival_time(survival_curve, times_coordinate, 'Pchip'))
+    cs = CubicSpline(times_coordinate, survival_curve)
+    pchip = PchipInterpolator(times_coordinate, survival_curve)
+    x = robjects.FloatVector(times_coordinate)
+    y = robjects.FloatVector(survival_curve)
+    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
+    spline_monoh = r_splinefun(x, y, method='monoH.FC')
+    spline_hyman = r_splinefun(x, y, method='hyman')
+
+    times = np.linspace(0, 50, 100)
+    plt.plot(times, cs(times), label='Py CubicSpline')
+    plt.plot(times, pchip(times), label='Py Pchip')
+    plt.plot(times, spline_monoh(robjects.FloatVector(times)), label='R monoh')
+    plt.plot(times, spline_hyman(robjects.FloatVector(times)), label='R hyman')
+    plt.plot(times_coordinate, survival_curve, 'o', label='Data')
+
+    plt.legend()
+    plt.show()
+
