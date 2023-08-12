@@ -13,10 +13,12 @@ from Evaluations.util import predict_mean_survival_time, predict_median_survival
 from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve
 
 from Evaluations.Concordance import concordance
+from Evaluations.AreaUnderCurve import auc
 from Evaluations.BrierScore import single_brier_score, brier_multiple_points
 from Evaluations.MeanError import mean_error
 from Evaluations.OneCalibration import one_calibration
 from Evaluations.D_Calibration import d_calibration
+from Evaluations.KM_Calibration import km_calibration
 
 
 class SurvivalEvaluator:
@@ -246,6 +248,27 @@ class SurvivalEvaluator:
         return concordance(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
                            self.train_event_indicators, pair_method, ties)
 
+    def auc(
+            self,
+            target_time: Optional[Union[int, float]] = None
+    ) -> float:
+        """
+        Calculate the area under the ROC curve (AUC) score at a given time point from the predicted survival curve.
+        param target_time: float, int, or None, default = None
+            Time point at which the AUC score is to be calculated. If None, the AUC score is calculated at the
+            median time of all the event/censor times from the training and test sets.
+        :return: float
+            The Brier score at the target time point.
+        """
+        self._error_trainset("Brier score (BS)")
+
+        if target_time is None:
+            target_time = np.quantile(np.concatenate((self.event_times, self.train_event_times)), 0.5)
+
+        predict_probs = self.predict_probability_from_curve(target_time)
+
+        return auc(predict_probs, self.event_times, self.event_indicators, target_time)
+
     def brier_score(
             self,
             target_time: Optional[Union[int, float]] = None
@@ -348,6 +371,8 @@ class SurvivalEvaluator:
             plt.plot(time_points, b_scores, 'bo-')
             plt.xlabel('Time')
             plt.ylabel('Brier Score')
+            plt.text(500, 0.05, r'IBS$= {:.3f}$'.format(ibs_score), verticalalignment='top',
+                     horizontalalignment='left', fontsize=12, color='Black')
             plt.show()
         return ibs_score
 
@@ -455,7 +480,8 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
-            predict_time_method: str = "Median"
+            predict_time_method: str = "Median",
+            interpolation: str = "Hyman"
     ):
         """
         Evaluator for survival models in PyCox packages.
@@ -472,7 +498,10 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time.
+            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param interpolation: string, default: "Hyman"
+            The interpolation method used to calculate the predicted event time.
+            Options: "Hyman" (default), "Pchip".
         """
         time_coordinates = surv.index.values
         predicted_survival_curves = surv.values.T
@@ -480,7 +509,7 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         predicted_survival_curves[predicted_survival_curves < 0] = 0
         super(PycoxEvaluator, self).__init__(predicted_survival_curves, time_coordinates, test_event_times,
                                              test_event_indicators, train_event_times, train_event_indicators,
-                                             predict_time_method)
+                                             predict_time_method, interpolation)
 
 
 class LifelinesEvaluator(PycoxEvaluator, ABC):
@@ -491,7 +520,8 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
-            predict_time_method: str = "Median"
+            predict_time_method: str = "Median",
+            interpolation: str = "Hyman"
     ):
         """
         Evaluator for survival models in Lifelines packages.
@@ -506,10 +536,13 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time.
+            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param interpolation: string, default: "Hyman"
+            The interpolation method used to calculate the predicted event time.
+            Options: "Hyman" (default), "Pchip".
         """
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
-                                                 train_event_indicators, predict_time_method)
+                                                 train_event_indicators, predict_time_method, interpolation)
 
 
 class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
@@ -520,7 +553,8 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             test_event_indicators: NumericArrayLike,
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
-            predict_time_method: str = "Median"
+            predict_time_method: str = "Median",
+            interpolation: str = "Hyman"
     ):
         """
         Evaluator for survival models in scikit-survival packages.
@@ -536,7 +570,9 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time.
+            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param interpolation: string, default: "Hyman"
+            The interpolation method used to calculate the predicted event time.
         """
         time_coordinates = surv[0].x
         predict_curves = []
@@ -558,4 +594,4 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             predicted_curves[idx_need_fix, len(time_coordinates) - 1] = max(0.1 * max_prob_at_end + 0.9, 0.99)
         super(ScikitSurvivalEvaluator, self).__init__(predicted_curves, time_coordinates, test_event_times,
                                                       test_event_indicators, train_event_times, train_event_indicators,
-                                                      predict_time_method)
+                                                      predict_time_method, interpolation)

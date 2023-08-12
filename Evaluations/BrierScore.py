@@ -87,6 +87,9 @@ def single_brier_score(
     :return:
         Values of the brier score.
     """
+    if target_time is None:
+        target_time = np.median(event_times)
+
     event_indicators = event_indicators.astype(bool)
     train_event_indicators = train_event_indicators.astype(bool)
 
