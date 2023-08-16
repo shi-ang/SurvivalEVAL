@@ -50,7 +50,7 @@ class SurvivalEvaluator:
         param predict_time_method: str, default = "Median"
             Method for calculating predicted survival time. Available options are "Median" and "Mean".
         param interpolation: str, default = "Hyman"
-            Method for interpolation. Available options are "Pchip" and "Hyman".
+            Method for interpolation. Available options are ['Linear', 'Pchip', 'Hyman'].
         """
         self._predicted_curves = check_and_convert(predicted_survival_curves)
         self._time_coordinates = check_and_convert(time_coordinates)
@@ -471,6 +471,14 @@ class SurvivalEvaluator:
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
 
+    def km_calibration(self):
+        """
+        Calculate the KM calibration score from the predicted survival curve.
+        :return: float
+            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
+        """
+        return km_calibration(self._predicted_curves, self.event_times, self.event_indicators)
+
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
@@ -501,7 +509,7 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             The method used to calculate the predicted event time. Options: "median" (default), "mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
-            Options: "Hyman" (default), "Pchip".
+            Options: "Hyman" (default), "Pchip", "Linear".
         """
         time_coordinates = surv.index.values
         predicted_survival_curves = surv.values.T
@@ -539,7 +547,7 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             The method used to calculate the predicted event time. Options: "median" (default), "mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
-            Options: "Hyman" (default), "Pchip".
+            Options: "Hyman" (default), "Pchip", "Linear".
         """
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
                                                  train_event_indicators, predict_time_method, interpolation)
@@ -573,6 +581,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             The method used to calculate the predicted event time. Options: "median" (default), "mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
+            Options: "Hyman" (default), "Pchip", "Linear".
         """
         time_coordinates = surv[0].x
         predict_curves = []
