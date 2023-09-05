@@ -1,1 +1,1 @@
-from Evaluator import SurvivalEvaluator, PycoxEvaluator, ScikitSurvivalEvaluator, LifelinesEvaluator
+from Evaluator import SurvivalEvaluator, PycoxEvaluator, ScikitSurvivalEvaluator, LifelinesEvaluator, PointEvaluator
