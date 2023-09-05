@@ -604,3 +604,149 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
         super(ScikitSurvivalEvaluator, self).__init__(predicted_curves, time_coordinates, test_event_times,
                                                       test_event_indicators, train_event_times, train_event_indicators,
                                                       predict_time_method, interpolation)
+
+
+class PointEvaluator:
+    def __init__(
+            self,
+            predicted_times: NumericArrayLike,
+            test_event_times: NumericArrayLike,
+            test_event_indicators: NumericArrayLike,
+            train_event_times: Optional[NumericArrayLike] = None,
+            train_event_indicators: Optional[NumericArrayLike] = None,
+    ):
+        """
+        Initialize the Evaluator
+        param predicted_times: structured array, shape = (n_samples, )
+            Predicted survival times for the testing samples.
+        param test_event_times: structured array, shape = (n_samples, )
+            Actual event/censor time for the testing samples.
+        param test_event_indicators: structured array, shape = (n_samples, )
+            Binary indicators of censoring for the testing samples
+        param train_event_times: structured array, shape = (n_train_samples, )
+            Actual event/censor time for the training samples.
+        param train_event_indicators: structured array, shape = (n_train_samples, )
+            Binary indicators of censoring for the training samples
+        param predict_time_method: str, default = "Median"
+            Method for calculating predicted survival time. Available options are "Median" and "Mean".
+        param interpolation: str, default = "Hyman"
+            Method for interpolation. Available options are ['Linear', 'Pchip', 'Hyman'].
+        """
+        self._predicted_times = check_and_convert(predicted_times)
+
+        self.event_times, self.event_indicators = check_and_convert(test_event_times, test_event_indicators)
+
+        if (train_event_times is not None) and (train_event_indicators is not None):
+            train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
+        self.train_event_times = train_event_times
+        self.train_event_indicators = train_event_indicators
+
+    def _error_trainset(self, method_name: str):
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError("Train set information is missing. "
+                            "Evaluator cannot perform {} evaluation.".format(method_name))
+
+    @property
+    def predicted_times(self):
+        return self._predicted_times
+
+    @predicted_times.setter
+    def predicted_times(self, predicted_times):
+        print("Setter called. Resetting predicted_times.")
+        self._predicted_times = predicted_times
+
+    def concordance(
+            self,
+            ties: str = "None",
+            pair_method: str = "Comparable"
+    ) -> (float, float, int):
+        """
+        Calculate the concordance index between the predicted survival times and the true survival times.
+        param ties: str, default = "None"
+            A string indicating the way ties should be handled.
+            Options: "None" (default), "Time", "Risk", or "All"
+            "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
+            "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
+            "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
+            "All" includes all ties.
+            Note the concordance calculation is given by
+            (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
+        param pair_method: str, default = "Comparable"
+            A string indicating the method for constructing the pairs of samples.
+            Options: "Comparable" (default) or "Margin"
+            "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
+            event time of all other samples. The pairs are only constructed between samples with comparable
+            event times. For example, if sample i has a censor time of 10, then the pairs are constructed by
+            comparing the predicted survival time of sample i with the event time of all samples with event
+            time of 10 or less.
+            "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
+            will be calculated and used to construct the pairs.
+        :return: (float, float, int)
+            The concordance index, the number of concordant pairs, and the number of total pairs.
+        """
+        # Choose prediction method based on the input argument
+        if pair_method == "Margin" and (self.train_event_times is None or self.train_event_indicators is None):
+            self._error_trainset("margin concordance")
+
+        return concordance(self._predicted_times, self.event_times, self.event_indicators, self.train_event_times,
+                           self.train_event_indicators, pair_method, ties)
+
+    def mae(
+            self,
+            method: str = "Hinge",
+            weighted: bool = True,
+            log_scale: bool = False
+    ) -> float:
+        """
+        Calculate the MAE score for the test set.
+        param method: string, default: "Hinge"
+            The method used to calculate the MAE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default: True
+            Whether to use weighting scheme for MAE.
+        param log_scale: boolean, default: False
+            Whether to use log scale for the time axis.
+        :return: float
+            The MAE score for the test set.
+        """
+        return mean_error(
+            predicted_times=self._predicted_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            error_type="absolute",
+            method=method,
+            weighted=weighted,
+            log_scale=log_scale
+        )
+
+    def mse(
+            self,
+            method: str = "Hinge",
+            weighted: bool = True,
+            log_scale: bool = False
+    ) -> float:
+        """
+        Calculate the MAE score for the test set.
+        param method: string, default: "Hinge"
+            The method used to calculate the MAE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default: True
+            Whether to use weighting scheme for MAE.
+        param log_scale: boolean, default: False
+            Whether to use log scale for the time axis.
+        :return: float
+            The MAE score for the test set.
+        """
+        return mean_error(
+            predicted_times=self._predicted_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            error_type="squared",
+            method=method,
+            weighted=weighted,
+            log_scale=log_scale
+        )
