@@ -192,7 +192,7 @@ def mean_error(
     if method == "Uncensored":
         # only use uncensored data
         if log_scale:
-            errors = np.log(event_times[event_indicators]) - np.log(predicted_times[event_indicators])
+            errors = np.log(event_times[event_indicators] + 1) - np.log(predicted_times[event_indicators] + 1)
         else:
             errors = event_times[event_indicators] - predicted_times[event_indicators]
         return error_func(errors).mean()
@@ -208,7 +208,7 @@ def mean_error(
             weights[~event_indicators] = 1 - km_model.predict(censor_times)
 
         if log_scale:
-            errors = np.log(event_times) - np.log(predicted_times)
+            errors = np.log(event_times + 1) - np.log(predicted_times + 1)
         else:
             errors = event_times - predicted_times
         errors[~event_indicators] = np.maximum(errors[~event_indicators], 0)
@@ -221,8 +221,9 @@ def mean_error(
 
         errors = np.empty(predicted_times.size)
         if log_scale:
-            errors[event_indicators] = np.log(event_times[event_indicators]) - np.log(predicted_times[event_indicators])
-            errors[~event_indicators] = np.log(best_guesses) - np.log(predicted_times[~event_indicators])
+            errors[event_indicators] = (np.log(event_times[event_indicators] + 1) -
+                                        np.log(predicted_times[event_indicators] + 1))
+            errors[~event_indicators] = np.log(best_guesses + 1) - np.log(predicted_times[~event_indicators] + 1)
         else:
             errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
             errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
@@ -244,7 +245,7 @@ def mean_error(
         best_guesses = np.delete(best_guesses, nan_idx)
         weights = np.delete(weights, nan_idx)
         if log_scale:
-            errors = np.log(best_guesses) - np.log(predicted_times)
+            errors = np.log(best_guesses + 1) - np.log(predicted_times + 1)
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
@@ -258,7 +259,7 @@ def mean_error(
         # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
         ipc_pred[ipc_pred == 0] = np.inf
         if log_scale:
-            errors = np.log(event_times) - np.log(predicted_times)
+            errors = np.log(event_times + 1) - np.log(predicted_times + 1)
         else:
             errors = event_times - predicted_times
         return (error_func(errors)[event_indicators] / ipc_pred[event_indicators]).mean()
@@ -282,7 +283,7 @@ def mean_error(
                 total_expect_time = total_km_model.mean
                 best_guesses[i] = (train_data_size + 1) * total_expect_time - train_data_size * sub_expect_time
         if log_scale:
-            errors = np.log(best_guesses) - np.log(predicted_times)
+            errors = np.log(best_guesses + 1) - np.log(predicted_times + 1)
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
@@ -294,7 +295,7 @@ def mean_error(
         best_guesses[~event_indicators] = sub_expect_time
 
         if log_scale:
-            errors = np.log(best_guesses) - np.log(predicted_times)
+            errors = np.log(best_guesses + 1) - np.log(predicted_times + 1)
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
