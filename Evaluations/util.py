@@ -3,8 +3,9 @@ import pandas as pd
 import torch
 import warnings
 import rpy2.robjects as robjects
-import scipy.integrate as integrate
 from dataclasses import InitVar, dataclass, field
+import scipy.integrate as integrate
+from scipy.stats import norm
 from scipy.interpolate import PchipInterpolator, interp1d
 
 from Evaluations.custom_types import NumericArrayLike
@@ -77,6 +78,78 @@ def check_and_convert(*args):
                 result = x[0]
 
     return result
+
+
+def check_monotonicity(array: NumericArrayLike):
+    array = check_and_convert(array)
+    if array.ndim == 1:
+        return (all(array[i] <= array[i + 1] for i in range(len(array) - 1)) or
+                all(array[i] >= array[i + 1] for i in range(len(array) - 1)))
+    elif array.ndim == 2:
+        return (all(all(array[i] <= array[i + 1]) for i in range(len(array) - 1)) or
+                all(all(array[i] >= array[i + 1]) for i in range(len(array) - 1)))
+    else:
+        raise ValueError("The input array must be 1-D or 2-D.")
+
+
+def make_monotonic(
+        survival_curves: np.ndarray,
+        times_coordinate: np.ndarray,
+        method: str = "ceil",
+        seed: int = None,
+        num_bs: int = None
+):
+    """
+    Make the survival curves monotonic.
+    Parameters
+    ----------
+    survival_curves: np.ndarray
+        Survival curves. 2-D array of survival probabilities. The first dimension is the number of samples. The second
+        dimension is the number of time points.
+    times_coordinate: np.ndarray
+        Time points corresponding to the survival curves. 1-D array of time points.
+    method: str
+        The method to make the survival curves monotonic. One of ['ceil', 'floor', 'bootstrap']. Default: 'ceil'.
+    seed: int
+        Random seed for bootstrapping. Default: None.
+    num_bs: int
+        Number of bootstrap samples. Default: None. If None, then num_bs = 10 * num_times.
+
+    Returns
+    -------
+    survival_curves: np.ndarray
+        Survival curves with monotonicity. 2-D array of survival probabilities.
+    """
+    if num_bs is None and method == "bootstrap":
+        # 10 times the number of time points or 1000, whichever is larger
+        num_bs = max(10 * len(times_coordinate), 1000)
+
+    survival_curves = np.clip(survival_curves, 0, 1)
+    for i in range(survival_curves.shape[0]):
+        if not check_monotonicity(survival_curves[i]):
+            # if not, then make it monotonic
+            if method == "ceil":
+                survival_curves[i] = np.maximum.accumulate(survival_curves[i][::-1])[::-1]
+            elif method == "floor":
+                survival_curves[i] = np.minimum.accumulate(survival_curves[i])
+            elif method == "bootstrap":
+                # This is called "bootstrapped rearrangement" method, based on
+                # Chernozhukov et al. (2010) Quantile and Probability Curves Without Crossing, Econometrica
+                # The original method is for quantile curves, but we make it adaptive to survival curves.
+                if seed:
+                    np.random.seed(seed)
+
+                inter_lin = interp1d(survival_curves[i], times_coordinate, kind='linear', fill_value='extrapolate')
+                # Bootstrap the quantile function
+                bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
+                # Now compute the rearranged survival curve
+                # The original method is to compute a value (time) given the fixed quantile (probability)
+                # Here we compute the probability (quantile) given the fixed value (time)
+                for j, time in enumerate(times_coordinate):
+                    survival_curves[i, j] = np.mean(bootstrap_qf > time)
+            else:
+                raise ValueError("method must be one of ['ceil', 'floor', 'bootstrap']")
+    return survival_curves
 
 
 def interpolated_survival_curve(times_coordinate, survival_curve, interpolation):
@@ -524,9 +597,9 @@ if __name__ == "__main__":
     # test the speed of linear interpolate
     start = datetime.datetime.now()
     linear = np.empty((100, 1000))
-    for i in range(survival_curve.shape[1]):
-        intp = interp1d(times_coordinate, survival_curve[:, i])
-        linear[i, :] = intp(times)
+    for idx in range(survival_curve.shape[1]):
+        intp = interp1d(times_coordinate, survival_curve[:, idx])
+        linear[idx, :] = intp(times)
         # linear[i, :] = np.interp(times, times_coordinate, survival_curve[:, i])
     end = datetime.datetime.now()
     print('Linear interpolation takes {} seconds'.format((end - start).total_seconds()))
@@ -534,20 +607,20 @@ if __name__ == "__main__":
     # test the speed of pchip spline
     start = datetime.datetime.now()
     pchip = np.empty((100, 1000))
-    for i in range(survival_curve.shape[1]):
-        intp = PchipInterpolator(times_coordinate, survival_curve[:, i])
-        pchip[i, :] = intp(times)
+    for idx in range(survival_curve.shape[1]):
+        intp = PchipInterpolator(times_coordinate, survival_curve[:, idx])
+        pchip[idx, :] = intp(times)
     end = datetime.datetime.now()
     print('Pchip interpolation takes {} seconds'.format((end - start).total_seconds()))
 
     # test the speed of Hyman spline
     start = datetime.datetime.now()
     hyman = np.empty((100, 1000))
-    for i in range(survival_curve.shape[1]):
+    for idx in range(survival_curve.shape[1]):
         x = robjects.FloatVector(times_coordinate)
-        y = robjects.FloatVector(survival_curve[:, i])
+        y = robjects.FloatVector(survival_curve[:, idx])
         r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
         spline_hyman = r_splinefun(x, y, method='hyman')
-        hyman[i, :] = spline_hyman(robjects.FloatVector(times))
+        hyman[idx, :] = spline_hyman(robjects.FloatVector(times))
     end = datetime.datetime.now()
     print('Hyman interpolation takes {} seconds'.format((end - start).total_seconds()))

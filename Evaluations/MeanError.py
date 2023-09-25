@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 import warnings
+from tqdm import trange
 
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import (check_and_convert, KaplanMeierArea,
@@ -130,7 +131,8 @@ def mean_error(
         error_type: str = "absolute",
         method: str = "Hinge",
         weighted: bool = True,
-        log_scale: bool = False
+        log_scale: bool = False,
+        verbose: bool = False
 ) -> float:
     """
     Calculate the mean absolute/squared error score for the predicted survival times.
@@ -156,6 +158,8 @@ def mean_error(
         If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
+    verbose: boolean, default: False
+        Whether to show the progress bar.
 
     Returns
     -------
@@ -273,7 +277,7 @@ def mean_error(
         total_event_indicator = np.empty(shape=train_data_size + 1)
         total_event_time[0:-1] = train_event_times
         total_event_indicator[0:-1] = train_event_indicators
-        for i in range(test_data_size):
+        for i in trange(test_data_size, desc="Calculating surrogate times for MAE-PO", disable=not verbose):
             if event_indicators[i] == 1:
                 best_guesses[i] = event_times[i]
             else:
@@ -325,5 +329,5 @@ if __name__ == "__main__":
     t = np.array([5, 10, 19, 31, 43, 59, 63, 75, 97, 113, 134, 151, 163, 176, 182, 195, 200, 210, 220])
     e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
     predict_time = np.array([18, 19, 5, 12, 75, 100, 120, 85, 36, 95, 170, 41, 200, 210, 260, 86, 100, 120, 140])
-    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='IPCW-v1')
+    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='Pseudo_obs', verbose=True)
     print(mae_score)

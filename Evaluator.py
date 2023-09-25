@@ -380,7 +380,8 @@ class SurvivalEvaluator:
             self,
             method: str = "Hinge",
             weighted: bool = True,
-            log_scale: bool = False
+            log_scale: bool = False,
+            verbose: bool = False
     ) -> float:
         """
         Calculate the MAE score for the test set.
@@ -391,6 +392,8 @@ class SurvivalEvaluator:
             Whether to use weighting scheme for MAE.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
+        param verbose: boolean, default: False
+            Whether to show the progress bar.
         :return: float
             The MAE score for the test set.
         """
@@ -403,14 +406,16 @@ class SurvivalEvaluator:
             error_type="absolute",
             method=method,
             weighted=weighted,
-            log_scale=log_scale
+            log_scale=log_scale,
+            verbose=verbose
         )
 
     def mse(
             self,
             method: str = "Hinge",
             weighted: bool = True,
-            log_scale: bool = False
+            log_scale: bool = False,
+            verbose: bool = False
     ) -> float:
         """
         Calculate the MAE score for the test set.
@@ -421,6 +426,8 @@ class SurvivalEvaluator:
             Whether to use weighting scheme for MAE.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
+        param verbose: boolean, default: False
+            Whether to show the progress bar.
         :return: float
             The MAE score for the test set.
         """
@@ -433,8 +440,32 @@ class SurvivalEvaluator:
             error_type="squared",
             method=method,
             weighted=weighted,
-            log_scale=log_scale
+            log_scale=log_scale,
+            verbose=verbose
         )
+
+    def rmse(
+            self,
+            method: str = "Hinge",
+            weighted: bool = True,
+            log_scale: bool = False,
+            verbose: bool = False
+    ) -> float:
+        """
+        Calculate the root mean squared error (RMSE) score for the test set.
+        param method: string, default: "Hinge"
+            The method used to calculate the MAE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default: True
+            Whether to use weighting scheme for MAE.
+        param log_scale: boolean, default: False
+            Whether to use log scale for the time axis.
+        param verbose: boolean, default: False
+            Whether to show the progress bar.
+        :return: float
+            The MAE score for the test set.
+        """
+        return self.mse(method, weighted, log_scale, verbose) ** 0.5
 
     def one_calibration(
             self,
@@ -470,14 +501,6 @@ class SurvivalEvaluator:
         """
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
-
-    def km_calibration(self):
-        """
-        Calculate the KM calibration score from the predicted survival curve.
-        :return: float
-            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
-        """
-        return km_calibration(self._predicted_curves, self.event_times, self.event_indicators)
 
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
