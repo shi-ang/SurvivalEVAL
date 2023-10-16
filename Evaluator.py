@@ -502,14 +502,6 @@ class SurvivalEvaluator:
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
 
-    def km_calibration(self):
-        """
-        Calculate the KM calibration score from the predicted survival curve.
-        :return: float
-            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
-        """
-        return km_calibration(self._predicted_curves, self.event_times, self.event_indicators)
-
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
