@@ -502,6 +502,14 @@ class SurvivalEvaluator:
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
 
+    def km_calibration(self):
+        """
+        Calculate the KM calibration score from the predicted survival curve.
+        :return: float
+            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
+        """
+        return km_calibration(self._predicted_curves, self.event_times, self.event_indicators)
+
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
@@ -528,8 +536,8 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             Event times for the training samples.
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
-        param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param predict_time_method: string, default: "Median"
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
             Options: "Hyman" (default), "Pchip", "Linear".
@@ -566,8 +574,8 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             Event times for the training samples.
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
-        param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param predict_time_method: string, default: "Median"
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
             Options: "Hyman" (default), "Pchip", "Linear".
@@ -600,8 +608,8 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             Event times for the training samples.
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
-        param predict_time_method: string, default: "median"
-            The method used to calculate the predicted event time. Options: "median" (default), "mean".
+        param predict_time_method: string, default: "Median"
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
         param interpolation: string, default: "Hyman"
             The interpolation method used to calculate the predicted event time.
             Options: "Hyman" (default), "Pchip", "Linear".

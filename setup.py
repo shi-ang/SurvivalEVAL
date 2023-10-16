@@ -1,12 +1,21 @@
+#!/usr/bin/env python
+
+import os
 from setuptools import setup, find_packages
+
+
+def read(filename):
+    with open(os.path.join(os.path.dirname(__file__), filename)) as f:
+        return f.read()
+
 
 setup(
     name="SurvivalEVAL",
-    version="0.1",
+    version="0.1.dev0",
     packages=find_packages(),
     author="Shi-ang Qi",
     author_email="shiang@ualberta.ca",
-    description="A short description about your package",
+    description="The most comprehensive Python package for evaluating survival analysis models.",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url="https://github.com/shi-ang/SurvivalEVAL",
