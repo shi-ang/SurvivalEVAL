@@ -502,6 +502,29 @@ class SurvivalEvaluator:
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return d_calibration(predict_probs, self.event_indicators, num_bins)
 
+    def x_calibration(
+            self,
+            num_bins: int = 10
+    ) -> float:
+        """
+        Calculate the X calibration score from the predicted survival curve.
+        Parameters
+        ----------
+        num_bins
+
+        Returns
+        -------
+
+        """
+        _, bin_hist = self.d_calibration(num_bins)
+        n_bins = bin_hist.shape[0]
+        # normalize the histogram
+        d_cal_pdf = bin_hist / bin_hist.sum()
+        # compute the x-calibration score
+        optimal = np.ones_like(d_cal_pdf) / n_bins
+        x_cal = np.sum(np.square(d_cal_pdf - optimal))
+        return x_cal
+
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
