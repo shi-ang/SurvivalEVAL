@@ -127,7 +127,6 @@ See the [Examples](Examples) for more usage examples.
 ## Expected Deliveries in the Future
 1. Publish the package to PyPI
 2. Time-dependent c-index (by Antolini)
-3. KM-Calibration 
-4. IPCW AUC
+3. IPCW AUC
 
 Please create an issue if you want me to implement any other evaluation metrics.

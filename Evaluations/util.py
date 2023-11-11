@@ -543,10 +543,10 @@ class KaplanMeierArea(KaplanMeier):
     def mean(self):
         return self._compute_best_guess(0)
 
-    def best_guess_revise(self, censor_times: np.array):
+    def best_guess_revise(self, censor_times: np.array, restricted: bool = False):
         bg_times = np.zeros_like(censor_times)
         for i in range(len(censor_times)):
-            bg_times[i] = self._compute_best_guess(censor_times[i])
+            bg_times[i] = self._compute_best_guess(censor_times[i], restricted=restricted)
         return bg_times
 
 

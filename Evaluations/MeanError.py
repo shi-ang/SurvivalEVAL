@@ -175,7 +175,7 @@ def mean_error(
             raise ValueError("If method is '{}', training set values must be included.".format(method))
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
-        km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities)) / (0 - max(km_model.survival_times)))
+        km_linear_zero = km_model.km_linear_zero
         if np.isinf(km_linear_zero):
             km_linear_zero = max(km_model.survival_times)
         # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)

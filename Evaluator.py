@@ -84,9 +84,9 @@ class SurvivalEvaluator:
         return self._predicted_curves
 
     @predicted_curves.setter
-    def predicted_curves(self, val):
+    def predicted_curves(self, val: NumericArrayLike):
         print("Setter called. Resetting predicted curves for this evaluator.")
-        self._predicted_curves = val
+        self._predicted_curves = check_and_convert(val)
         self._clear_cache()
 
     @property
@@ -94,9 +94,9 @@ class SurvivalEvaluator:
         return self._time_coordinates
 
     @time_coordinates.setter
-    def time_coordinates(self, val):
+    def time_coordinates(self, val: NumericArrayLike):
         print("Setter called. Resetting time coordinates for this evaluator.")
-        self._time_coordinates = val
+        self._time_coordinates = check_and_convert(val)
         self._clear_cache()
 
     @cached_property
@@ -369,10 +369,13 @@ class SurvivalEvaluator:
         # Draw the Brier score graph
         if draw_figure:
             plt.plot(time_points, b_scores, 'bo-')
+            score_text = r'IBS$= {:.3f}$'.format(ibs_score)
+            plt.plot([], [], ' ', label=score_text)
+            plt.legend()
+            # plt.text(500, 0.05, r'IBS$= {:.3f}$'.format(ibs_score), verticalalignment='top',
+            #          horizontalalignment='left', fontsize=12, color='Black')
             plt.xlabel('Time')
             plt.ylabel('Brier Score')
-            plt.text(500, 0.05, r'IBS$= {:.3f}$'.format(ibs_score), verticalalignment='top',
-                     horizontalalignment='left', fontsize=12, color='Black')
             plt.show()
         return ibs_score
 
@@ -524,6 +527,15 @@ class SurvivalEvaluator:
         optimal = np.ones_like(d_cal_pdf) / n_bins
         x_cal = np.sum(np.square(d_cal_pdf - optimal))
         return x_cal
+
+    def km_calibration(self):
+        """
+        Calculate the KM calibration score from the predicted survival curve.
+        :return: float
+            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
+        """
+        average_survival_curve = np.mean(self._predicted_curves, axis=0)
+        return km_calibration(average_survival_curve, self.time_coordinates, self.event_times, self.event_indicators)
 
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
@@ -796,3 +808,4 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale
         )
+
