@@ -141,7 +141,7 @@ def concordance(
         partial_weights = np.ones_like(event_indicators, dtype=float)
         partial_weights[~event_indicators] = 1 - km_model.predict(censor_times)
 
-        best_guesses = km_model.best_guess_revise(censor_times)
+        best_guesses = km_model.best_guess(censor_times)
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
         bg_event_times = np.copy(event_times)

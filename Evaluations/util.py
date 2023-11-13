@@ -419,6 +419,64 @@ def stratified_folds_survival(
     return cross_validation_set
 
 
+def km_mean(
+        times: np.ndarray,
+        survival_probabilities: np.ndarray
+) -> float:
+    """
+    Calculate the mean of the Kaplan-Meier curve.
+
+    Parameters
+    ----------
+    times: np.ndarray, shape = (n_samples, )
+        Survival times for KM curve of the testing samples
+    survival_probabilities: np.ndarray, shape = (n_samples, )
+        Survival probabilities for KM curve of the testing samples
+
+    Returns
+    -------
+    The mean of the Kaplan-Meier curve.
+    """
+    # calculate the area under the curve for each interval
+    area_probabilities = np.append(1, survival_probabilities)
+    area_times = np.append(0, times)
+    km_linear_zero = -1 / ((area_probabilities[-1] - 1) / area_times[-1])
+    if survival_probabilities[-1] != 0:
+        area_times = np.append(area_times, km_linear_zero)
+        area_probabilities = np.append(area_probabilities, 0)
+    area_diff = np.diff(area_times, 1)
+    area = np.flip(np.flip(area_diff * area_probabilities[0:-1]).cumsum())
+    area = np.append(area, 0)
+
+    # calculate the mean
+    surv_prob = get_prob_at_zero(times, survival_probabilities)
+    return area[0] / surv_prob
+
+
+def get_prob_at_zero(
+        times: np.ndarray,
+        survival_probabilities: np.ndarray
+) -> float:
+    """
+    Get the survival probability at time 0. Note that this function doesn't consider the interpolation.
+
+    Parameters
+    ----------
+    times: np.ndarray, shape = (n_samples, )
+        Survival times for KM curve of the testing samples
+    survival_probabilities: np.ndarray, shape = (n_samples, )
+        Survival probabilities for KM curve of the testing samples
+
+    Returns
+    -------
+    The survival probability at time 0.
+    """
+    probability_index = np.digitize(0, times)
+    probability = np.append(1, survival_probabilities)[probability_index]
+
+    return probability
+
+
 @dataclass
 class KaplanMeier:
     """
@@ -427,6 +485,8 @@ class KaplanMeier:
     event_times: InitVar[np.array]
     event_indicators: InitVar[np.array]
     survival_times: np.array = field(init=False)
+    population_count: np.array = field(init=False)
+    events: np.array = field(init=False)
     survival_probabilities: np.array = field(init=False)
     cumulative_dens: np.array = field(init=False)
     probability_dens: np.array = field(init=False)
@@ -435,7 +495,7 @@ class KaplanMeier:
         index = np.lexsort((event_indicators, event_times))
         unique_times = np.unique(event_times[index], return_counts=True)
         self.survival_times = unique_times[0]
-        population_count = np.flip(np.flip(unique_times[1]).cumsum())
+        self.population_count = np.flip(np.flip(unique_times[1]).cumsum())
 
         event_counter = np.append(0, unique_times[1].cumsum()[:-1])
         event_ind = list()
@@ -444,15 +504,10 @@ class KaplanMeier:
             event_ind.append(event_counter[i + 1])
         event_ind.append(event_counter[-1])
         event_ind.append(len(event_indicators))
-        events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[::2]
+        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[::2]
 
-        self.survival_probabilities = np.empty(population_count.size)
-        survival_probability = 1
-        counter = 0
-        for population, event_num in zip(population_count, events):
-            survival_probability *= 1 - event_num / population
-            self.survival_probabilities[counter] = survival_probability
-            counter += 1
+        event_ratios = 1 - self.events / self.population_count
+        self.survival_probabilities = np.cumprod(event_ratios)
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
@@ -479,10 +534,9 @@ class KaplanMeierArea(KaplanMeier):
         super().__post_init__(event_times, event_indicators)
         area_probabilities = np.append(1, self.survival_probabilities)
         area_times = np.append(0, self.survival_times)
+        self.km_linear_zero = -1 / ((area_probabilities[-1] - 1) / area_times[-1])
         if self.survival_probabilities[-1] != 0:
-            slope = (area_probabilities[-1] - 1) / area_times[-1]
-            zero_survival = -1 / slope
-            area_times = np.append(area_times, zero_survival)
+            area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
 
         area_diff = np.diff(area_times, 1)
@@ -491,7 +545,10 @@ class KaplanMeierArea(KaplanMeier):
         self.area_times = np.append(area_times, np.inf)
         self.area_probabilities = area_probabilities
         self.area = np.append(area, 0)
-        self.km_linear_zero = -1 / ((1 - min(self.survival_probabilities))/(0 - max(self.survival_times)))
+
+    @property
+    def mean(self):
+        return self.best_guess(0)
 
     def best_guess(self, censor_times: np.array):
         surv_prob = self.predict(censor_times)
@@ -538,10 +595,6 @@ class KaplanMeierArea(KaplanMeier):
             best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
 
         return best_guess
-
-    @property
-    def mean(self):
-        return self._compute_best_guess(0)
 
     def best_guess_revise(self, censor_times: np.array, restricted: bool = False):
         bg_times = np.zeros_like(censor_times)

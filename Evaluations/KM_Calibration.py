@@ -7,8 +7,8 @@ from Evaluations.util import KaplanMeier
 def km_calibration(
         average_survival_curves: np.ndarray,
         time_coordinates: np.ndarray,
-        event_time: np.ndarray,
-        event_indicator: np.ndarray,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
         draw_figure: bool = False
 ) -> float:
     """
@@ -33,9 +33,9 @@ def km_calibration(
         The average survival curves.
     time_coordinates: np.ndarray
         The time coordinates of the average survival curves.
-    event_time: np.ndarray
+    event_times: np.ndarray
         The event time of the test data.
-    event_indicator: np.ndarray
+    event_indicators: np.ndarray
         The event indicator of the test data.\
     draw_figure: bool
         Whether to visualize the comparison of the KM curve and average curve.
@@ -45,7 +45,7 @@ def km_calibration(
     mse: float
         The (normalized) integrated mean squared error between the KM curve and the average prediction curve.
     """
-    km_model = KaplanMeier(event_time, event_indicator)
+    km_model = KaplanMeier(event_times, event_indicators)
     km_curve = km_model.survival_probabilities
     km_time = km_model.survival_times
 

@@ -5,7 +5,7 @@ import warnings
 from tqdm import trange
 
 from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import (check_and_convert, KaplanMeierArea,
+from Evaluations.util import (check_and_convert, KaplanMeierArea, km_mean,
                               predict_mean_survival_time, predict_median_survival_time)
 
 
@@ -166,6 +166,7 @@ def mean_error(
     Value for the calculated MAE score.
     """
     event_indicators = event_indicators.astype(bool)
+    n_test = event_times.size
     if train_event_indicators is not None:
         train_event_indicators = train_event_indicators.astype(bool)
 
@@ -181,7 +182,7 @@ def mean_error(
         # predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
 
         censor_times = event_times[~event_indicators]
-        weights = np.ones(event_times.size)
+        weights = np.ones(n_test)
         if weighted:
             weights[~event_indicators] = 1 - km_model.predict(censor_times)
 
@@ -220,7 +221,7 @@ def mean_error(
     elif method == "Margin":
         # The L1-margin method proposed by https://www.jmlr.org/papers/v21/18-772.html
         # Calculate the best guess survival time given the KM curve and censoring time of that patient
-        best_guesses = km_model.best_guess_revise(censor_times)
+        best_guesses = km_model.best_guess(censor_times)
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
         errors = np.empty(predicted_times.size)
@@ -235,8 +236,8 @@ def mean_error(
     elif method == "IPCW-v1":
         # This is the IPCW-T method from https://arxiv.org/pdf/2306.01196.pdf
         # Calculate the best guess time (surrogate time) based on the subsequent uncensored subjects
-        best_guesses = np.empty(shape=event_times.size)
-        for i in range(event_times.size):
+        best_guesses = np.empty(shape=n_test)
+        for i in range(n_test):
             if event_indicators[i] == 1:
                 best_guesses[i] = event_times[i]
             else:
@@ -269,23 +270,19 @@ def mean_error(
         return (error_func(errors)[event_indicators] / ipc_pred[event_indicators]).mean()
     elif method == "Pseudo_obs":
         # Calculate the best guess time (surrogate time) by the contribution of the censored subjects to KM curve
-        best_guesses = np.empty(shape=event_times.size)
-        test_data_size = event_times.size
+        best_guesses = np.empty(shape=n_test)
         sub_expect_time = km_model.mean
-        train_data_size = train_event_times.size
-        total_event_time = np.empty(shape=train_data_size + 1)
-        total_event_indicator = np.empty(shape=train_data_size + 1)
-        total_event_time[0:-1] = train_event_times
-        total_event_indicator[0:-1] = train_event_indicators
-        for i in trange(test_data_size, desc="Calculating surrogate times for MAE-PO", disable=not verbose):
+        n_train = train_event_times.size
+
+        for i in trange(n_test, desc="Calculating surrogate times for MAE-PO", disable=not verbose):
             if event_indicators[i] == 1:
                 best_guesses[i] = event_times[i]
             else:
-                total_event_time[-1] = event_times[i]
-                total_event_indicator[-1] = event_indicators[i]
-                total_km_model = KaplanMeierArea(total_event_time, total_event_indicator)
-                total_expect_time = total_km_model.mean
-                best_guesses[i] = (train_data_size + 1) * total_expect_time - train_data_size * sub_expect_time
+                total_times, total_probs = insert_km(km_model.survival_times.copy(), km_model.events.copy(),
+                                                     km_model.population_count.copy(), event_times[i], 0)
+                total_expect_time = km_mean(total_times, total_probs)
+
+                best_guesses[i] = (n_train + 1) * total_expect_time - n_train * sub_expect_time
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
         else:
@@ -306,6 +303,57 @@ def mean_error(
     else:
         raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-v1', 'IPCW-v2' "
                          "'Pseudo_obs', or 'Pseudo_obs_pop'. Got '{}' instead.".format(method))
+
+
+def insert_km(
+        survival_times: np.ndarray,
+        event_count: np.ndarray,
+        as_risk_count: np.ndarray,
+        new_t: float,
+        new_e: int
+) -> (np.ndarray, np.ndarray):
+    """
+    Insert a new time point into the Kaplan-Meier curve.
+
+    Parameters
+    ----------
+    survival_times: np.ndarray, shape = (n_samples, )
+        Survival times for KM curve of the testing samples
+    event_count: np.ndarray, shape = (n_samples, )
+        Event count for KM curve of the testing samples at each time point
+    as_risk_count: np.ndarray, shape = (n_samples, )
+        At-risk count for KM curve of the testing samples at each time point
+    new_t: float
+        New time point to be inserted
+    new_e: int
+        New event count to be inserted
+
+    Returns
+    -------
+    survival_times: np.ndarray, shape = (n_samples, )
+        Survival times for KM curve of the testing samples
+    survival_probabilities: np.ndarray, shape = (n_samples, )
+        Survival probabilities for KM curve of the testing samples
+    """
+    # Find the index where new_t should be inserted
+    insert_index = np.searchsorted(survival_times, new_t)
+
+    # Check if new_t is already at the found index
+    if insert_index < len(survival_times) and survival_times[insert_index] == new_t:
+        # If new_t is already in the array, increment the event count
+        event_count[insert_index] += new_e
+        as_risk_count[:insert_index + 1] += 1
+    else:
+        # Insert new_t into
+        survival_times = np.insert(survival_times, insert_index, new_t)
+        event_count = np.insert(event_count, insert_index, new_e)
+        as_risk_count = np.insert(as_risk_count, insert_index, as_risk_count[insert_index + 1])
+        as_risk_count[:insert_index + 1] += 1
+
+    event_ratios = 1 - event_count / as_risk_count
+    survival_probabilities = np.cumprod(event_ratios)
+
+    return survival_times, survival_probabilities
 
 
 if __name__ == "__main__":
