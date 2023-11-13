@@ -347,7 +347,11 @@ def insert_km(
         # Insert new_t into
         survival_times = np.insert(survival_times, insert_index, new_t)
         event_count = np.insert(event_count, insert_index, new_e)
-        as_risk_count = np.insert(as_risk_count, insert_index, as_risk_count[insert_index + 1])
+        # if beyond the last time point, manually insert the last at-risk count with 0, then add 1 to all before
+        if insert_index == survival_times.size - 1:
+            as_risk_count = np.insert(as_risk_count, insert_index, 0)
+        else:
+            as_risk_count = np.insert(as_risk_count, insert_index, as_risk_count[insert_index])
         as_risk_count[:insert_index + 1] += 1
 
     event_ratios = 1 - event_count / as_risk_count

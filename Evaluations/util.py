@@ -548,7 +548,8 @@ class KaplanMeierArea(KaplanMeier):
 
     @property
     def mean(self):
-        return self.best_guess(0)
+        # return self.best_guess(0)
+        return self.best_guess(np.array([0]))
 
     def best_guess(self, censor_times: np.array):
         surv_prob = self.predict(censor_times)
@@ -558,8 +559,14 @@ class KaplanMeierArea(KaplanMeier):
             censor_indexes - 1,
             censor_indexes,
         )
-        censor_area = (self.area_times[censor_indexes] - censor_times) * self.area_probabilities[censor_indexes - 1]
-        censor_area += self.area[censor_indexes]
+        # # for those beyond the end point, censor_area = 0
+        beyond_idx = censor_indexes > len(self.area_times) - 2
+        censor_area = np.zeros_like(censor_times).astype(float)
+        censor_area[~beyond_idx] = ((self.area_times[censor_indexes[~beyond_idx]] - censor_times[~beyond_idx]) *
+                                    self.area_probabilities[censor_indexes[~beyond_idx] - 1])
+        censor_area[~beyond_idx] += self.area[censor_indexes[~beyond_idx]]
+        # censor_area = (self.area_times[censor_indexes] - censor_times) * self.area_probabilities[censor_indexes - 1]
+        # censor_area += self.area[censor_indexes]
         return censor_times + censor_area / surv_prob
 
     def _km_linear_predict(self, times):
