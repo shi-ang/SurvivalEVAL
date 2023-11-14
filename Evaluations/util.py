@@ -445,7 +445,9 @@ def km_mean(
         area_times = np.append(area_times, km_linear_zero)
         area_probabilities = np.append(area_probabilities, 0)
     area_diff = np.diff(area_times, 1)
-    area = np.flip(np.flip(area_diff * area_probabilities[0:-1]).cumsum())
+    # we are using trap rule
+    average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
+    area = np.flip(np.flip(area_diff * average_probabilities).cumsum())
     area = np.append(area, 0)
 
     # calculate the mean
@@ -539,8 +541,12 @@ class KaplanMeierArea(KaplanMeier):
             area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
 
+        # we are facing the choice of using the trapzoidal rule or directly using the area under the step function
+        # we choose to use trapz because it is more accurate
         area_diff = np.diff(area_times, 1)
-        area = np.flip(np.flip(area_diff * area_probabilities[0:-1]).cumsum())
+        average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
+        area = np.flip(np.flip(area_diff * average_probabilities).cumsum())
+        # area = np.flip(np.flip(area_diff * area_probabilities[0:-1]).cumsum())
 
         self.area_times = np.append(area_times, np.inf)
         self.area_probabilities = area_probabilities
@@ -548,25 +554,35 @@ class KaplanMeierArea(KaplanMeier):
 
     @property
     def mean(self):
-        # return self.best_guess(0)
-        return self.best_guess(np.array([0]))
+        return self.best_guess(np.array([0])).item()
 
     def best_guess(self, censor_times: np.array):
-        surv_prob = self.predict(censor_times)
+        # calculate the slope by using the [0, 1] - [max_time, S(t|x)]
+        slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
+        # if after the last time point, then the best guess is the linear function
+        before_last_idx = censor_times <= max(self.survival_times)
+        after_last_idx = censor_times > max(self.survival_times)
+        surv_prob = np.empty_like(censor_times).astype(float)
+        # do not use np.clip(min=0) here because we will use surv_prob as the denominator,
+        # and we don't want to divide by 0. The nominator will be 0 anyway.
+        surv_prob[after_last_idx] = 1 + censor_times[after_last_idx] * slope
+        surv_prob[before_last_idx] = self.predict(censor_times[before_last_idx])
+
         censor_indexes = np.digitize(censor_times, self.area_times)
         censor_indexes = np.where(
             censor_indexes == self.area_times.size + 1,
             censor_indexes - 1,
             censor_indexes,
         )
-        # # for those beyond the end point, censor_area = 0
+
+        # for those beyond the end point, censor_area = 0
         beyond_idx = censor_indexes > len(self.area_times) - 2
         censor_area = np.zeros_like(censor_times).astype(float)
+        # trapzoidal rule:  (x1 - x0) * (f(x0) + f(x1)) * 0.5
         censor_area[~beyond_idx] = ((self.area_times[censor_indexes[~beyond_idx]] - censor_times[~beyond_idx]) *
-                                    self.area_probabilities[censor_indexes[~beyond_idx] - 1])
+                                    (self.area_probabilities[censor_indexes[~beyond_idx]] + surv_prob[~beyond_idx])
+                                    * 0.5)
         censor_area[~beyond_idx] += self.area[censor_indexes[~beyond_idx]]
-        # censor_area = (self.area_times[censor_indexes] - censor_times) * self.area_probabilities[censor_indexes - 1]
-        # censor_area += self.area[censor_indexes]
         return censor_times + censor_area / surv_prob
 
     def _km_linear_predict(self, times):
@@ -591,6 +607,7 @@ class KaplanMeierArea(KaplanMeier):
         """
         # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
         # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
+        warnings.warn("This method is deprecated. Use best_guess instead.", DeprecationWarning)
         if restricted:
             last_time = max(self.survival_times)
         else:
@@ -604,6 +621,7 @@ class KaplanMeierArea(KaplanMeier):
         return best_guess
 
     def best_guess_revise(self, censor_times: np.array, restricted: bool = False):
+        warnings.warn("This method is deprecated. Use best_guess instead.", DeprecationWarning)
         bg_times = np.zeros_like(censor_times)
         for i in range(len(censor_times)):
             bg_times[i] = self._compute_best_guess(censor_times[i], restricted=restricted)
