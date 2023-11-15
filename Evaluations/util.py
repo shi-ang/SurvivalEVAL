@@ -563,9 +563,9 @@ class KaplanMeierArea(KaplanMeier):
         before_last_idx = censor_times <= max(self.survival_times)
         after_last_idx = censor_times > max(self.survival_times)
         surv_prob = np.empty_like(censor_times).astype(float)
-        # do not use np.clip(min=0) here because we will use surv_prob as the denominator,
-        # and we don't want to divide by 0. The nominator will be 0 anyway.
-        surv_prob[after_last_idx] = 1 + censor_times[after_last_idx] * slope
+        # do not use np.clip(a_min=0) here because we will use surv_prob as the denominator,
+        # if surv_prob is below 0 (or 1e-10 after clip), the nominator will be 0 anyway.
+        surv_prob[after_last_idx] = np.clip(1 + censor_times[after_last_idx] * slope, a_min=1e-10, a_max=None)
         surv_prob[before_last_idx] = self.predict(censor_times[before_last_idx])
 
         censor_indexes = np.digitize(censor_times, self.area_times)
