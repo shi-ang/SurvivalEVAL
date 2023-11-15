@@ -557,16 +557,17 @@ class KaplanMeierArea(KaplanMeier):
         return self.best_guess(np.array([0])).item()
 
     def best_guess(self, censor_times: np.array):
-        # calculate the slope by using the [0, 1] - [max_time, S(t|x)]
+        # calculate the slope using the [0, 1] - [max_time, S(t|x)]
         slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
         # if after the last time point, then the best guess is the linear function
         before_last_idx = censor_times <= max(self.survival_times)
         after_last_idx = censor_times > max(self.survival_times)
         surv_prob = np.empty_like(censor_times).astype(float)
+        surv_prob[after_last_idx] = 1 + censor_times[after_last_idx] * slope
+        surv_prob[before_last_idx] = self.predict(censor_times[before_last_idx])
         # do not use np.clip(a_min=0) here because we will use surv_prob as the denominator,
         # if surv_prob is below 0 (or 1e-10 after clip), the nominator will be 0 anyway.
-        surv_prob[after_last_idx] = np.clip(1 + censor_times[after_last_idx] * slope, a_min=1e-10, a_max=None)
-        surv_prob[before_last_idx] = self.predict(censor_times[before_last_idx])
+        surv_prob = np.clip(surv_prob, a_min=1e-10, a_max=None)
 
         censor_indexes = np.digitize(censor_times, self.area_times)
         censor_indexes = np.where(
