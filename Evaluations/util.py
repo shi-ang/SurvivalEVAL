@@ -86,8 +86,8 @@ def check_monotonicity(array: NumericArrayLike):
         return (all(array[i] <= array[i + 1] for i in range(len(array) - 1)) or
                 all(array[i] >= array[i + 1] for i in range(len(array) - 1)))
     elif array.ndim == 2:
-        return (all(all(array[i] <= array[i + 1]) for i in range(len(array) - 1)) or
-                all(all(array[i] >= array[i + 1]) for i in range(len(array) - 1)))
+        return (all(all(array[:, i] <= array[:, i + 1]) for i in range(array.shape[1] - 1)) or
+                all(all(array[:, i] >= array[:, i + 1]) for i in range(array.shape[1] - 1)))
     else:
         raise ValueError("The input array must be 1-D or 2-D.")
 
