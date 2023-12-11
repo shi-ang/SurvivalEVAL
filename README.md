@@ -1,5 +1,16 @@
 # SurvivalEVAL
 
+<p align="center"><img src="logo.png" height="auto" width="200" style="border-radius:50%"></p>
+
+
+-----------------
+
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/release/python-370/)
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/shi-ang/SurvivalEVAL/issues)
+[![HitCount](https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat)](http://hits.dwyl.com/shi-ang/SurvivalEVAL)
+
+
 This python-based package contains the most completeness evaluation methods for Survival Algorithms. 
 These evaluation metrics can be divided into 3 categories:
 - For point prediction (first row in the figure below)
@@ -73,6 +84,14 @@ The output is a p-value of Hosmer-Lemeshow goodness-of-fit test at a target time
 Models with p-value higher than 0.05 can be considered as well-calibrated model at that time.
 
 
+## Installation
+Clone the repo, cd into it and install it in editable mode (`-e` option).
+That way, these are no more need to re-install the package after modification.
+```bash
+git clone https://github.com/shi-ang/SurvivalEVAL.git
+cd SurvivalEVAL
+pip install -e . 
+```
 
 ## Quickstart Example
 
@@ -130,3 +149,18 @@ See the [Examples](Examples) for more usage examples.
 3. IPCW AUC
 
 Please create an issue if you want me to implement any other evaluation metrics.
+
+### Citing this work
+
+We recommend you use the following to cite `SurvivalEVAL` in your publications:
+
+```
+@InProceedings{qi2023survivaleval,
+  title = 	 {SurvivalEVAL: A Comprehensive Open-Source Python Package for Evaluating Individual Survival Distributions},
+  author =       {Qi, Shi-ang and Sun, Weijie and Greiner, Russell},
+  booktitle = 	 {Proceedings of AAAI Fall Symposium on Survival Prediction - Algorithms, Challenges, and Applications 2023},
+  year = 	 {2023},
+  series = 	 {Proceedings of Machine Learning Research},
+  publisher =    {PMLR},
+}
+```

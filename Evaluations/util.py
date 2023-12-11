@@ -120,25 +120,26 @@ def make_monotonic(
     survival_curves: np.ndarray
         Survival curves with monotonicity. 2-D array of survival probabilities.
     """
-    if num_bs is None and method == "bootstrap":
+    if np.all(np.sort(times_coordinate) != times_coordinate):
+        raise ValueError("The time coordinates must be sorted in ascending order.")
+
+    if num_bs is None:
         # 10 times the number of time points or 1000, whichever is larger
         num_bs = max(10 * len(times_coordinate), 1000)
 
-    survival_curves = np.clip(survival_curves, 0, 1)
-    for i in range(survival_curves.shape[0]):
-        if not check_monotonicity(survival_curves[i]):
-            # if not, then make it monotonic
-            if method == "ceil":
-                survival_curves[i] = np.maximum.accumulate(survival_curves[i][::-1])[::-1]
-            elif method == "floor":
-                survival_curves[i] = np.minimum.accumulate(survival_curves[i])
-            elif method == "bootstrap":
-                # This is called "bootstrapped rearrangement" method, based on
-                # Chernozhukov et al. (2010) Quantile and Probability Curves Without Crossing, Econometrica
-                # The original method is for quantile curves, but we make it adaptive to survival curves.
-                if seed:
-                    np.random.seed(seed)
+    if seed is not None:
+        np.random.seed(seed)
 
+    survival_curves = np.clip(survival_curves, 0, 1)
+    if not check_monotonicity(survival_curves):
+        if method == "ceil":
+            survival_curves = np.maximum.accumulate(survival_curves[:, ::-1], axis=1)[:, ::-1]
+        elif method == "floor":
+            survival_curves = np.minimum.accumulate(survival_curves, axis=1)
+        elif method == "bootstrap":
+            need_rearrange = np.where(np.any((np.sort(survival_curves, axis=1)[:, ::-1] != survival_curves), axis=1))[0]
+
+            for i in need_rearrange:
                 inter_lin = interp1d(survival_curves[i], times_coordinate, kind='linear', fill_value='extrapolate')
                 # Bootstrap the quantile function
                 bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
@@ -147,8 +148,8 @@ def make_monotonic(
                 # Here we compute the probability (quantile) given the fixed value (time)
                 for j, time in enumerate(times_coordinate):
                     survival_curves[i, j] = np.mean(bootstrap_qf > time)
-            else:
-                raise ValueError("method must be one of ['ceil', 'floor', 'bootstrap']")
+        else:
+            raise ValueError("method must be one of ['ceil', 'floor', 'bootstrap']")
     return survival_curves
 
 
@@ -395,6 +396,26 @@ def predict_median_survival_time(
     return median_probability_time
 
 
+def quantile_to_survival(quantile_levels, quantile_predictions, time_coordinates, interpolate='Pchip'):
+    survival_level = 1 - quantile_levels
+    slope = - quantile_levels[-1] / quantile_predictions[:, -1]
+    surv_pred = np.empty((quantile_predictions.shape[0], time_coordinates.shape[0]))
+    for i in range(quantile_predictions.shape[0]):
+        # fit an interpolation function to the cdf
+        spline = interpolated_survival_curve(quantile_predictions[i, :], survival_level, interpolate)
+
+        # if the quantile level is beyond last cdf, we extrapolate the
+        beyond_prob_idx = np.where(time_coordinates > quantile_predictions[i, -1])[0]
+        surv_pred[i] = spline(time_coordinates)
+        surv_pred[i, beyond_prob_idx] = np.clip(time_coordinates[beyond_prob_idx] * slope[i] + 1,
+                                                a_min=0, a_max=1)
+
+    # sanity checks
+    assert np.all(surv_pred >= 0), "Survival predictions contain negative."
+    assert check_monotonicity(surv_pred), "Survival predictions are not monotonic."
+    return surv_pred
+
+
 def stratified_folds_survival(
         dataset: pd.DataFrame,
         event_times: np.ndarray,
@@ -449,6 +470,10 @@ def km_mean(
     average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
     area = np.flip(np.flip(area_diff * average_probabilities).cumsum())
     area = np.append(area, 0)
+    # or the step function rule (deprecated for now)
+    # area_subs = area_diff * area_probabilities[0:-1]
+    # area_subs[-1] = area_subs[-1] / 2
+    # area = np.flip(np.flip(area_subs).cumsum())
 
     # calculate the mean
     surv_prob = get_prob_at_zero(times, survival_probabilities)

@@ -270,18 +270,42 @@ def mean_error(
         return (error_func(errors)[event_indicators] / ipc_pred[event_indicators]).mean()
     elif method == "Pseudo_obs":
         # Calculate the best guess time (surrogate time) by the contribution of the censored subjects to KM curve
-        best_guesses = np.empty(shape=n_test)
-        sub_expect_time = km_model.mean
         n_train = train_event_times.size
 
-        for i in trange(n_test, desc="Calculating surrogate times for MAE-PO", disable=not verbose):
-            if event_indicators[i] == 1:
-                best_guesses[i] = event_times[i]
-            else:
-                total_times, total_probs = insert_km(km_model.survival_times.copy(), km_model.events.copy(),
-                                                     km_model.population_count.copy(), event_times[i], 0)
-                total_expect_time = km_mean(total_times, total_probs)
+        events, population_counts = km_model.events.copy(), km_model.population_count.copy()
+        times = km_model.survival_times.copy()
+        probs = km_model.survival_probabilities.copy()
+        # get the discrete time points where the event happens, then calculate the area under those discrete time only
+        # this doesn't make any difference for step function, but it does for trapezoid rule.
+        unique_idx = np.where(events != 0)[0]
+        if unique_idx[-1] != len(events) - 1:
+            unique_idx = np.append(unique_idx, len(events) - 1)
+        times = times[unique_idx]
+        population_counts = population_counts[unique_idx]
+        events = events[unique_idx]
+        probs = probs[unique_idx]
+        sub_expect_time = km_mean(times.copy(), probs.copy())
 
+        # use the idea of dynamic programming to calculate the multiplier of the KM estimator in advances.
+        # if we add a new time point to the KM curve, the multiplier before the new time point will be
+        # 1 - event_counts / (population_counts + 1), and the multiplier after the new time point will be
+        # the same as before.
+        multiplier = 1 - events / population_counts
+        multiplier_total = 1 - events / (population_counts + 1)
+        best_guesses = event_times.copy().astype(float)
+
+        for i in trange(n_test, desc="Calculating surrogate times for MAE-PO", disable=not verbose):
+            if event_indicators[i] != 1:
+                total_multiplier = multiplier.copy()
+                insert_index = np.searchsorted(times, event_times[i], side='right')
+                total_multiplier[:insert_index] = multiplier_total[:insert_index]
+                survival_probabilities = np.cumprod(total_multiplier)
+                if insert_index == len(times):
+                    times_addition = np.append(times, event_times[i])
+                    survival_probabilities_addition = np.append(survival_probabilities, survival_probabilities[-1])
+                    total_expect_time = km_mean(times_addition, survival_probabilities_addition)
+                else:
+                    total_expect_time = km_mean(times, survival_probabilities)
                 best_guesses[i] = (n_train + 1) * total_expect_time - n_train * sub_expect_time
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)

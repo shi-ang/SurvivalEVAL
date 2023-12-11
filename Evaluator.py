@@ -10,7 +10,7 @@ from functools import cached_property
 from Evaluations.custom_types import NumericArrayLike
 from Evaluations.util import check_and_convert
 from Evaluations.util import predict_mean_survival_time, predict_median_survival_time
-from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve
+from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival
 
 from Evaluations.Concordance import concordance
 from Evaluations.AreaUnderCurve import auc
@@ -31,7 +31,7 @@ class SurvivalEvaluator:
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
             predict_time_method: str = "Median",
-            interpolation: str = "Hyman"
+            interpolation: str = "Linear"
     ):
         """
         Initialize the Evaluator
@@ -809,3 +809,138 @@ class PointEvaluator:
             log_scale=log_scale
         )
 
+
+class QuantileRegEvaluator(SurvivalEvaluator):
+    def __init__(
+            self,
+            quantile_regression: NumericArrayLike,
+            quantile_levels: NumericArrayLike,
+            test_event_times: NumericArrayLike,
+            test_event_indicators: NumericArrayLike,
+            train_event_times: Optional[NumericArrayLike] = None,
+            train_event_indicators: Optional[NumericArrayLike] = None,
+            predict_time_method: str = "Median",
+            interpolation: str = "Hyman"
+    ):
+        survival_level = 1 - quantile_levels
+        super(QuantileRegEvaluator, self).__init__(survival_level, quantile_regression, test_event_times,
+                                                   test_event_indicators, train_event_times, train_event_indicators,
+                                                   predict_time_method, interpolation)
+
+    def predict_time_from_curve(
+            self,
+            predict_method: Callable,
+    ) -> np.ndarray:
+        """
+        Predict survival time from survival curves.
+        param predict_method: Callable
+            A function that takes in a survival curve and returns a predicted survival time.
+            There are two build-in methods: 'predict_median_survival_time' and 'predict_mean_survival_time'.
+            'predict_median_survival_time' uses the median of the survival curve as the predicted survival time.
+            'predict_mean_survival_time' uses the expected time of the survival curve as the predicted survival time.
+        :return: np.ndarray
+            Predicted survival time for each sample.
+        """
+        if (predict_method is not predict_mean_survival_time) and (predict_method is not predict_median_survival_time):
+            error = "Prediction method must be 'predict_mean_survival_time' or 'predict_median_survival_time', " \
+                    "got '{}' instead".format(predict_method.__name__)
+            raise TypeError(error)
+
+        predicted_times = []
+        for i in range(self.time_coordinates.shape[0]):
+            predicted_time = predict_method(self.predicted_curves, self.time_coordinates[i, :], self.interpolation)
+            predicted_times.append(predicted_time)
+        predicted_times = np.array(predicted_times)
+        return predicted_times
+
+    def predict_probability_from_curve(
+            self,
+            target_time: Union[float, int, np.ndarray],
+    ) -> np.ndarray:
+        """
+        Predict a probability of event at a given time point from a predicted curve. Each predicted curve will only
+        have one corresponding probability. Note that this method is different from the
+        'predict_multi_probabilities_from_curve' method, which predicts the multiple probabilities at multiple time
+        points from a predicted curve.
+        param target_time: float, int, or array-like, shape = (n_samples, )
+            Time point(s) at which the probability of event is to be predicted. If float or int, the same time point is
+            used for all samples. If array-like, each sample will have it own target time. The length of the array must
+            be the same as the number of samples.
+        :return: array-like, shape = (n_samples, )
+            Predicted probabilities of event at the target time point(s).
+        """
+        if isinstance(target_time, (float, int)):
+            target_time = target_time * np.ones_like(self.event_times)
+        elif isinstance(target_time, np.ndarray):
+            assert target_time.ndim == 1, "Target time must be a 1D array"
+            assert target_time.shape[0] == self.time_coordinates.shape[0], "Target time must have the same length as " \
+                                                                           "the number of samples"
+        else:
+            error = "Target time must be a float, int, or 1D array, got '{}' instead".format(type(target_time))
+            raise TypeError(error)
+
+        predict_probs = []
+        for i in range(self.time_coordinates.shape[0]):
+            predict_prob = predict_prob_from_curve(self.predicted_curves, self.time_coordinates[i, :],
+                                                   target_time[i], self.interpolation)
+            predict_probs.append(predict_prob)
+        predict_probs = np.array(predict_probs)
+        return predict_probs
+
+    def predict_multi_probabilities_from_curve(
+            self,
+            target_times: np.ndarray
+    ) -> np.ndarray:
+        """
+        Predict the probability of event at multiple time points from the predicted curve.
+        param target_times: array-like, shape = (n_target_times)
+            Time points at which the probability of event is to be predicted.
+        :return: array-like, shape = (n_samples, n_target_times)
+            Predicted probabilities of event at the target time points.
+        """
+        predict_probs_mat = []
+        for i in range(self.time_coordinates.shape[0]):
+            predict_probs = predict_multi_probs_from_curve(self.predicted_curves, self.time_coordinates[i, :],
+                                                           target_times, self.interpolation).tolist()
+            predict_probs_mat.append(predict_probs)
+        predict_probs_mat = np.array(predict_probs_mat)
+        return predict_probs_mat
+
+    def plot_survival_curves(
+            self,
+            curve_indices,
+            color=None,
+            x_lim: tuple = None,
+            y_lim: tuple = None,
+            x_label: str = 'Time',
+            y_label: str = 'Survival probability'
+    ):
+        """Plot survival curves."""
+        fig, ax = plt.subplots()
+        ax.plot(self.time_coordinates[curve_indices, :], self.predicted_curves.T, color=color, label=curve_indices)
+        if y_lim is None:
+            ax.set_ylim(0, 1.02)
+        else:
+            ax.set_ylim(y_lim)
+
+        if x_lim is not None:
+            ax.set_xlim(x_lim)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend()
+        return fig, ax
+
+    def km_calibration(self, draw_figure: bool = False):
+        """
+        Calculate the KM calibration score from the predicted survival curve.
+        :return: float
+            KL divergence between the average predicted survival distribution and the Kaplan-Meier distribution.
+        """
+        unique_times = np.unique(self.event_times[self.event_indicators == 1])
+        survival_curves = quantile_to_survival(1 - self.predicted_curves, self.time_coordinates,
+                                               unique_times, interpolate=self.interpolation)
+        avg_surv = np.mean(survival_curves, axis=0)
+
+        return km_calibration(avg_surv, np.unique(self.event_times[self.event_indicators == 1]),
+                              self.event_times, self.event_indicators,
+                              interpolation_method=self.interpolation, draw_figure=draw_figure)

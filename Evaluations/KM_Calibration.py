@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from Evaluations.util import KaplanMeier
+from Evaluations.util import KaplanMeier, interpolated_survival_curve
 
 
 def km_calibration(
@@ -9,6 +9,7 @@ def km_calibration(
         time_coordinates: np.ndarray,
         event_times: np.ndarray,
         event_indicators: np.ndarray,
+        interpolation_method: str = 'Linear',
         draw_figure: bool = False
 ) -> float:
     """
@@ -45,32 +46,32 @@ def km_calibration(
     mse: float
         The (normalized) integrated mean squared error between the KM curve and the average prediction curve.
     """
+    unique_event_times = np.unique(event_times[event_indicators == 1])
+
     km_model = KaplanMeier(event_times, event_indicators)
-    km_curve = km_model.survival_probabilities
-    km_time = km_model.survival_times
+    km_curve = km_model.predict(unique_event_times)
 
     # add 0 to the beginning of the time coordinates, and 1 to the beginning of the average_survival_curves
-    km_time = np.concatenate([[0], km_time])
+    unique_event_times = np.concatenate([[0], unique_event_times])
     km_curve = np.concatenate([[1], km_curve])
     if time_coordinates[0] != 0:
         time_coordinates = np.concatenate([[0], time_coordinates])
         average_survival_curves = np.concatenate([[1], average_survival_curves])
 
-    # interpolate the average curve and km_curve, so that they have the same time coordinates
-    joint_time_coordinates = np.unique(np.concatenate([time_coordinates, km_time]))
-    # interpolate the average curve and km_curve, using linear interpolation
-    average_survival_curves = np.interp(joint_time_coordinates, time_coordinates, average_survival_curves)
-    km_curve = np.interp(joint_time_coordinates, km_time, km_curve)
+    # interpolate the average curve, so that it will have the same time coordinates as km_curve
+    spline = interpolated_survival_curve(time_coordinates, average_survival_curves, interpolation_method)
+    average_survival_curves = spline(unique_event_times)
+    average_survival_curves = np.clip(average_survival_curves, 0, 1)
 
     # integrated over the joint time coordinates
-    mse = np.trapz((average_survival_curves - km_curve) ** 2, joint_time_coordinates)
+    mse = np.trapz((average_survival_curves - km_curve) ** 2, unique_event_times)
     # normalize by the maximum time coordinate
-    mse /= np.max(joint_time_coordinates)
+    mse /= np.max(unique_event_times)
 
     if draw_figure:
-        plt.plot(joint_time_coordinates, average_survival_curves, label='Average Prediction Curve')
-        plt.plot(joint_time_coordinates, km_curve, label='KM Curve')
-        plt.fill_between(joint_time_coordinates, average_survival_curves, km_curve, alpha=0.2)
+        plt.plot(unique_event_times, average_survival_curves, label='Average Prediction Curve')
+        plt.plot(unique_event_times, km_curve, label='KM Curve')
+        plt.fill_between(unique_event_times, average_survival_curves, km_curve, alpha=0.2)
         score_text = r'KM-Calibration$= {:.3f}$'.format(mse)
         plt.plot([], [], ' ', label=score_text)
         plt.legend()

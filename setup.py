@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 
 def read(filename):
-    with open(os.path.join(os.path.dirname(__file__), filename)) as f:
+    with open(os.path.join(os.path.dirname(__file__), filename), encoding='utf8') as f:
         return f.read()
 
 
@@ -16,7 +16,7 @@ setup(
     author="Shi-ang Qi",
     author_email="shiang@ualberta.ca",
     description="The most comprehensive Python package for evaluating survival analysis models.",
-    long_description=open('README.md').read(),
+    long_description=read('README.md'),
     long_description_content_type='text/markdown',
     url="https://github.com/shi-ang/SurvivalEVAL",
     classifiers=[
