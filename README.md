@@ -11,7 +11,7 @@
 [![HitCount](https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat)](http://hits.dwyl.com/shi-ang/SurvivalEVAL)
 
 
-This python-based package contains the most completeness evaluation methods for Survival Algorithms. 
+This python-based package contains the most completeness evaluation methods for Survival Algorithms (see [paper](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713)). 
 These evaluation metrics can be divided into 3 categories:
 - For point prediction (first row in the figure below)
     - [Concordance Index](#concordance-index)
@@ -155,12 +155,14 @@ Please create an issue if you want me to implement any other evaluation metrics.
 We recommend you use the following to cite `SurvivalEVAL` in your publications:
 
 ```
-@InProceedings{qi2023survivaleval,
-  title = 	 {SurvivalEVAL: A Comprehensive Open-Source Python Package for Evaluating Individual Survival Distributions},
-  author =       {Qi, Shi-ang and Sun, Weijie and Greiner, Russell},
-  booktitle = 	 {Proceedings of AAAI Fall Symposium on Survival Prediction - Algorithms, Challenges, and Applications 2023},
-  year = 	 {2023},
-  series = 	 {Proceedings of Machine Learning Research},
-  publisher =    {PMLR},
+@article{qi2024survivaleval,
+year = {2024},
+month = {01},
+pages = {453-457},
+title = {{SurvivalEVAL}: A Comprehensive Open-Source Python Package for Evaluating Individual Survival Distributions},
+author={Qi, Shi-ang and Sun, Weijie and Greiner, Russell},
+volume = {2},
+journal = {Proceedings of the AAAI Symposium Series},
+doi = {10.1609/aaaiss.v2i1.27713}
 }
 ```
