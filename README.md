@@ -5,7 +5,7 @@
 
 -----------------
 
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/release/python-370/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/shi-ang/SurvivalEVAL/issues)
 [![HitCount](https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat)](http://hits.dwyl.com/shi-ang/SurvivalEVAL)
@@ -90,6 +90,7 @@ That way, these are no more need to re-install the package after modification.
 ```bash
 git clone https://github.com/shi-ang/SurvivalEVAL.git
 cd SurvivalEVAL
+pip install -r requirements.txt
 pip install -e . 
 ```
 
