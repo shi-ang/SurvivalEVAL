@@ -151,7 +151,11 @@ See the [Examples](Examples) for more usage examples.
 
 Please create an issue if you want me to implement any other evaluation metrics.
 
-### Citing this work
+## Updates
+- 2024-03-13: Remove the `rpy2` dependency. Now the package is pure python.
+
+
+## Citing this work
 
 We recommend you use the following to cite `SurvivalEVAL` in your publications:
 

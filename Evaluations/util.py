@@ -2,15 +2,12 @@ import numpy as np
 import pandas as pd
 import torch
 import warnings
-import rpy2.robjects as robjects
 from dataclasses import InitVar, dataclass, field
 import scipy.integrate as integrate
 from scipy.stats import norm
 from scipy.interpolate import PchipInterpolator, interp1d
 
 from Evaluations.custom_types import NumericArrayLike
-
-r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
 
 
 def check_and_convert(*args):
@@ -158,12 +155,8 @@ def interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
         spline = interp1d(times_coordinate, survival_curve, kind='linear', fill_value='extrapolate')
     elif interpolation == "Pchip":
         spline = PchipInterpolator(times_coordinate, survival_curve)
-    elif interpolation == "Hyman":
-        x = robjects.FloatVector(times_coordinate)
-        y = robjects.FloatVector(survival_curve)
-        spline = r_splinefun(x, y, method='hyman')
     else:
-        raise ValueError("interpolation must be one of ['Linear', 'Pchip', 'Hyman']")
+        raise ValueError("interpolation must be one of ['Linear', 'Pchip']")
     return spline
 
 
@@ -171,11 +164,11 @@ def predict_prob_from_curve(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
         target_time: float,
-        interpolation: str = 'Hyman'
+        interpolation: str = 'Linear'
 ) -> float:
     """
     Predict the probability of survival at a given time point from the survival curve. The survival curve is
-    interpolated using the specified interpolation method ('Pchip' or 'Hyman'). If the target time is outside the
+    interpolated using the specified interpolation method ('Linear' or 'Pchip'). If the target time is outside the
     range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time
     point.
 
@@ -188,11 +181,9 @@ def predict_prob_from_curve(
     target_time: float
         Time point at which to predict the probability of survival.
     interpolation: str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip', 'Hyman']. Default: 'Hyman'.
+        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-        If 'Hyman', use the splinefun method from R with method='hyman'.
-
     Returns
     -------
     predict_probability: float
@@ -204,7 +195,6 @@ def predict_prob_from_curve(
     max_time = float(max(times_coordinate))
 
     # simply calculate the slope by using the [0, 1] - [max_time, S(t|x)]
-    # Need to convert the R floatvector to numpy array and use .item() to obtain the single value
     slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
 
     # If the true event time is out of predicting boundary, then use the linear fit mentioned above;
@@ -222,11 +212,11 @@ def predict_multi_probs_from_curve(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
         target_times: NumericArrayLike,
-        interpolation: str = 'Hyman'
+        interpolation: str = 'Linear'
 ) -> np.ndarray:
     """
     Predict the probability of survival at multiple time points from the survival curve. The survival curve is
-    interpolated using the specified interpolation method ('Pchip' or 'Hyman'). If the target time is outside the
+    interpolated using the specified interpolation method ('Linear' or 'Pchip'). If the target time is outside the
     range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time.
 
     Parameters
@@ -238,11 +228,9 @@ def predict_multi_probs_from_curve(
     target_times: NumericArrayLike
         Time points at which to predict the probability of survival.
     interpolation: str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip', 'Hyman']. Default: 'Hyman'.
+        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-        If 'Hyman', use the splinefun method from R with method='hyman'.
-
     Returns
     -------
     predict_probabilities: np.ndarray
@@ -256,7 +244,6 @@ def predict_multi_probs_from_curve(
     max_time = float(max(times_coordinate))
 
     # simply calculate the slope by using the [0, 1] - [maxtime, S(t|x)]
-    # Need to convert the R floatvector to numpy array and use .item() to obtain the single value
     slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
 
     # If the true event time is out of predicting boundary, then use the linear fit mentioned above;
@@ -272,11 +259,11 @@ def predict_multi_probs_from_curve(
 def predict_mean_survival_time(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
-        interpolation: str = "Hyman"
+        interpolation: str = "Linear"
 ) -> float:
     """
     Get the mean survival time from the survival curve. The mean survival time is defined as the area under the survival
-    curve. The curve is first interpolated by the given monotonic cubic interpolation method (Pchip or Hyman). Then the
+    curve. The curve is first interpolated by the given monotonic cubic interpolation method (Linear or Pchip). Then the
     curve gets extroplated by the linear function of (0, 1) and the last time point. The area is calculated by the
     trapezoidal rule.
     Parameters
@@ -286,10 +273,9 @@ def predict_mean_survival_time(
     times_coordinate: np.ndarray
         The time coordinate of the survival curve. 1-D array.
     interpolation: str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip', 'Hyman']. Default: 'Hyman'.
+        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-        If 'Hyman', use the splinefun method from R with method='hyman'.
     Returns
     -------
     mean_survival_time: float
@@ -328,12 +314,12 @@ def predict_mean_survival_time(
 def predict_median_survival_time(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
-        interpolation: str = "Hyman"
+        interpolation: str = "Linear"
 ) -> float:
     """
     Get the median survival time from the survival curve. The median survival time is defined as the time point where
     the survival curve crosses 0.5. The curve is first interpolated by the given monotonic cubic interpolation method
-    (Pchip or Hyman). Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
+    (Linear or Pchip). Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
     median survival time is calculated by finding the time point where the survival curve crosses 0.5.
     Parameters
     ----------
@@ -342,10 +328,9 @@ def predict_median_survival_time(
     times_coordinate: np.ndarray
         The time coordinate of the survival curve. 1-D array.
     interpolation: str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip', 'Hyman']. Default: 'Hyman'.
+        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-        If 'Hyman', use the splinefun method from R with method='hyman'.
     Returns
     -------
     median_survival_time: float
@@ -379,15 +364,8 @@ def predict_median_survival_time(
             prob_range = spline(time_range)
             inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
             median_probability_time = np.array(inverse_spline(0.5)).item()
-        elif interpolation == "Hyman":
-            spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
-            time_range = robjects.FloatVector(np.linspace(min_time_before_median, max_time_after_median, num=1000))
-            prob_range = robjects.FloatVector(spline(time_range))
-            inverse_spline = r_splinefun(prob_range, time_range, method='hyman')
-            median_probability_time = np.array(inverse_spline(0.5)).item()
         else:
-            raise ValueError("interpolation should be one of ['Pchip', 'Hyman']")
-        # Need to convert the R floatvector to numpy array and use .item() to obtain the single value
+            raise ValueError("interpolation should be one of ['Linear', 'Pchip']")
     else:
         max_time = float(max(times_coordinate))
         min_prob = float(min(survival_curve))
@@ -652,79 +630,3 @@ class KaplanMeierArea(KaplanMeier):
         for i in range(len(censor_times)):
             bg_times[i] = self._compute_best_guess(censor_times[i], restricted=restricted)
         return bg_times
-
-
-if __name__ == "__main__":
-    #%% Test the interpolation functions
-    from scipy.interpolate import CubicSpline, interp1d
-    import matplotlib.pyplot as plt
-
-    times_coordinate = np.array([0, 5, 8, 10, 25, 30, 50])
-    survival_curve = np.array([1, 0.9, 0.88, 0.85, 0.7, 0.6, 0.4])
-
-    # print(predict_median_survival_time(survival_curve, times_coordinate, 'Pchip'))
-    linear = interp1d(times_coordinate, survival_curve)
-    cs = CubicSpline(times_coordinate, survival_curve)
-    pchip = PchipInterpolator(times_coordinate, survival_curve)
-    x = robjects.FloatVector(times_coordinate)
-    y = robjects.FloatVector(survival_curve)
-    r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-    spline_monoh = r_splinefun(x, y, method='monoH.FC')
-    spline_hyman = r_splinefun(x, y, method='hyman')
-
-    times = np.linspace(0, 50, 100)
-    plt.plot(times, linear(times), label='Linear')
-    plt.plot(times, cs(times), label='Py CubicSpline')
-    plt.plot(times, pchip(times), label='Py Pchip')
-    plt.plot(times, spline_monoh(robjects.FloatVector(times)), label='R monoh')
-    plt.plot(times, spline_hyman(robjects.FloatVector(times)), label='R hyman')
-    plt.plot(times_coordinate, survival_curve, 'o', label='Data')
-
-    plt.legend()
-    plt.show()
-
-    #%% Test the speed of interpolation function
-    import datetime
-    import numpy as np
-    from scipy.interpolate import interp1d
-
-    times_coordinate = np.array([0, 1, 5, 8, 10, 25, 30, 50, 100])
-    times = np.linspace(0, 100, 1000)
-    # randomize the survival curves
-    pdf_pre = np.random.rand(len(times_coordinate), 100)
-    pdf = pdf_pre / pdf_pre.sum(axis=0)
-    cdf = pdf.cumsum(axis=0)
-    cdf = np.insert(cdf, 0, 0, axis=0)
-    survival_curve = (1 - cdf).clip(min=0, max=1)
-    survival_curve = survival_curve[:-1, ]
-
-    # test the speed of linear interpolate
-    start = datetime.datetime.now()
-    linear = np.empty((100, 1000))
-    for idx in range(survival_curve.shape[1]):
-        intp = interp1d(times_coordinate, survival_curve[:, idx])
-        linear[idx, :] = intp(times)
-        # linear[i, :] = np.interp(times, times_coordinate, survival_curve[:, i])
-    end = datetime.datetime.now()
-    print('Linear interpolation takes {} seconds'.format((end - start).total_seconds()))
-
-    # test the speed of pchip spline
-    start = datetime.datetime.now()
-    pchip = np.empty((100, 1000))
-    for idx in range(survival_curve.shape[1]):
-        intp = PchipInterpolator(times_coordinate, survival_curve[:, idx])
-        pchip[idx, :] = intp(times)
-    end = datetime.datetime.now()
-    print('Pchip interpolation takes {} seconds'.format((end - start).total_seconds()))
-
-    # test the speed of Hyman spline
-    start = datetime.datetime.now()
-    hyman = np.empty((100, 1000))
-    for idx in range(survival_curve.shape[1]):
-        x = robjects.FloatVector(times_coordinate)
-        y = robjects.FloatVector(survival_curve[:, idx])
-        r_splinefun = robjects.r['splinefun']  # extract splinefun method from R
-        spline_hyman = r_splinefun(x, y, method='hyman')
-        hyman[idx, :] = spline_hyman(robjects.FloatVector(times))
-    end = datetime.datetime.now()
-    print('Hyman interpolation takes {} seconds'.format((end - start).total_seconds()))

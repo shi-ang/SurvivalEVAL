@@ -49,8 +49,8 @@ class SurvivalEvaluator:
             Binary indicators of censoring for the training samples
         param predict_time_method: str, default = "Median"
             Method for calculating predicted survival time. Available options are "Median" and "Mean".
-        param interpolation: str, default = "Hyman"
-            Method for interpolation. Available options are ['Linear', 'Pchip', 'Hyman'].
+        param interpolation: str, default = "Linear"
+            Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
         self._predicted_curves = check_and_convert(predicted_survival_curves)
         self._time_coordinates = check_and_convert(time_coordinates)
@@ -547,7 +547,7 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
             predict_time_method: str = "Median",
-            interpolation: str = "Hyman"
+            interpolation: str = "Linear"
     ):
         """
         Evaluator for survival models in PyCox packages.
@@ -565,9 +565,9 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
-        param interpolation: string, default: "Hyman"
+        param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
-            Options: "Hyman" (default), "Pchip", "Linear".
+            Options: "Linear" (default), "Pchip".
         """
         time_coordinates = surv.index.values
         predicted_survival_curves = surv.values.T
@@ -587,7 +587,7 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
             predict_time_method: str = "Median",
-            interpolation: str = "Hyman"
+            interpolation: str = "Linear"
     ):
         """
         Evaluator for survival models in Lifelines packages.
@@ -603,9 +603,9 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
-        param interpolation: string, default: "Hyman"
+        param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
-            Options: "Hyman" (default), "Pchip", "Linear".
+            Options: "Linear" (default), "Pchip".
         """
         super(LifelinesEvaluator, self).__init__(surv, test_event_times, test_event_indicators, train_event_times,
                                                  train_event_indicators, predict_time_method, interpolation)
@@ -620,7 +620,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
             predict_time_method: str = "Median",
-            interpolation: str = "Hyman"
+            interpolation: str = "Linear"
     ):
         """
         Evaluator for survival models in scikit-survival packages.
@@ -637,9 +637,9 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
-        param interpolation: string, default: "Hyman"
+        param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
-            Options: "Hyman" (default), "Pchip", "Linear".
+            Options: "Linear" (default), "Pchip".
         """
         time_coordinates = surv[0].x
         predict_curves = []
@@ -685,10 +685,6 @@ class PointEvaluator:
             Actual event/censor time for the training samples.
         param train_event_indicators: structured array, shape = (n_train_samples, )
             Binary indicators of censoring for the training samples
-        param predict_time_method: str, default = "Median"
-            Method for calculating predicted survival time. Available options are "Median" and "Mean".
-        param interpolation: str, default = "Hyman"
-            Method for interpolation. Available options are ['Linear', 'Pchip', 'Hyman'].
         """
         self._predicted_times = check_and_convert(predicted_times)
 
@@ -820,8 +816,29 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
             predict_time_method: str = "Median",
-            interpolation: str = "Hyman"
+            interpolation: str = "Linear"
     ):
+        """
+        Initialize the quantile regression evaluator.
+        Parameters
+        ----------
+        param quantile_regression: array-like, shape = (n_quantiles, n_samples)
+            Predicted quantile curves for the testing samples.
+        param quantile_levels: array-like, shape = (n_quantiles, )
+            Quantile levels for the quantile curves.
+        param test_event_times: structured array, shape = (n_samples, )
+            Actual event/censor time for the testing samples.
+        param test_event_indicators: structured array, shape = (n_samples, )
+            Binary indicators of censoring for the testing samples
+        param train_event_times: structured array, shape = (n_train_samples, )
+            Actual event/censor time for the training samples.
+        param train_event_indicators: structured array, shape = (n_train_samples, )
+            Binary indicators of censoring for the training samples
+        param predict_time_method: str, default = "Median"
+            Method for calculating predicted survival time. Available options are "Median" and "Mean".
+        param interpolation: str, default = "Linear"
+            Method for interpolation. Available options are ['Linear', 'Pchip'].
+        """
         survival_level = 1 - quantile_levels
         super(QuantileRegEvaluator, self).__init__(survival_level, quantile_regression, test_event_times,
                                                    test_event_indicators, train_event_times, train_event_indicators,
