@@ -68,7 +68,8 @@ def single_brier_score(
         event_indicators: np.ndarray,
         train_event_times: np.ndarray,
         train_event_indicators: np.ndarray,
-        target_time: float = None
+        target_time: float = None,
+        ipcw: bool = True
 ) -> float:
     """
 
@@ -84,6 +85,8 @@ def single_brier_score(
         Binary indicators of censoring for the training samples
     param target_time: float, default: None
         The specific time point for which to estimate the Brier score.
+    param ipcw: boolean, default: True
+        Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
     :return:
         Values of the brier score.
     """
@@ -93,23 +96,27 @@ def single_brier_score(
     event_indicators = event_indicators.astype(bool)
     train_event_indicators = train_event_indicators.astype(bool)
 
-    inverse_train_event_indicators = 1 - train_event_indicators
-    ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+    if ipcw:
+        inverse_train_event_indicators = 1 - train_event_indicators
+        ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
 
-    ipc_pred = ipc_model.predict(event_times)
-    # Catch if denominator is 0.
-    ipc_pred[ipc_pred == 0] = np.inf
-    # Category one calculates IPCW weight at observed time point.
-    # Category one is individuals with event time lower than the time of interest and were NOT censored.
-    weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
-    # Catch if event times goes over max training event time, i.e. predict gives NA
-    weight_cat1[np.isnan(weight_cat1)] = 0
-    # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-    # contain both censored and uncensored individuals.
-    weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
-    # predict returns NA if the passed-in time is greater than any of the times used to build the inverse probability
-    # of censoring model.
-    weight_cat2[np.isnan(weight_cat2)] = 0
+        ipc_pred = ipc_model.predict(event_times)
+        # Catch if denominator is 0.
+        ipc_pred[ipc_pred == 0] = np.inf
+        # Category one calculates IPCW weight at observed time point.
+        # Category one is individuals with event time lower than the time of interest and were NOT censored.
+        weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
+        # Catch if event times goes over max training event time, i.e. predict gives NA
+        weight_cat1[np.isnan(weight_cat1)] = 0
+        # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
+        # contain both censored and uncensored individuals.
+        weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
+        # predict returns NA if the passed-in time is greater than any of the times used to build the inverse probability
+        # of censoring model.
+        weight_cat2[np.isnan(weight_cat2)] = 0
+    else:
+        weight_cat1 = ((event_times <= target_time) & event_indicators)
+        weight_cat2 = (event_times > target_time)
 
     b_score = (np.square(predict_probs) * weight_cat1 + np.square(1 - predict_probs) * weight_cat2).mean()
     ###########################
@@ -144,7 +151,8 @@ def brier_multiple_points(
         event_indicators: np.ndarray,
         train_event_times: np.ndarray,
         train_event_indicators: np.ndarray,
-        target_times: np.ndarray
+        target_times: np.ndarray,
+        ipcw: bool = True
 ) -> np.ndarray:
     """
     Calculate multiple Brier scores at multiple specific times.
@@ -161,14 +169,11 @@ def brier_multiple_points(
         Binary indicators of censoring for the training samples
     :param target_times: float, default: None
         The specific time points for which to estimate the Brier scores.
+    :param ipcw: boolean, default: True
+        Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
     :return:
         Values of multiple Brier scores.
     """
-    inverse_train_event_indicators = 1 - train_event_indicators
-
-    ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
-    # sorted_test_event_times = np.argsort(event_times)
-
     if target_times.ndim != 1:
         error = "'time_grids' is not a one-dimensional array."
         raise TypeError(error)
@@ -178,23 +183,32 @@ def brier_multiple_points(
     event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
     event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
     event_indicators_mat = event_indicators_mat.astype(bool)
-    # Category one calculates IPCW weight at observed time point.
-    # Category one is individuals with event time lower than the time of interest and were NOT censored.
-    ipc_pred = ipc_model.predict(event_times_mat)
-    # Catch if denominator is 0.
-    ipc_pred[ipc_pred == 0] = np.inf
-    weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
-    # Catch if event times goes over max training event time, i.e. predict gives NA
-    weight_cat1[np.isnan(weight_cat1)] = 0
-    # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-    # contain both censored and uncensored individuals.
-    ipc_target_pred = ipc_model.predict(target_times_mat)
-    # Catch if denominator is 0.
-    ipc_target_pred[ipc_target_pred == 0] = np.inf
-    weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-    # predict returns NA if the passed in time is greater than any of the times used to build
-    # the inverse probability of censoring model.
-    weight_cat2[np.isnan(weight_cat2)] = 0
+
+    if ipcw:
+        inverse_train_event_indicators = 1 - train_event_indicators
+
+        ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+
+        # Category one calculates IPCW weight at observed time point.
+        # Category one is individuals with event time lower than the time of interest and were NOT censored.
+        ipc_pred = ipc_model.predict(event_times_mat)
+        # Catch if denominator is 0.
+        ipc_pred[ipc_pred == 0] = np.inf
+        weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
+        # Catch if event times goes over max training event time, i.e. predict gives NA
+        weight_cat1[np.isnan(weight_cat1)] = 0
+        # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
+        # contain both censored and uncensored individuals.
+        ipc_target_pred = ipc_model.predict(target_times_mat)
+        # Catch if denominator is 0.
+        ipc_target_pred[ipc_target_pred == 0] = np.inf
+        weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
+        # predict returns NA if the passed in time is greater than any of the times used to build
+        # the inverse probability of censoring model.
+        weight_cat2[np.isnan(weight_cat2)] = 0
+    else:
+        weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
+        weight_cat2 = (event_times_mat > target_times_mat)
 
     ipcw_square_error_mat = np.square(predict_probs_mat) * weight_cat1 + np.square(1 - predict_probs_mat) * weight_cat2
     brier_scores = np.mean(ipcw_square_error_mat, axis=0)

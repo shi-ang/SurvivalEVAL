@@ -183,14 +183,16 @@ def create_censor_binning(
         The "split" histogram of this censored subject.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
-    censor_binning = [0.0] * 10
+    censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
         if probability == 1:
-            censor_binning = [0.1] * 10
+            censor_binning += 0.1
+            break
         elif quantile[i] > probability >= quantile[i + 1]:
             first_bin = (probability - quantile[i + 1]) / probability if probability != 0 else 1
             rest_bins = 1 / (num_bins * probability) if probability != 0 else 0
-            censor_binning = [0.0] * i + [first_bin] + [rest_bins] * (num_bins - i - 1)
-    # assert len(censor_binning) == 10, "censor binning should have size of 10"
-    final_binning = np.array(censor_binning)
-    return final_binning
+            censor_binning[i] += first_bin
+            censor_binning[i + 1:] += rest_bins
+            break
+    # assert len(censor_binning) == num_bins, f"censor binning should have size of {num_bins}"
+    return censor_binning

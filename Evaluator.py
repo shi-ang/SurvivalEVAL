@@ -260,10 +260,11 @@ class SurvivalEvaluator:
         :return: float
             The Brier score at the target time point.
         """
-        self._error_trainset("Brier score (BS)")
+        event_times = np.concatenate((self.event_times, self.train_event_times)) \
+            if self.train_event_times is not None else self.event_times
 
         if target_time is None:
-            target_time = np.quantile(np.concatenate((self.event_times, self.train_event_times)), 0.5)
+            target_time = np.quantile(event_times, 0.5)
 
         predict_probs = self.predict_probability_from_curve(target_time)
 
@@ -271,13 +272,16 @@ class SurvivalEvaluator:
 
     def brier_score(
             self,
-            target_time: Optional[Union[int, float]] = None
+            target_time: Optional[Union[int, float]] = None,
+            IPCW_weighted: bool = True
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
         param target_time: float, int, or None, default = None
             Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
             median time of all the event/censor times from the training and test sets.
+        param IPCW_weighted: bool, default = True
+            Whether to use IPCW weighting for the Brier score.
         :return: float
             The Brier score at the target time point.
         """
@@ -289,16 +293,19 @@ class SurvivalEvaluator:
         predict_probs = self.predict_probability_from_curve(target_time)
 
         return single_brier_score(predict_probs, self.event_times, self.event_indicators, self.train_event_times,
-                                  self.train_event_indicators, target_time)
+                                  self.train_event_indicators, target_time, IPCW_weighted)
 
     def brier_score_multiple_points(
             self,
-            target_times: np.ndarray
+            target_times: np.ndarray,
+            IPCW_weighted: bool = True
     ) -> np.ndarray:
         """
         Calculate multiple Brier scores at multiple specific times.
         param target_times: float, default: None
             The specific time points for which to estimate the Brier scores.
+        param IPCW_weighted: bool, default = True
+            Whether to use IPCW weighting for the Brier score.
         :return:
             Values of multiple Brier scores.
         """
@@ -307,11 +314,12 @@ class SurvivalEvaluator:
         predict_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 
         return brier_multiple_points(predict_probs_mat, self.event_times, self.event_indicators, self.train_event_times,
-                                     self.train_event_indicators, target_times)
+                                     self.train_event_indicators, target_times, IPCW_weighted)
 
     def integrated_brier_score(
             self,
             num_points: int = None,
+            IPCW_weighted: bool = True,
             draw_figure: bool = False
     ) -> float:
         """
@@ -319,6 +327,8 @@ class SurvivalEvaluator:
         param num_points: int, default = None
             Number of points at which the Brier score is to be calculated. If None, the number of points is set to
             the number of event/censor times from the training and test sets.
+        param IPCW_weighted: bool, default = True
+            Whether to use IPCW weighting for the Brier score.
         param draw_figure: bool, default = False
             Whether to draw the figure of the IBS.
         :return: float
@@ -326,19 +336,17 @@ class SurvivalEvaluator:
         """
         self._error_trainset("Integrated Brier Score (IBS)")
 
-        max_target_time = np.amax(np.concatenate((self.event_times, self.train_event_times)))
+        max_target_time = np.max(np.concatenate((self.event_times, self.train_event_times)))
 
         # If number of target time is not indicated, then we use the censored times obtained from test set
         if num_points is None:
-            # test_censor_status = 1 - event_indicators
             censored_times = self.event_times[self.event_indicators == 0]
-            sorted_censored_times = np.sort(censored_times)
-            time_points = sorted_censored_times
+            time_points = np.unique(censored_times)
             if time_points.size == 0:
                 raise ValueError("You don't have censor data in the testset, "
                                  "please provide \"num_points\" for calculating IBS")
             else:
-                time_range = np.amax(time_points) - np.amin(time_points)
+                time_range = np.max(time_points) - np.min(time_points)
         else:
             time_points = np.linspace(0, max_target_time, num_points)
             time_range = max_target_time
@@ -346,7 +354,7 @@ class SurvivalEvaluator:
         # Get single brier score from multiple target times, and use trapezoidal integral to calculate ISB.
         #########################
         # Solution 1, implemented using metrics multiplication, this is geometrically faster than solution 2
-        b_scores = self.brier_score_multiple_points(time_points)
+        b_scores = self.brier_score_multiple_points(time_points, IPCW_weighted)
         if np.isnan(b_scores).any():
             warnings.warn("Time-dependent Brier Score contains nan")
             bs_dict = {}
@@ -356,7 +364,8 @@ class SurvivalEvaluator:
         integral_value = trapezoid(b_scores, time_points)
         ibs_score = integral_value / time_range
         ##########################
-        # Solution 2, implemented by iteratively call single_brier_score_pycox(),
+        # (Deprecated)
+        # Solution 2, implemented by iteratively calling self.brier_score(),
         # this solution is much slower than solution 1
         # b_scores = []
         # for i in range(len(time_points)):
@@ -934,7 +943,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
     ):
         """Plot survival curves."""
         fig, ax = plt.subplots()
-        ax.plot(self.time_coordinates[curve_indices, :], self.predicted_curves.T, color=color, label=curve_indices)
+        ax.plot(self.time_coordinates[curve_indices, :].T, self.predicted_curves, color=color, label=curve_indices)
         if y_lim is None:
             ax.set_ylim(0, 1.02)
         else:

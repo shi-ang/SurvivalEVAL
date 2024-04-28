@@ -152,6 +152,7 @@ See the [Examples](Examples) for more usage examples.
 Please create an issue if you want me to implement any other evaluation metrics.
 
 ## Updates
+- 2024-04-28: Add the non-IPCW-weighted Brier score and IBS.
 - 2024-03-13: Remove the `rpy2` dependency. Now the package is pure python.
 
 
