@@ -94,7 +94,7 @@ def single_brier_score(
         target_time = np.median(event_times)
 
     event_indicators = event_indicators.astype(bool)
-    train_event_indicators = train_event_indicators.astype(bool)
+    # train_event_indicators = train_event_indicators.astype(bool)
 
     if ipcw:
         inverse_train_event_indicators = 1 - train_event_indicators

@@ -96,6 +96,9 @@ pip install -e .
 
 ## Quickstart Example
 
+Install a survival analysis package, such as `lifelines`, and load the data.
+Then, you can use the following code to evaluate the model.
+
 ```python
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi

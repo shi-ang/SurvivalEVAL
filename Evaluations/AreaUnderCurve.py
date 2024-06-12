@@ -31,8 +31,18 @@ def auc(
     predict_probs = predict_probs[~exclude_indicators]
 
     # get the binary status of the test data, given the target time
-    binary_status = (event_times > target_time).astype(int)
+    binary_status = (event_times <= target_time).astype(int)
 
     # computing the AUC, given the predicted probabilities and the binary status
-    auc = roc_auc_score(binary_status, predict_probs)
-    return auc
+    risks = - predict_probs
+    return roc_auc_score(binary_status, risks)
+
+
+if __name__ == '__main__':
+    # test the AUC function
+    predict_probs = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.2, 0.8, 0.9])
+    event_times = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    event_indicators = np.array([1, 1, 0, 1, 1, 1, 1, 1, 1])
+    target_time = 5
+
+    print(auc(predict_probs, event_times, event_indicators, target_time))

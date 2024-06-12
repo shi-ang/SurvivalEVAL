@@ -285,7 +285,8 @@ class SurvivalEvaluator:
         :return: float
             The Brier score at the target time point.
         """
-        self._error_trainset("Brier score (BS)")
+        if IPCW_weighted:
+            self._error_trainset("IPCW-weighted Brier score (BS)")
 
         if target_time is None:
             target_time = np.quantile(np.concatenate((self.event_times, self.train_event_times)), 0.5)
@@ -309,7 +310,8 @@ class SurvivalEvaluator:
         :return:
             Values of multiple Brier scores.
         """
-        self._error_trainset("Brier score (BS)")
+        if IPCW_weighted:
+            self._error_trainset("IPCW-weighted Brier score (BS)")
 
         predict_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 
@@ -334,7 +336,8 @@ class SurvivalEvaluator:
         :return: float
             The integrated Brier score.
         """
-        self._error_trainset("Integrated Brier Score (IBS)")
+        if IPCW_weighted:
+            self._error_trainset("IPCW-weighted Integrated Brier Score (IBS)")
 
         max_target_time = np.max(np.concatenate((self.event_times, self.train_event_times)))
 
@@ -673,6 +676,9 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
                                                       predict_time_method, interpolation)
 
 
+DistributionEvaluator = SurvivalEvaluator   # Alias for the SurvivalEvaluator
+
+
 class PointEvaluator:
     def __init__(
             self,
@@ -813,6 +819,94 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale
         )
+
+
+class SingleTimeEvaluator:
+    def __init__(
+            self,
+            predicted_probs: NumericArrayLike,
+            test_event_times: NumericArrayLike,
+            test_event_indicators: NumericArrayLike,
+            target_time: Union[float, int] = None,
+            train_event_times: Optional[NumericArrayLike] = None,
+            train_event_indicators: Optional[NumericArrayLike] = None,
+    ):
+        self._predicted_probs = check_and_convert(predicted_probs)
+
+
+        self.event_times, self.event_indicators = check_and_convert(test_event_times, test_event_indicators)
+
+        if (train_event_times is not None) and (train_event_indicators is not None):
+            train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
+        self.train_event_times = train_event_times
+        self.train_event_indicators = train_event_indicators
+
+
+        if target_time is None:
+            # set to the median time of all the event/censor times from the training and test sets
+            # if train set is not provided, use test set only
+            event_times = np.concatenate((self.event_times, self.train_event_times)) \
+                if self.train_event_times is not None else self.event_times
+            target_time = np.quantile(event_times, 0.5)
+        self.target_time = target_time
+
+    def _error_trainset(self, method_name: str):
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError("Train set information is missing. "
+                            "Evaluator cannot perform {} evaluation.".format(method_name))
+
+    @property
+    def predicted_probs(self):
+        return self._predicted_probs
+
+    @predicted_probs.setter
+    def predicted_probs(self, predicted_probs):
+        print("Setter called. Resetting predicted_probs.")
+        self._predicted_probs = predicted_probs
+
+    def auc(
+        self,
+    ) -> float:
+        """
+        Calculate the area under the ROC curve (AUC) score at a given time point from the predicted survival curve.
+        :return: float
+            The Brier score at the target time point.
+        """
+        return auc(self._predicted_probs, self.event_times, self.event_indicators, self.target_time)
+
+    def brier_score(
+        self,
+        IPCW_weighted: bool = True
+    ) -> float:
+        """
+        Calculate the Brier score at a given time point from the predicted survival curve.
+        param IPCW_weighted: bool, default = True
+            Whether to use IPCW weighting for the Brier score.
+        :return: float
+            The Brier score at the target time point.
+        """
+        if IPCW_weighted:
+            self._error_trainset("IPCW-weighted Brier score (BS)")
+        return single_brier_score(self._predicted_probs, self.event_times, self.event_indicators, self.train_event_times,
+                                  self.train_event_indicators, self.target_time, IPCW_weighted)
+
+    def one_calibration(
+        self,
+        num_bins: int = 10,
+        method: str = "DN"
+    ) -> (float, list, list):
+        """
+        Calculate the one calibration score at a given time point from the predicted survival curve.
+        param num_bins: int, default: 10
+            Number of bins used to calculate the one calibration score.
+        param method: string, default: "DN"
+            The method used to calculate the one calibration score.
+            Options: "Uncensored", or "DN" (default)
+        :return: float, list, list
+            (p-value, observed probabilities, expected probabilities)
+        """
+        return one_calibration(self._predicted_probs, self.event_times, self.event_indicators,
+                               self.target_time, num_bins, method)
 
 
 class QuantileRegEvaluator(SurvivalEvaluator):
