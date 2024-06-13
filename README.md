@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/shi-ang/SurvivalEVAL/">
-        <img alt="PyPI" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/logo.png"></a>
+        <img alt="PyPI" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/logo.png" width="300" height="300"></a>
 </p>
 
 
