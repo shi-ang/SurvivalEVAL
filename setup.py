@@ -3,6 +3,8 @@
 import os
 from setuptools import setup, find_packages
 
+exec(compile(open("SurvivalEVAL/version.py").read(), "SurvivalEVAL/version.py", "exec"))
+
 
 def read(filename):
     with open(os.path.join(os.path.dirname(__file__), filename), encoding='utf8') as f:
@@ -11,7 +13,7 @@ def read(filename):
 
 setup(
     name="SurvivalEVAL",
-    version="0.1.dev0",
+    version=__version__,
     packages=find_packages(),
     author="Shi-ang Qi",
     author_email="shiang@ualberta.ca",
@@ -22,7 +24,18 @@ setup(
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
+        "Topic :: Scientific/Engineering",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
+    python_requires='>=3.8',
+    keywords="survival analysis, evaluation, metrics, survivaleval",
+    license="MIT",
+    install_requires=read('requirements.txt').splitlines(),
 )
 
 '''

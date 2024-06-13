@@ -1,14 +1,36 @@
-# SurvivalEVAL
+<h1 align="center">SurvivalEVAL</h1>
 
-<p align="center"><img src="logo.png" height="auto" width="200" style="border-radius:50%"></p>
+<p align="center">
+  <a href="https://github.com/shi-ang/SurvivalEVAL/">
+        <img alt="PyPI" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/logo.png"></a>
+</p>
 
 
 -----------------
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
-[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/shi-ang/SurvivalEVAL/issues)
-[![HitCount](https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat)](http://hits.dwyl.com/shi-ang/SurvivalEVAL)
+[//]: # ()
+[//]: # ([![Python 3.8+]&#40;https://img.shields.io/badge/python-3.8+-blue.svg&#41;]&#40;https://www.python.org/downloads/release/python-380/&#41;)
+
+[//]: # ([![License]&#40;https://img.shields.io/badge/license-MIT-yellow.svg&#41;]&#40;https://opensource.org/licenses/MIT&#41;)
+
+[//]: # ([![Maintenance]&#40;https://img.shields.io/badge/Maintained%3F-yes-green.svg&#41;]&#40;https://github.com/shi-ang/SurvivalEVAL/issues&#41;)
+
+[//]: # ([![HitCount]&#40;https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat&#41;]&#40;http://hits.dwyl.com/shi-ang/SurvivalEVAL&#41;)
+
+[//]: # ()
+
+<p align="center">
+    <a href="https://pypi.org/project/SurvivalEVAL/">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
+    <a href="https://pypi.org/project/SurvivalEVAL/">
+        <img alt="PyPI - Python Version" src="https://img.shields.io/badge/python-3.8+-blue.svg"></a>
+    <a href="https://opensource.org/licenses/MIT">
+        <img alt="License" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
+    <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
+        <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
+    <a href="http://hits.dwyl.com/shi-ang/SurvivalEVAL">
+        <img alt="HitCount" src="https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat"></a>
+</p>
 
 
 This python-based package contains the most completeness evaluation methods for Survival Algorithms (see [paper](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713)). 
@@ -25,7 +47,12 @@ These evaluation metrics can be divided into 3 categories:
     - [BS](#brier-score-bs)
     - [1-Calibration](#one-time-calibration-1-calibration)
 
-![Visualization of the evaluation metrics](all_metrics.png)
+[//]: # (![Visualization of the evaluation metrics]&#40;all_metrics.png&#41;)
+
+<p align="center">
+    <a href="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png">
+        <img alt="Visualization of the evaluation metrics" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png"></a>
+</p>
 
 ## Concordance index
 Concordance index identifies the “comparable” pairs of patients and calculates the percentage of correctly ranked pairs to assess a survival model’s performance. 
@@ -36,13 +63,13 @@ One straightforward metric would be “MAE” –  the absolute difference betwe
 This requires using the “actual survival time”, which is trivial for uncensored instances, but problematic for censored individuals. 
 This python package implemented MAE loss metrics using different ways of handling censored instances. Here we list three of them:
 1. `Uncensored` simply discards all the censored individuals and compute the MAE for all the uncensored instances.
-2. `Hinge` calculates the early prediction error. For a censored instance, if the predicted survival time is smaller than the censored time, then `l1_loss = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `l1_loss = 0`. 
-3. `Pseudo_obs` “de-censors” the censored patients, using pseudo-observation method (by estimating the contribution of a censored subject to the whole Kaplan-Meier distribution). Then it calculates the MAE between de-censoring time and the predicted survival time, just like the normal way.
+2. `Hinge` calculates the early prediction error. For a censored instance, if the predicted survival time is smaller than the censored time, then `MAE = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `MAE = 0`. Note that the standard `Hinge` method requires the `Weighted` parameter to be set to `False`.
+3. `Pseudo_obs` “de-censors” the censored patients, using pseudo-observation method (by estimating the contribution of a censored subject to the whole Kaplan-Meier distribution). Then it calculates the MAE between de-censoring time and the predicted survival time, just like the normal way. Note that the standard `Pseudo_obs` method requires the `Weighted` parameter to be set to `True`.
 
 
-## Mean Squared Error
+## Mean Squared Error and Root Mean Squared Error
 Mean squared error (MSE) is another metric to measure the difference between the actual and predicted survival times.
-Similar to MAE, mean squared error (MSE) also has multiple ways to handle censored instances.
+Similar to MAE, mean squared error (MSE) also has multiple ways to handle censored instances, similar to MAE.
 1. `Uncensored`
 2. `Hinge`
 3. `Pseudo_obs`
@@ -54,7 +81,7 @@ IBS measures the squared difference between the predicted survival curve with th
 IBS can be viewed as the integration of the (single-time) Brier score across all the time points. 
 A smaller IBS value is preferred over the larger value. 
 This python implementation uses IPCW weighting to handle the censored instances. Please refer to [Assessment and Comparison of Prognostic Classification Schemes for Survival Data](https://pubmed.ncbi.nlm.nih.gov/10474158/) for the detail of IPCW weighting.
-Please also note that IBS is also identical to the [Continuous Ranked Probability Score(CRPS)](https://arxiv.org/abs/1806.08324), except for the IPCW weighting.
+Please also note that IBS is also similar to the [Continuous Ranked Probability Score (CRPS)](https://arxiv.org/abs/1806.08324), except (1) the IPCW weighting, and (2) squared error instead of absolute error.
 
 ## Distribution Calibration (D-calibration)
 [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) proposed distribution calibration (D-calibration) test for determining if a model that produces ISDs is meaningful. 
@@ -85,6 +112,12 @@ Models with p-value higher than 0.05 can be considered as well-calibrated model 
 
 
 ## Installation
+You can install the package via pip.
+```bash
+pip install SurvivalEVAL
+```
+
+Or if you want to do some modification by yourself. 
 Clone the repo, cd into it and install it in editable mode (`-e` option).
 That way, these are no more need to re-install the package after modification.
 ```bash
@@ -103,7 +136,7 @@ Then, you can use the following code to evaluate the model.
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from Evaluator import LifelinesEvaluator
+from SurvivalEVAL.Evaluator import LifelinesEvaluator
 
 # Load the data
 rossi = load_rossi()
@@ -144,20 +177,14 @@ bs_score = eval.brier_score(target_time=25)
 one_cal = eval.one_calibration(target_time=25)
 
 ```
-See the [Examples](Examples) for more usage examples.
+See the [Examples](examples) for more usage examples.
 
 
 ## Expected Deliveries in the Future
-1. Publish the package to PyPI
-2. Time-dependent c-index (by Antolini)
-3. IPCW AUC
+1. Time-dependent c-index (by Antolini)
+2. IPCW AUC
 
 Please create an issue if you want me to implement any other evaluation metrics.
-
-## Updates
-- 2024-04-28: Add the non-IPCW-weighted Brier score and IBS.
-- 2024-03-13: Remove the `rpy2` dependency. Now the package is pure python.
-
 
 ## Citing this work
 

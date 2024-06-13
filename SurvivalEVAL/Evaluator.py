@@ -7,18 +7,18 @@ import matplotlib.pyplot as plt
 from abc import ABC
 from functools import cached_property
 
-from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert
-from Evaluations.util import predict_mean_survival_time, predict_median_survival_time
-from Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival
+from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import predict_mean_survival_time, predict_median_survival_time
+from SurvivalEVAL.Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival
 
-from Evaluations.Concordance import concordance
-from Evaluations.AreaUnderCurve import auc
-from Evaluations.BrierScore import single_brier_score, brier_multiple_points
-from Evaluations.MeanError import mean_error
-from Evaluations.OneCalibration import one_calibration
-from Evaluations.D_Calibration import d_calibration
-from Evaluations.KM_Calibration import km_calibration
+from SurvivalEVAL.Evaluations.Concordance import concordance
+from SurvivalEVAL.Evaluations.AreaUnderCurve import auc
+from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multiple_points
+from SurvivalEVAL.Evaluations.MeanError import mean_error
+from SurvivalEVAL.Evaluations.OneCalibration import one_calibration
+from SurvivalEVAL.Evaluations.D_Calibration import d_calibration
+from SurvivalEVAL.Evaluations.KM_Calibration import km_calibration
 
 
 class SurvivalEvaluator:
@@ -339,7 +339,8 @@ class SurvivalEvaluator:
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Integrated Brier Score (IBS)")
 
-        max_target_time = np.max(np.concatenate((self.event_times, self.train_event_times)))
+        max_target_time = np.max(np.concatenate((self.event_times, self.train_event_times))) if self.train_event_times \
+            is not None else np.max(self.event_times)
 
         # If number of target time is not indicated, then we use the censored times obtained from test set
         if num_points is None:
@@ -394,7 +395,7 @@ class SurvivalEvaluator:
     def mae(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
+            weighted: bool = False,
             log_scale: bool = False,
             verbose: bool = False
     ) -> float:
@@ -763,7 +764,7 @@ class PointEvaluator:
     def mae(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
+            weighted: bool = False,
             log_scale: bool = False
     ) -> float:
         """
@@ -819,6 +820,26 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale
         )
+
+    def rmse(
+            self,
+            method: str = "Hinge",
+            weighted: bool = True,
+            log_scale: bool = False
+    ) -> float:
+        """
+        Calculate the root mean squared error (RMSE) score for the test set.
+        param method: string, default: "Hinge"
+            The method used to calculate the MAE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
+        param weighted: bool, default = True
+            Whether to use weighting scheme for MAE.
+        param log_scale: boolean, default = False
+            Whether to use log scale for the time axis.
+        :return: float
+            The MAE score for the test set.
+        """
+        return self.mse(method, weighted, log_scale) ** 0.5
 
 
 class SingleTimeEvaluator:

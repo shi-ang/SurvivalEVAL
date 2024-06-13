@@ -4,10 +4,9 @@ import torch
 import warnings
 from dataclasses import InitVar, dataclass, field
 import scipy.integrate as integrate
-from scipy.stats import norm
 from scipy.interpolate import PchipInterpolator, interp1d
 
-from Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
 def check_and_convert(*args):

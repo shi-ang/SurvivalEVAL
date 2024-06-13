@@ -3,9 +3,9 @@ import pandas as pd
 from typing import Optional
 import warnings
 
-from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import (check_and_convert, KaplanMeierArea,
-                              predict_mean_survival_time, predict_median_survival_time)
+from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea,
+                                           predict_mean_survival_time, predict_median_survival_time)
 
 
 def concordance_pycox(
@@ -118,6 +118,9 @@ def concordance(
     # The risk score should be higher for subjects that live shorter (i.e. lower average survival time).
 
     event_indicators = event_indicators.astype(bool)
+
+    assert len(predicted_times) == len(event_times) == len(event_indicators), \
+        "The lengths of the predicted times and labels must be the same."
 
     if pair_method == "Comparable":
         risks = -1 * predicted_times

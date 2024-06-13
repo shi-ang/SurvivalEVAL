@@ -3,8 +3,8 @@ import pandas as pd
 from scipy.stats import chisquare
 import warnings
 
-from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert, predict_prob_from_curve
+from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve
 
 
 def d_calibration_pycox(

@@ -4,8 +4,8 @@ from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 import warnings
 
-from Evaluations.custom_types import NumericArrayLike
-from Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
+from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
 
 
 def single_brier_score_pycox(
