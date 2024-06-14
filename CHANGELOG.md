@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2024-06-13: Version 0.2.4
+Fix the no module found error in the package.
+
+## 2024-06-13: Version 0.2.3
+Fix the dependency issues. Remove the `python` version and `jupyter` in the requirements.txt file.
+
+## 2024-06-13: Version 0.2.2
+Improve the readme files in the distribution package
+
 ## 2024-06-13: Version 0.2.1
 Format the package to prepare for the official PyPI submission
 
