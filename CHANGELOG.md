@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2024-06-20: Version 0.2.5
+1. Downgrade many dependencies to improve the compatibility with the older versions of the other packages.
+2. Remove the `torchvision` and `torchaudio` dependencies.
+
 ## 2024-06-13: Version 0.2.4
 Fix the no module found error in the package.
 
