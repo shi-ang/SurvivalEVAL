@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2024-07-02: Version 0.2.6
+1. Add the sanity check for the input survival curve. 
+Now the Evaluator will automatically add time zero if the survival curve does not start from time zero.
+
 ## 2024-06-20: Version 0.2.5
 1. Downgrade many dependencies to improve the compatibility with the older versions of the other packages.
 2. Remove the `torchvision` and `torchaudio` dependencies.

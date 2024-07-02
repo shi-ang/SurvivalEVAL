@@ -12,7 +12,7 @@ observed_times = np.minimum(event_times, censoring_times)
 
 # get some synthetic predictions
 n_times = 100
-time_grid = np.linspace(0, 5, n_times)
+time_grid = np.linspace(1, 5, n_times)
 predictions = np.random.rand(n_data, n_times)
 # normalize the predictions to sum to 1, meaning the probability mass function
 pmf = predictions / predictions.sum(axis=1)[:, None]
