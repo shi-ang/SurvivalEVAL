@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 2024-07-16: Version 0.2.7
+1. Bug fix for the QuantileEvaluator.
+
 ## 2024-07-02: Version 0.2.6
 1. Add the sanity check for the input survival curve. 
 Now the Evaluator will automatically add time zero if the survival curve does not start from time zero.

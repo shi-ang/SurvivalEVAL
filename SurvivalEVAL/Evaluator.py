@@ -55,15 +55,15 @@ class SurvivalEvaluator:
         self._predicted_curves = check_and_convert(predicted_survival_curves)
         self._time_coordinates = check_and_convert(time_coordinates)
 
-        if self._time_coordinates[0] != 0:
-            warnings.warn("The first time coordinate is not 0. "
-                          "A authentic survival curve should start from 0 with 100% survival probability. \\"
-                          "Adding 0 to the beginning of the time coordinates "
-                          "and 1 to the beginning of the predicted curves.")
-            # Add 0 to the beginning of the time coordinates, and add the 100% survival probability to the
-            # beginning of the predicted curves.
-            self._time_coordinates = np.insert(self._time_coordinates, 0, 0)
-            self._predicted_curves = np.insert(self._predicted_curves, 0, 1, axis=1)
+        if self._time_coordinates.ndim == 1:
+            if self._time_coordinates[0] != 0:
+                warnings.warn("The first time coordinate is not 0. A authentic survival curve should start from 0 "
+                              "with 100% survival probability. Adding 0 to the beginning of the time coordinates and"
+                              " 1 to the beginning of the predicted curves.")
+                # Add 0 to the beginning of the time coordinates, and add the 100% survival probability to the
+                # beginning of the predicted curves.
+                self._time_coordinates = np.insert(self._time_coordinates, 0, 0)
+                self._predicted_curves = np.insert(self._predicted_curves, 0, 1, axis=1)
 
         test_event_times, test_event_indicators = check_and_convert(test_event_times, test_event_indicators)
         self.event_times = test_event_times
