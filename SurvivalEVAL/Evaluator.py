@@ -421,6 +421,8 @@ class SurvivalEvaluator:
             Whether to use log scale for the time axis.
         param verbose: boolean, default: False
             Whether to show the progress bar.
+        param truncated_time: float, default: None
+            Truncated time.            
         :return: float
             The MAE score for the test set.
         """
