@@ -407,7 +407,8 @@ class SurvivalEvaluator:
             method: str = "Hinge",
             weighted: bool = False,
             log_scale: bool = False,
-            verbose: bool = False
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
         Calculate the MAE score for the test set.
@@ -433,7 +434,8 @@ class SurvivalEvaluator:
             method=method,
             weighted=weighted,
             log_scale=log_scale,
-            verbose=verbose
+            verbose=verbose,
+            truncated_time=truncated_time
         )
 
     def mse(
@@ -441,7 +443,8 @@ class SurvivalEvaluator:
             method: str = "Hinge",
             weighted: bool = True,
             log_scale: bool = False,
-            verbose: bool = False
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
         Calculate the MAE score for the test set.
@@ -467,7 +470,8 @@ class SurvivalEvaluator:
             method=method,
             weighted=weighted,
             log_scale=log_scale,
-            verbose=verbose
+            verbose=verbose,
+            truncated_time=truncated_time
         )
 
     def rmse(

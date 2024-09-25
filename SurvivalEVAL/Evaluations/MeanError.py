@@ -121,7 +121,6 @@ def mae_sksurv(
     return mean_error(predicted_times, event_times, event_indicators, train_event_times,
                       train_event_indicators, "absolute", method, True, log_scale)
 
-
 def mean_error(
         predicted_times: np.ndarray,
         event_times: np.ndarray,
@@ -132,7 +131,8 @@ def mean_error(
         method: str = "Hinge",
         weighted: bool = True,
         log_scale: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        truncated_time = None,
 ) -> float:
     """
     Calculate the mean absolute/squared error score for the predicted survival times.
@@ -160,6 +160,8 @@ def mean_error(
         Whether to use log scale for the loss function.
     verbose: boolean, default: False
         Whether to show the progress bar.
+    truncated_time: float, default: None
+        the truncated time.
 
     Returns
     -------
@@ -224,6 +226,11 @@ def mean_error(
         best_guesses = km_model.best_guess(censor_times)
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
+        if truncated_time:
+            best_guesses = np.minimum(best_guesses, truncated_time)
+            predicted_times = np.minimum(predicted_times, truncated_time)
+            event_times = np.minimum(event_times, truncated_time)
+                        
         errors = np.empty(predicted_times.size)
         if log_scale:
             errors[event_indicators] = (np.log(event_times[event_indicators]) -
@@ -249,6 +256,11 @@ def mean_error(
         predicted_times = np.delete(predicted_times, nan_idx)
         best_guesses = np.delete(best_guesses, nan_idx)
         weights = np.delete(weights, nan_idx)
+        
+        if truncated_time:
+            best_guesses = np.minimum(best_guesses, truncated_time)
+            predicted_times = np.minimum(predicted_times, truncated_time)
+        
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
         else:
@@ -263,6 +275,11 @@ def mean_error(
         ipc_pred = ipc_model.predict(event_times)
         # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
         ipc_pred[ipc_pred == 0] = np.inf
+        
+        if truncated_time:
+            event_times = np.minimum(event_times, truncated_time)
+            predicted_times = np.minimum(predicted_times, truncated_time)
+        
         if log_scale:
             errors = np.log(event_times) - np.log(predicted_times)
         else:
@@ -307,6 +324,11 @@ def mean_error(
                 else:
                     total_expect_time = km_mean(times, survival_probabilities)
                 best_guesses[i] = (n_train + 1) * total_expect_time - n_train * sub_expect_time
+                
+        if truncated_time:
+            best_guesses = np.minimum(best_guesses, truncated_time)
+            predicted_times = np.minimum(predicted_times, truncated_time)
+                
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
         else:
@@ -319,6 +341,10 @@ def mean_error(
         best_guesses = event_times.copy()
         best_guesses[~event_indicators] = sub_expect_time
 
+        if truncated_time:
+            best_guesses = np.minimum(best_guesses, truncated_time)
+            predicted_times = np.minimum(predicted_times, truncated_time)
+                  
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
         else:
@@ -405,5 +431,6 @@ if __name__ == "__main__":
     t = np.array([5, 10, 19, 31, 43, 59, 63, 75, 97, 113, 134, 151, 163, 176, 182, 195, 200, 210, 220])
     e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
     predict_time = np.array([18, 19, 5, 12, 75, 100, 120, 85, 36, 95, 170, 41, 200, 210, 260, 86, 100, 120, 140])
-    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='Pseudo_obs', verbose=True)
+    # "Margin", "IPCW-v1", "IPCW-v2", "Pseudo_obs", "Pseudo_obs_pop"
+    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='Pseudo_obs_pop', verbose=True, truncated_time=100)
     print(mae_score)
