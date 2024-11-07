@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2024-09-26: Version 0.3.0
+Add the truncated MAE/MSE score. 
+The details can be found in this [paper](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27716).
+
 ## 2024-07-16: Version 0.2.7
 1. Bug fix for the QuantileEvaluator.
 

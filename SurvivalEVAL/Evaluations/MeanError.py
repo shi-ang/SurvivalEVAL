@@ -227,9 +227,9 @@ def mean_error(
         best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
 
         if truncated_time:
-            best_guesses = np.minimum(best_guesses, truncated_time)
-            predicted_times = np.minimum(predicted_times, truncated_time)
-            event_times = np.minimum(event_times, truncated_time)
+            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
+            event_times = np.clip(event_times, a_max=truncated_time, a_min=None)
                         
         errors = np.empty(predicted_times.size)
         if log_scale:
@@ -258,8 +258,8 @@ def mean_error(
         weights = np.delete(weights, nan_idx)
         
         if truncated_time:
-            best_guesses = np.minimum(best_guesses, truncated_time)
-            predicted_times = np.minimum(predicted_times, truncated_time)
+            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
         
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
@@ -277,8 +277,8 @@ def mean_error(
         ipc_pred[ipc_pred == 0] = np.inf
         
         if truncated_time:
-            event_times = np.minimum(event_times, truncated_time)
-            predicted_times = np.minimum(predicted_times, truncated_time)
+            event_times = np.clip(event_times, a_max=truncated_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
         
         if log_scale:
             errors = np.log(event_times) - np.log(predicted_times)
@@ -326,8 +326,8 @@ def mean_error(
                 best_guesses[i] = (n_train + 1) * total_expect_time - n_train * sub_expect_time
                 
         if truncated_time:
-            best_guesses = np.minimum(best_guesses, truncated_time)
-            predicted_times = np.minimum(predicted_times, truncated_time)
+            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
                 
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
@@ -342,8 +342,8 @@ def mean_error(
         best_guesses[~event_indicators] = sub_expect_time
 
         if truncated_time:
-            best_guesses = np.minimum(best_guesses, truncated_time)
-            predicted_times = np.minimum(predicted_times, truncated_time)
+            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
                   
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
