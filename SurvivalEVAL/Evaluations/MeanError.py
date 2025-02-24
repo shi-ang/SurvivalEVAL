@@ -6,7 +6,7 @@ from tqdm import trange
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, km_mean,
-                                           predict_mean_survival_time, predict_median_survival_time)
+                                           predict_mean_st, predict_median_st)
 
 
 def mae_pycox(
@@ -51,9 +51,9 @@ def mae_pycox(
     survival_curves[survival_curves < 0] = 0
 
     if predicted_time_method == "Median":
-        predict_method = predict_median_survival_time
+        predict_method = predict_median_st
     elif predicted_time_method == "Mean":
-        predict_method = predict_mean_survival_time
+        predict_method = predict_mean_st
     else:
         error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
         raise TypeError(error)
@@ -105,9 +105,9 @@ def mae_sksurv(
         train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
 
     if predicted_time_method == "Median":
-        predict_method = predict_median_survival_time
+        predict_method = predict_median_st
     elif predicted_time_method == "Mean":
-        predict_method = predict_mean_survival_time
+        predict_method = predict_mean_st
     else:
         error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
         raise TypeError(error)
@@ -152,7 +152,7 @@ def mean_error(
         Type of mean error to use. Options are "absolute" and "squared".
     method: string, default: "Hinge"
         Method of handling censorship.
-        Options are "Uncensored", "Hinge", "Margin", "IPCW-v1", "IPCW-v2", "Pseudo_obs", and "Pseudo_obs_pop"
+        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", and "Pseudo_obs_pop"
     weighted: boolean, default: True
         Whether to use weighting scheme for MAE.
         If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
@@ -173,7 +173,7 @@ def mean_error(
         train_event_indicators = train_event_indicators.astype(bool)
 
     # calculate the weighting for each sample
-    if method in ["Margin", "IPCW-v1", "IPCW-v2", "Pseudo_obs", "Pseudo_obs_pop"]:
+    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", "Pseudo_obs_pop"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError("If method is '{}', training set values must be included.".format(method))
 
@@ -240,7 +240,7 @@ def mean_error(
             errors[event_indicators] = event_times[event_indicators] - predicted_times[event_indicators]
             errors[~event_indicators] = best_guesses - predicted_times[~event_indicators]
         return np.average(error_func(errors), weights=weights)
-    elif method == "IPCW-v1":
+    elif method == "IPCW-T":
         # This is the IPCW-T method from https://arxiv.org/pdf/2306.01196.pdf
         # Calculate the best guess time (surrogate time) based on the subsequent uncensored subjects
         best_guesses = np.empty(shape=n_test)
@@ -266,7 +266,7 @@ def mean_error(
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
-    elif method == "IPCW-v2":
+    elif method == "IPCW-D":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
         inverse_train_event_indicators = 1 - train_event_indicators
@@ -324,35 +324,19 @@ def mean_error(
                 else:
                     total_expect_time = km_mean(times, survival_probabilities)
                 best_guesses[i] = (n_train + 1) * total_expect_time - n_train * sub_expect_time
-                
-        if truncated_time:
-            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
-            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
-                
-        if log_scale:
-            errors = np.log(best_guesses) - np.log(predicted_times)
-        else:
-            errors = best_guesses - predicted_times
-        return np.average(error_func(errors), weights=weights)
-    elif method == "Pseudo_obs_pop":
-        # This is the MAE-Pop-PO method from https://arxiv.org/pdf/2306.01196.pdf
-        # The best guess time is the same for all subjects, which is the mean of the KM curve.
-        sub_expect_time = km_model.mean
-        best_guesses = event_times.copy()
-        best_guesses[~event_indicators] = sub_expect_time
 
         if truncated_time:
             best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
             predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
-                  
+                
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
     else:
-        raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-v1', 'IPCW-v2' "
-                         "'Pseudo_obs', or 'Pseudo_obs_pop'. Got '{}' instead.".format(method))
+        raise ValueError("Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-T', 'IPCW-D' "
+                         "or 'Pseudo_obs'. Got '{}' instead.".format(method))
 
 
 def insert_km(
@@ -431,6 +415,6 @@ if __name__ == "__main__":
     t = np.array([5, 10, 19, 31, 43, 59, 63, 75, 97, 113, 134, 151, 163, 176, 182, 195, 200, 210, 220])
     e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
     predict_time = np.array([18, 19, 5, 12, 75, 100, 120, 85, 36, 95, 170, 41, 200, 210, 260, 86, 100, 120, 140])
-    # "Margin", "IPCW-v1", "IPCW-v2", "Pseudo_obs", "Pseudo_obs_pop"
-    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='Pseudo_obs_pop', verbose=True, truncated_time=100)
+    # "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"
+    mae_score = mean_error(predict_time, t, e, train_t, train_e, method='Pseudo_obs', verbose=True, truncated_time=100)
     print(mae_score)

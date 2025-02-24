@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2025-02-24: Version 0.4.0
+1. Add restricted mean survival time (RMST) for the evaluation.
+2. Improve computational cost for mean survival time
+3. Change the default parameter/behavior for MSE/MAE/RMSE
+4. Change the warning message for the IPCW related evaluation
+
 ## 2024-09-26: Version 0.3.0
 Add the truncated MAE/MSE score. 
 The details can be found in this [paper](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27716).
