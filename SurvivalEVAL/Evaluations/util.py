@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import warnings
+from typing import Union
 from dataclasses import InitVar, dataclass, field
 import scipy.integrate as integrate
 from scipy.interpolate import PchipInterpolator, interp1d
@@ -255,7 +256,137 @@ def predict_multi_probs_from_curve(
     return predict_probabilities
 
 
-def predict_mean_survival_time(
+def _check_dim_align(
+        survival_curves: np.ndarray,
+        times_coordinates: np.ndarray
+) -> None:
+    # check dimension alignment
+    ndim_surv = survival_curves.ndim
+    ndim_time = times_coordinates.ndim
+
+    if ndim_surv == 1 and ndim_time == 1:
+        assert len(survival_curves) == len(times_coordinates), \
+            "The length of survival_curves and times_coordinate must be the same."
+    elif ndim_surv == 2 and ndim_time == 2:
+        assert survival_curves.shape[0] == times_coordinates.shape[0], \
+            "The number of samples in survival_curves and times_coordinate must be the same."
+        assert survival_curves.shape[1] == times_coordinates.shape[1], \
+            "The number of time points in survival_curves and times_coordinate must be the same."
+    elif ndim_surv == 2 and ndim_time == 1:
+        assert survival_curves.shape[1] == len(times_coordinates), \
+            "The number of time points in survival_curves and times_coordinate must be the same."
+    elif ndim_surv == 1 and ndim_time == 2:
+        assert len(survival_curves) == times_coordinates.shape[1], \
+            "The number of time points in survival_curves and times_coordinate must be the same."
+    else:
+        raise ValueError("The dimension of survival_curves and times_coordinate must be 1-D or 2-D.")
+
+
+def predict_rmst(
+        survival_curves: np.ndarray,
+        times_coordinates: np.ndarray,
+        interpolation: str = "Linear",
+) -> Union[float, np.ndarray]:
+    """
+    Get the restricted mean survival time (RMST) from the survival curve.
+    The restricted mean survival time is defined as the area under the survival curve up to a certain time point.
+    Parameters
+    ----------
+    survival_curves: np.ndarray
+        The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
+        number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        survival curve of a single sample.
+    times_coordinates: np.ndarray
+        The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
+        is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        time coordinate of the survival curve of a single sample.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
+        If 'Linear', use the interp1d method from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    Returns
+    -------
+    restricted_mean_survival_times: float
+        The restricted mean survival time(s).
+    """
+    _check_dim_align(survival_curves, times_coordinates)
+
+    ndim_surv = survival_curves.ndim
+    ndim_time = times_coordinates.ndim
+
+    if interpolation == "None":
+        width = np.diff(times_coordinates, axis=1 if ndim_time == 2 else 0)
+        areas = width * survival_curves[:, :-1] if ndim_surv == 2 else width * survival_curves[:-1]
+        rmst = np.sum(areas, axis=1)
+    elif interpolation == "Linear":
+        rmst = np.trapezoid(survival_curves, times_coordinates, axis=-1)
+    elif interpolation == "Pchip":
+        if ndim_time == 1:
+            spline = PchipInterpolator(times_coordinates, survival_curves, axis=1 if ndim_surv == 2 else 0)
+            rmst = spline.integrate(0, max(times_coordinates))
+        elif ndim_time == 2:
+            rmst = np.empty(survival_curves.shape[0])
+            if ndim_surv == 1:
+                for i in range(times_coordinates.shape[0]):
+                    spline = PchipInterpolator(times_coordinates[i], survival_curves)
+                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
+            elif ndim_surv == 2:
+                for i in range(times_coordinates.shape[0]):
+                    print(i)
+                    spline = PchipInterpolator(times_coordinates[i], survival_curves[i])
+                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
+        else:
+            raise ValueError("times_coordinate must be 1-D or 2-D")
+    else:
+        raise ValueError("interpolation should be one of ['None', 'Linear', 'Pchip']")
+
+    return rmst
+
+
+def predict_mean_st(
+        survival_curves: np.ndarray,
+        times_coordinates: np.ndarray,
+        interpolation: str = "Linear"
+) -> Union[float, np.ndarray]:
+    """
+    Get the mean survival time(s) from the survival curve for a group of samples.
+    The mean survival time is calculated as the area under the survival curve, which is the RMST + residual area.
+    Parameters
+    ----------
+    survival_curves: np.ndarray
+        The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
+        number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        survival curve of a single sample.
+    times_coordinates: np.ndarray
+        The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
+        is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        time coordinate of the survival curve of a single sample.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
+        If 'Linear', use the interp1d method from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    Returns
+    -------
+    median_survival_time: float
+        The median survival time(s).
+    """
+    _check_dim_align(survival_curves, times_coordinates)
+
+    ndim_surv = survival_curves.ndim
+    ndim_time = times_coordinates.ndim
+
+    rmst = predict_rmst(survival_curves, times_coordinates, interpolation)
+
+    last_prob = survival_curves[:, -1] if ndim_surv == 2 else survival_curves[-1]
+    last_time = times_coordinates[:, -1] if ndim_time == 2 else times_coordinates[-1]
+    # the residual area is calculated as the area of a triangle with height = last_prob
+    # and base = extrapolation_time - last_time
+    # extrapolation_time is the time point where the survival curve crosses 0 (using the linear function of [0, 1] - [last_time, last_prob])
+    residual_area = 0.5 * last_prob**2 * last_time / (1 - last_prob)
+    return rmst + residual_area
+
+
+def predict_mean_st_old(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
         interpolation: str = "Linear"
@@ -280,6 +411,9 @@ def predict_mean_survival_time(
     mean_survival_time: float
         The mean survival time.
     """
+    # deprecated warning
+    warnings.warn("This function is deprecated. Use 'predict_mean_st' instead.", DeprecationWarning)
+
     # If all the predicted probabilities are 1 the integral will be infinite.
     if np.all(survival_curve == 1):
         warnings.warn("All the predicted probabilities are 1, the integral will be infinite.")
@@ -310,15 +444,68 @@ def predict_mean_survival_time(
     return mean_survival_time
 
 
-def predict_median_survival_time(
+def predict_median_st(
+        survival_curves: np.ndarray,
+        times_coordinates: np.ndarray,
+        interpolation: str = "Linear"
+) -> Union[float, np.ndarray]:
+    """
+    Get the median survival time(s) from the survival curve for a group of samples.
+    The median survival time is defined as the time point where the survival curve crosses 0.5.
+    Parameters
+    ----------
+    survival_curves: np.ndarray
+        The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
+        number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        survival curve of a single sample.
+    times_coordinates: np.ndarray
+        The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
+        is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
+        time coordinate of the survival curve of a single sample.
+    interpolation: str
+        The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
+        If 'Linear', use the interp1d method from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    Returns
+    -------
+    median_survival_time: float
+        The median survival time(s).
+    """
+    _check_dim_align(survival_curves, times_coordinates)
+
+    ndim_surv = survival_curves.ndim
+    ndim_time = times_coordinates.ndim
+
+    if ndim_surv == 1 and ndim_time == 1:
+        median_sts = predict_median_st_ind(survival_curves, times_coordinates, interpolation)
+    elif ndim_surv == 2 and ndim_time == 1:
+        median_sts = np.empty(survival_curves.shape[0])
+        for i in range(survival_curves.shape[0]):
+            median_sts[i] = predict_median_st_ind(survival_curves[i, :], times_coordinates, interpolation)
+    elif ndim_surv == 1 and ndim_time == 2:
+        median_sts = np.empty(times_coordinates.shape[0])
+        for i in range(times_coordinates.shape[0]):
+            median_sts[i] = predict_median_st_ind(survival_curves, times_coordinates[i, :], interpolation)
+    elif ndim_surv == 2 and ndim_time == 2:
+        median_sts = np.empty(survival_curves.shape[0])
+        for i in range(survival_curves.shape[0]):
+            median_sts[i] = predict_median_st_ind(survival_curves[i, :], times_coordinates[i, :], interpolation)
+    else:
+        raise ValueError("The dimension of survival_curves and times_coordinate must be 1-D or 2-D.")
+
+    return median_sts
+
+
+def predict_median_st_ind(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
         interpolation: str = "Linear"
 ) -> float:
     """
-    Get the median survival time from the survival curve. The median survival time is defined as the time point where
-    the survival curve crosses 0.5. The curve is first interpolated by the given monotonic cubic interpolation method
-    (Linear or Pchip). Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
+    Get the median survival time from the survival curve for 1 individual.
+    The median survival time is defined as the time point where the survival curve crosses 0.5.
+    The curve is first interpolated by the given monotonic cubic interpolation method (Linear or Pchip).
+    Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
     median survival time is calculated by finding the time point where the survival curve crosses 0.5.
     Parameters
     ----------
@@ -538,7 +725,7 @@ class KaplanMeierArea(KaplanMeier):
         super().__post_init__(event_times, event_indicators)
         area_probabilities = np.append(1, self.survival_probabilities)
         area_times = np.append(0, self.survival_times)
-        self.km_linear_zero = -1 / ((area_probabilities[-1] - 1) / area_times[-1])
+        self.km_linear_zero = area_times[-1] / (1 - area_probabilities[-1])
         if self.survival_probabilities[-1] != 0:
             area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
@@ -619,7 +806,7 @@ class KaplanMeierArea(KaplanMeier):
         if self.predict(time) == 0:
             best_guess = time
         else:
-            best_guess = time + np.trapz(self._km_linear_predict(time_range), time_range) / self.predict(time)
+            best_guess = time + np.trapezoid(self._km_linear_predict(time_range), time_range) / self.predict(time)
 
         return best_guess
 

@@ -9,7 +9,7 @@ from functools import cached_property
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert
-from SurvivalEVAL.Evaluations.util import predict_mean_survival_time, predict_median_survival_time
+from SurvivalEVAL.Evaluations.util import predict_rmst, predict_mean_st, predict_median_st
 from SurvivalEVAL.Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival
 
 from SurvivalEVAL.Evaluations.Concordance import concordance
@@ -48,7 +48,7 @@ class SurvivalEvaluator:
         param train_event_indicators: structured array, shape = (n_train_samples, )
             Binary indicators of censoring for the training samples
         param predict_time_method: str, default = "Median"
-            Method for calculating predicted survival time. Available options are "Median" and "Mean".
+            Method for calculating predicted survival time. Available options are "Median", "Mean" and "RMST".
         param interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
@@ -75,11 +75,13 @@ class SurvivalEvaluator:
         self.train_event_indicators = train_event_indicators
 
         if predict_time_method == "Median":
-            self.predict_time_method = predict_median_survival_time
+            self.predict_time_method = predict_median_st
         elif predict_time_method == "Mean":
-            self.predict_time_method = predict_mean_survival_time
+            self.predict_time_method = predict_mean_st
+        elif predict_time_method == "RMST":
+            self.predict_time_method = predict_rmst
         else:
-            error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
+            error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
             raise TypeError(error)
 
         self.interpolation = interpolation
@@ -127,22 +129,20 @@ class SurvivalEvaluator:
         Predict survival time from survival curves.
         param predict_method: Callable
             A function that takes in a survival curve and returns a predicted survival time.
-            There are two build-in methods: 'predict_median_survival_time' and 'predict_mean_survival_time'.
-            'predict_median_survival_time' uses the median of the survival curve as the predicted survival time.
-            'predict_mean_survival_time' uses the expected time of the survival curve as the predicted survival time.
+            There are two build-in methods: 'predict_median_st', 'predict_mean_st', and 'predict_rmst'.
+            'predict_median_st' uses the median of the survival curve as the predicted survival time.
+            'predict_mean_st' uses the expected time of the survival curve as the predicted survival time.
+            'predict_rmst' uses the restricted mean survival time as the predicted survival time.
         :return: np.ndarray
             Predicted survival time for each sample.
         """
-        if (predict_method is not predict_mean_survival_time) and (predict_method is not predict_median_survival_time):
-            error = "Prediction method must be 'predict_mean_survival_time' or 'predict_median_survival_time', " \
+        if ((predict_method is not predict_mean_st) and (predict_method is not predict_median_st) and
+                (predict_method is not predict_rmst)):
+            error = "Prediction method must be 'predict_mean_st', 'predict_median_st', 'predict_rmst'" \
                     "got '{}' instead".format(predict_method.__name__)
             raise TypeError(error)
 
-        predicted_times = []
-        for i in range(self.predicted_curves.shape[0]):
-            predicted_time = predict_method(self.predicted_curves[i, :], self.time_coordinates, self.interpolation)
-            predicted_times.append(predicted_time)
-        predicted_times = np.array(predicted_times)
+        predicted_times = predict_method(self.predicted_curves, self.time_coordinates, self.interpolation)
         return predicted_times
 
     def predict_probability_from_curve(
@@ -225,7 +225,7 @@ class SurvivalEvaluator:
     def concordance(
             self,
             ties: str = "None",
-            pair_method: str = "Comparable"
+            method: str = "Comparable"
     ) -> (float, float, int):
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
@@ -238,7 +238,7 @@ class SurvivalEvaluator:
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        param pair_method: str, default = "Comparable"
+        param method: str, default = "Comparable"
             A string indicating the method for constructing the pairs of samples.
             Options: "Comparable" (default) or "Margin"
             "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
@@ -252,11 +252,15 @@ class SurvivalEvaluator:
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # Choose prediction method based on the input argument
-        if pair_method == "Margin" and (self.train_event_times is None or self.train_event_indicators is None):
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            method = "Comparable"
+
+        if method == "Margin":
             self._error_trainset("margin concordance")
 
         return concordance(self.predicted_event_times, self.event_times, self.event_indicators, self.train_event_times,
-                           self.train_event_indicators, pair_method, ties)
+                           self.train_event_indicators, method, ties)
 
     def auc(
             self,
@@ -295,6 +299,10 @@ class SurvivalEvaluator:
         :return: float
             The Brier score at the target time point.
         """
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            IPCW_weighted = False
+
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
 
@@ -320,6 +328,10 @@ class SurvivalEvaluator:
         :return:
             Values of multiple Brier scores.
         """
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            IPCW_weighted = False
+
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
 
@@ -346,6 +358,10 @@ class SurvivalEvaluator:
         :return: float
             The integrated Brier score.
         """
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            IPCW_weighted = False
+
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Integrated Brier Score (IBS)")
 
@@ -405,7 +421,7 @@ class SurvivalEvaluator:
     def mae(
             self,
             method: str = "Hinge",
-            weighted: bool = False,
+            weighted: bool = None,
             log_scale: bool = False,
             verbose: bool = False,
             truncated_time = None
@@ -414,9 +430,10 @@ class SurvivalEvaluator:
         Calculate the MAE score for the test set.
         param method: string, default: "Hinge"
             The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default: True
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
             Whether to use weighting scheme for MAE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         param verbose: boolean, default: False
@@ -426,6 +443,9 @@ class SurvivalEvaluator:
         :return: float
             The MAE score for the test set.
         """
+        if weighted is None:
+            weighted = False if method == "Uncensored" or "Hinge" else True
+
         return mean_error(
             predicted_times=self.predicted_event_times,
             event_times=self.event_times,
@@ -443,25 +463,29 @@ class SurvivalEvaluator:
     def mse(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
+            weighted: bool = None,
             log_scale: bool = False,
             verbose: bool = False,
             truncated_time = None
     ) -> float:
         """
-        Calculate the MAE score for the test set.
+        Calculate the MSE score for the test set.
         param method: string, default: "Hinge"
-            The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default: True
-            Whether to use weighting scheme for MAE.
+            The method used to calculate the MSE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
+            Whether to use weighting scheme for MSE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         param verbose: boolean, default: False
             Whether to show the progress bar.
         :return: float
-            The MAE score for the test set.
+            The MSE score for the test set.
         """
+        if weighted is None:
+            weighted = False if method == "Uncensored" or "Hinge" else True
+
         return mean_error(
             predicted_times=self.predicted_event_times,
             event_times=self.event_times,
@@ -479,25 +503,29 @@ class SurvivalEvaluator:
     def rmse(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
+            weighted: bool = None,
             log_scale: bool = False,
-            verbose: bool = False
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
         Calculate the root mean squared error (RMSE) score for the test set.
         param method: string, default: "Hinge"
-            The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default: True
-            Whether to use weighting scheme for MAE.
+            The method used to calculate the RMSE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
+            Whether to use weighting scheme for RMSE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
         param verbose: boolean, default: False
             Whether to show the progress bar.
+        param truncated_time: float, default: None
+            Truncated time.
         :return: float
-            The MAE score for the test set.
+            The RMSE score for the test set.
         """
-        return self.mse(method, weighted, log_scale, verbose) ** 0.5
+        return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
     def one_calibration(
             self,
@@ -593,7 +621,7 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
-            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
         param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
@@ -631,7 +659,7 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
-            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean" and "RMST".
         param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
@@ -665,7 +693,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
         param train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
             Event indicators for the training samples.
         param predict_time_method: string, default: "Median"
-            The method used to calculate the predicted event time. Options: "Median" (default), "Mean".
+            The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
         param interpolation: string, default: "Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
@@ -744,7 +772,7 @@ class PointEvaluator:
     def concordance(
             self,
             ties: str = "None",
-            pair_method: str = "Comparable"
+            method: str = "Comparable"
     ) -> (float, float, int):
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
@@ -757,7 +785,7 @@ class PointEvaluator:
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        param pair_method: str, default = "Comparable"
+        param method: str, default = "Comparable"
             A string indicating the method for constructing the pairs of samples.
             Options: "Comparable" (default) or "Margin"
             "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
@@ -770,31 +798,44 @@ class PointEvaluator:
         :return: (float, float, int)
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
-        # Choose prediction method based on the input argument
-        if pair_method == "Margin" and (self.train_event_times is None or self.train_event_indicators is None):
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            method == "Comparable"
+
+        if method == "Margin":
             self._error_trainset("margin concordance")
 
         return concordance(self._predicted_times, self.event_times, self.event_indicators, self.train_event_times,
-                           self.train_event_indicators, pair_method, ties)
+                           self.train_event_indicators, method, ties)
 
     def mae(
             self,
             method: str = "Hinge",
-            weighted: bool = False,
-            log_scale: bool = False
+            weighted: bool = None,
+            log_scale: bool = False,
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
         Calculate the MAE score for the test set.
         param method: string, default: "Hinge"
             The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default: True
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
             Whether to use weighting scheme for MAE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
+        param verbose: boolean, default: False
+            Whether to show the progress bar.
+        param truncated_time: float, default: None
+            Truncated time.
         :return: float
             The MAE score for the test set.
         """
+        if weighted is None:
+            weighted = False if method == "Uncensored" or "Hinge" else True
+
         return mean_error(
             predicted_times=self._predicted_times,
             event_times=self.event_times,
@@ -804,27 +845,39 @@ class PointEvaluator:
             error_type="absolute",
             method=method,
             weighted=weighted,
-            log_scale=log_scale
+            log_scale=log_scale,
+            verbose=verbose,
+            truncated_time=truncated_time
         )
 
     def mse(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
-            log_scale: bool = False
+            weighted: bool = None,
+            log_scale: bool = False,
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
-        Calculate the MAE score for the test set.
+        Calculate the MSE score for the test set.
         param method: string, default: "Hinge"
-            The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default: True
-            Whether to use weighting scheme for MAE.
+            The method used to calculate the MSE score.
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
+            Whether to use weighting scheme for MSE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default: False
             Whether to use log scale for the time axis.
+        param verbose: boolean, default: False
+            Whether to show the progress bar.
+        param truncated_time: float, default: None
+            Truncated time.
         :return: float
-            The MAE score for the test set.
+            The MSE score for the test set.
         """
+        if weighted is None:
+            weighted = False if method == "Uncensored" or "Hinge" else True
+
         return mean_error(
             predicted_times=self._predicted_times,
             event_times=self.event_times,
@@ -834,28 +887,37 @@ class PointEvaluator:
             error_type="squared",
             method=method,
             weighted=weighted,
-            log_scale=log_scale
+            log_scale=log_scale,
+            verbose=verbose,
+            truncated_time=truncated_time
         )
 
     def rmse(
             self,
             method: str = "Hinge",
-            weighted: bool = True,
-            log_scale: bool = False
+            weighted: bool = None,
+            log_scale: bool = False,
+            verbose: bool = False,
+            truncated_time = None
     ) -> float:
         """
         Calculate the root mean squared error (RMSE) score for the test set.
         param method: string, default: "Hinge"
             The method used to calculate the MAE score.
-            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-v1", "IPCW-v2", or "Pseudo_obs"\
-        param weighted: bool, default = True
+            Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
+        param weighted: bool, default: None
             Whether to use weighting scheme for MAE.
+            If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         param log_scale: boolean, default = False
             Whether to use log scale for the time axis.
+        param verbose: boolean, default = False
+            Whether to show the progress bar.
+        param truncated_time: float, default: None
+            Truncated time.
         :return: float
             The MAE score for the test set.
         """
-        return self.mse(method, weighted, log_scale) ** 0.5
+        return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
 
 class SingleTimeEvaluator:
@@ -868,6 +930,22 @@ class SingleTimeEvaluator:
             train_event_times: Optional[NumericArrayLike] = None,
             train_event_indicators: Optional[NumericArrayLike] = None,
     ):
+        """
+        Initialize the Evaluator
+
+        param predicted_probs: structured array, shape = (n_samples, )
+            Predicted survival probability at the target time for the testing samples.
+        param test_event_times: structured array, shape = (n_samples, )
+            Actual event/censor time for the testing samples.
+        param test_event_indicators: structured array, shape = (n_samples, )
+            Binary indicators of censoring for the testing samples
+        param target_time: float, int, or None, default = None
+            Time point at which the evaluation is to be performed. If None, the target time is set to the median time
+        param train_event_times: structured array, shape = (n_train_samples, )
+            Actual event/censor time for the training samples.
+        param train_event_indicators: structured array, shape = (n_train_samples, )
+            Binary indicators of censoring for the training samples
+        """
         self._predicted_probs = check_and_convert(predicted_probs)
 
 
@@ -877,7 +955,6 @@ class SingleTimeEvaluator:
             train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
         self.train_event_times = train_event_times
         self.train_event_indicators = train_event_indicators
-
 
         if target_time is None:
             # set to the median time of all the event/censor times from the training and test sets
@@ -922,6 +999,10 @@ class SingleTimeEvaluator:
         :return: float
             The Brier score at the target time point.
         """
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if (self.event_indicators == 1).all():
+            IPCW_weighted = False
+
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
         return single_brier_score(self._predicted_probs, self.event_times, self.event_indicators, self.train_event_times,
@@ -975,10 +1056,15 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         param train_event_indicators: structured array, shape = (n_train_samples, )
             Binary indicators of censoring for the training samples
         param predict_time_method: str, default = "Median"
-            Method for calculating predicted survival time. Available options are "Median" and "Mean".
+            Method for calculating predicted survival time. Available options are "Median", "Mean" or "RMST".
         param interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
+        if quantile_levels[0] != 0:
+            print("Adding 0s to the beginning of the quantile prediction and 0 to the beginning of the quantile levels")
+            quantile_levels = np.insert(quantile_levels, 0, 0)
+            quantile_regression = np.insert(quantile_regression, 0, 0, axis=1)
+
         survival_level = 1 - quantile_levels
         super(QuantileRegEvaluator, self).__init__(survival_level, quantile_regression, test_event_times,
                                                    test_event_indicators, train_event_times, train_event_indicators,
@@ -992,22 +1078,20 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         Predict survival time from survival curves.
         param predict_method: Callable
             A function that takes in a survival curve and returns a predicted survival time.
-            There are two build-in methods: 'predict_median_survival_time' and 'predict_mean_survival_time'.
-            'predict_median_survival_time' uses the median of the survival curve as the predicted survival time.
-            'predict_mean_survival_time' uses the expected time of the survival curve as the predicted survival time.
+            There are three build-in methods: 'predict_median_st', 'predict_mean_st', and 'predict_rmst'.
+            'predict_median_st' uses the median of the survival curve as the predicted survival time.
+            'predict_mean_st' uses the expected time of the survival curve as the predicted survival time.
+            'predict_rmst' uses the restricted mean survival time of the survival curve as the predicted survival time.
         :return: np.ndarray
             Predicted survival time for each sample.
         """
-        if (predict_method is not predict_mean_survival_time) and (predict_method is not predict_median_survival_time):
-            error = "Prediction method must be 'predict_mean_survival_time' or 'predict_median_survival_time', " \
+        if ((predict_method is not predict_mean_st) and (predict_method is not predict_median_st) and
+                (predict_method is not predict_rmst)):
+            error = "Prediction method must be 'predict_mean_st', 'predict_median_st', or 'predict_rmst'" \
                     "got '{}' instead".format(predict_method.__name__)
             raise TypeError(error)
 
-        predicted_times = []
-        for i in range(self.time_coordinates.shape[0]):
-            predicted_time = predict_method(self.predicted_curves, self.time_coordinates[i, :], self.interpolation)
-            predicted_times.append(predicted_time)
-        predicted_times = np.array(predicted_times)
+        predicted_times = predict_method(self.predicted_curves, self.time_coordinates, self.interpolation)
         return predicted_times
 
     def predict_probability_from_curve(

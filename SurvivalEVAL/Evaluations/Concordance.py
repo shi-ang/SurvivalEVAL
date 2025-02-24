@@ -4,8 +4,8 @@ from typing import Optional
 import warnings
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea,
-                                           predict_mean_survival_time, predict_median_survival_time)
+from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, predict_rmst,
+                                           predict_mean_st, predict_median_st)
 
 
 def concordance_pycox(
@@ -25,9 +25,9 @@ def concordance_pycox(
     survival_curves[survival_curves < 0] = 0
 
     if predicted_time_method == "Median":
-        predict_method = predict_median_survival_time
+        predict_method = predict_median_st
     elif predicted_time_method == "Mean":
-        predict_method = predict_mean_survival_time
+        predict_method = predict_mean_st
     else:
         error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
         raise TypeError(error)
@@ -54,9 +54,9 @@ def concordance_sksurv(
     event_time, event_indicator = check_and_convert(event_time, event_indicator)
 
     if predicted_time_method == "Median":
-        predict_method = predict_median_survival_time
+        predict_method = predict_median_st
     elif predicted_time_method == "Mean":
-        predict_method = predict_mean_survival_time
+        predict_method = predict_mean_st
     else:
         error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
         raise TypeError(error)

@@ -28,7 +28,7 @@ evaluator = PointEvaluator(predicted_times, test_event_times, test_event_indicat
 print("Successfully initialized the evaluator.")
 
 # calculate the concordance index
-cindex, _, _ = evaluator.concordance(pair_method="Margin")
+cindex, _, _ = evaluator.concordance(method="Margin")
 print(f"The concordance index is {cindex}.")
 
 # calculate the MAE
