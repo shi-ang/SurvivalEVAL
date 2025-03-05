@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 2025-03-05: Version 0.4.1
+Add copyright disclaimer for two functions in the `SurvivalEVAL/Evaluation/Concordance.py` file.
+
 ## 2025-02-24: Version 0.4.0
 1. Add restricted mean survival time (RMST) for the evaluation.
 2. Improve computational cost for mean survival time
