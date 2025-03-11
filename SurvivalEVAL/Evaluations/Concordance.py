@@ -188,6 +188,33 @@ def _estimate_concordance_index(
         partial_weights: np.ndarray = None,
         tied_tol: float = 1e-8
 ):
+    """
+    Estimate the concordance index.
+    This backbone of this function is borrowed from scikit-survival:
+    https://github.com/sebp/scikit-survival/blob/4e664d8e4fe5e5b55006e3913f2bbabcf2455496/sksurv/metrics.py#L85-L118
+    In here, we make modifications to the original function to allow for partial weights and best-guess times (margin times).
+
+    All functions in scikit-survival are licensed under the GPLv3 License:
+    https://github.com/sebp/scikit-survival/blob/master/COPYING
+
+    param event_indicators: array-like, shape = (n_samples,)
+        The event indicators of the true survival times.
+    param event_times: array-like, shape = (n_samples,)
+        The true survival times.
+    param estimate: array-like, shape = (n_samples,)
+        The estimated risk scores. A higher score should correspond to a higher risk.
+    param bg_event_time: array-like, shape = (n_samples,), optional (default=None)
+        The best-guess event times. For uncensored samples, this should be the same as the true event times.
+        For censored samples, this should be the best-guess time (margin time) for the censored samples.
+    param partial_weights: array-like, shape = (n_samples,), optional (default=None)
+        The partial weights for the censored samples.
+    param tied_tol: float, optional (default=1e-8)
+        The tolerance for considering two times as tied.
+    :return: (float, float, float, float, float)
+        The concordance index, the number of concordant pairs, the number of discordant pairs,
+        the number of tied risk scores, and the number of tied times.
+    -------
+    """
     order = np.argsort(event_time, kind="stable")
 
     comparable, tied_time, weight = _get_comparable(event_indicator, event_time, order)
@@ -241,8 +268,41 @@ def _estimate_concordance_index(
     return cindex, concordant, discordant, tied_risk, tied_time
 
 
-def _get_comparable(event_indicator: np.ndarray, event_time: np.ndarray, order: np.ndarray,
-                    partial_weights: np.ndarray = None):
+def _get_comparable(
+        event_indicator: np.ndarray,
+        event_time: np.ndarray,
+        order: np.ndarray,
+        partial_weights: np.ndarray = None
+):
+    """
+    Given the labels of the survival outcomes, get the comparable pairs.
+
+    This backbone of this function is borrowed from scikit-survival:
+    https://github.com/sebp/scikit-survival/blob/4e664d8e4fe5e5b55006e3913f2bbabcf2455496/sksurv/metrics.py#L57-L81
+    In here, we make modifications to the original function to calculates the weights for each pair.
+
+    All functions in scikit-survival are licensed under the GPLv3 License:
+    https://github.com/sebp/scikit-survival/blob/master/COPYING
+
+    param event_indicators: array-like, shape = (n_samples,)
+        The event indicators of the true survival times.
+    param event_times: array-like, shape = (n_samples,)
+        The true survival times.
+    param estimate: array-like, shape = (n_samples,)
+        The estimated risk scores. A higher score should correspond to a higher risk.
+    param bg_event_time: array-like, shape = (n_samples,), optional (default=None)
+        The best-guess event times. For uncensored samples, this should be the same as the true event times.
+        For censored samples, this should be the best-guess time (margin time) for the censored samples.
+    param partial_weights: array-like, shape = (n_samples,), optional (default=None)
+        The partial weights for the censored samples.
+    param tied_tol: float, optional (default=1e-8)
+        The tolerance for considering two times as tied.
+    :return: (float, float, float, float, float)
+        The concordance index, the number of concordant pairs, the number of discordant pairs,
+        the number of tied risk scores, and the number of tied times.
+    -------
+    """
+
     if partial_weights is None:
         partial_weights = np.ones_like(event_indicator, dtype=float)
     n_samples = len(event_time)
