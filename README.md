@@ -11,7 +11,7 @@
 [//]: # ()
 [//]: # ([![Python 3.8+]&#40;https://img.shields.io/badge/python-3.8+-blue.svg&#41;]&#40;https://www.python.org/downloads/release/python-380/&#41;)
 
-[//]: # ([![License]&#40;https://img.shields.io/badge/license-GPLv3-blue.svg&#41;]&#40;https://opensource.org/licenses/MIT&#41;)
+[//]: # ([![License]&#40;https://img.shields.io/badge/license-GPLv3-blue.svg&#41;]&#40;https://opensource.org/license/gpl-3-0&#41;)
 
 [//]: # ([![Maintenance]&#40;https://img.shields.io/badge/Maintained%3F-yes-green.svg&#41;]&#40;https://github.com/shi-ang/SurvivalEVAL/issues&#41;)
 
