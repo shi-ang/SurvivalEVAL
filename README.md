@@ -8,28 +8,15 @@
 
 -----------------
 
-[//]: # ()
-[//]: # ([![Python 3.8+]&#40;https://img.shields.io/badge/python-3.8+-blue.svg&#41;]&#40;https://www.python.org/downloads/release/python-380/&#41;)
-
-[//]: # ([![License]&#40;https://img.shields.io/badge/license-GPLv3-blue.svg&#41;]&#40;https://opensource.org/license/gpl-3-0&#41;)
-
-[//]: # ([![Maintenance]&#40;https://img.shields.io/badge/Maintained%3F-yes-green.svg&#41;]&#40;https://github.com/shi-ang/SurvivalEVAL/issues&#41;)
-
-[//]: # ([![HitCount]&#40;https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat&#41;]&#40;http://hits.dwyl.com/shi-ang/SurvivalEVAL&#41;)
-
-[//]: # ()
-
 <p align="center">
     <a href="https://pypi.org/project/SurvivalEVAL/">
         <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
     <a href="https://pypi.org/project/SurvivalEVAL/">
         <img alt="PyPI - Python Version" src="https://img.shields.io/badge/python-3.8+-blue.svg"></a>
-    <a href="https://opensource.org/licenses/MIT">
-        <img alt="License" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
+    <a href="https://opensource.org/license/gpl-3-0">
+        <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
     <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
         <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
-    <a href="http://hits.dwyl.com/shi-ang/SurvivalEVAL">
-        <img alt="HitCount" src="https://hits.dwyl.com/shi-ang/SurvivalEVAL.svg?style=flat"></a>
 </p>
 
 
