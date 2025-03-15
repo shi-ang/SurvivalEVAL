@@ -2,6 +2,7 @@
 
 import os
 from setuptools import setup, find_packages
+from SurvivalEVAL.version import __version__
 
 exec(compile(open("SurvivalEVAL/version.py").read(), "SurvivalEVAL/version.py", "exec"))
 
@@ -23,7 +24,7 @@ setup(
     url="https://github.com/shi-ang/SurvivalEVAL",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Topic :: Scientific/Engineering",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3.8",
