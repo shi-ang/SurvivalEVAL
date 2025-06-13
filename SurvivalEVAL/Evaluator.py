@@ -7,17 +7,17 @@ import matplotlib.pyplot as plt
 from abc import ABC
 from functools import cached_property
 
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert
 from SurvivalEVAL.Evaluations.util import predict_rmst, predict_mean_st, predict_median_st
 from SurvivalEVAL.Evaluations.util import predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival
 
 from SurvivalEVAL.Evaluations.Concordance import concordance
-from SurvivalEVAL.Evaluations.AreaUnderCurve import auc
+from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multiple_points
 from SurvivalEVAL.Evaluations.MeanError import mean_error
-from SurvivalEVAL.Evaluations.OneCalibration import one_calibration
-from SurvivalEVAL.Evaluations.D_Calibration import d_calibration
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration, integrated_calibration_index
+from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration
 from SurvivalEVAL.Evaluations.KM_Calibration import km_calibration
 
 
@@ -264,7 +264,7 @@ class SurvivalEvaluator:
 
     def auc(
             self,
-            target_time: Optional[Union[int, float]] = None
+            target_time: Optional[Numeric] = None
     ) -> float:
         """
         Calculate the area under the ROC curve (AUC) score at a given time point from the predicted survival curve.
@@ -286,7 +286,7 @@ class SurvivalEvaluator:
 
     def brier_score(
             self,
-            target_time: Optional[Union[int, float]] = None,
+            target_time: Optional[Numeric] = None,
             IPCW_weighted: bool = True
     ) -> float:
         """
@@ -529,8 +529,9 @@ class SurvivalEvaluator:
 
     def one_calibration(
             self,
-            target_time: Union[float, int],
+            target_time: Numeric,
             num_bins: int = 10,
+            binning_strategy: str = "C",
             method: str = "DN"
     ) -> (float, list, list):
         """
@@ -539,6 +540,10 @@ class SurvivalEvaluator:
             Time point at which the one calibration score is to be calculated.
         param num_bins: int, default: 10
             Number of bins used to calculate the one calibration score.
+        binning_strategy: str
+            The strategy to bin the predictions. The options are: "C" (default), and "H".
+            C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
+            H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
         param method: string, default: "DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
@@ -546,7 +551,26 @@ class SurvivalEvaluator:
             (p-value, observed probabilities, expected probabilities)
         """
         predict_probs = self.predict_probability_from_curve(target_time)
-        return one_calibration(predict_probs, self.event_times, self.event_indicators, target_time, num_bins, method)
+        return one_calibration(1 - predict_probs, self.event_times, self.event_indicators,
+                               target_time, num_bins, binning_strategy, method)
+
+    def integrated_one_calibration(
+            self,
+            target_time: Numeric,
+            make_figure: Optional[bool] = True,
+            figure_range: Optional[tuple] = None
+    ) -> (dict, plt.figure):
+        """
+        Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
+        param target_time: Numeric
+            The specific time points for which to estimate the one calibration scores.
+        :return: dict, plt.figure
+            A dictionary containing the summary of ICI for the target time point, and a figure showing the
+            graphical calibration curve.
+        """
+        predict_probs = self.predict_probability_from_curve(target_time)
+        return integrated_calibration_index(1 - predict_probs, self.event_times, self.event_indicators,
+                                            target_time, make_figure, figure_range)
 
     def d_calibration(
             self,
@@ -1011,20 +1035,43 @@ class SingleTimeEvaluator:
     def one_calibration(
         self,
         num_bins: int = 10,
+        binning_strategy: str = "C",
         method: str = "DN"
     ) -> (float, list, list):
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
         param num_bins: int, default: 10
             Number of bins used to calculate the one calibration score.
+        param binning_strategy: str, default: "C"
+            The strategy to bin the predictions. The options are: "C" (default), and "H".
+            C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
+            H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
         param method: string, default: "DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
         :return: float, list, list
             (p-value, observed probabilities, expected probabilities)
         """
-        return one_calibration(self._predicted_probs, self.event_times, self.event_indicators,
-                               self.target_time, num_bins, method)
+        return one_calibration(1 - self._predicted_probs, self.event_times, self.event_indicators,
+                               self.target_time, num_bins, binning_strategy, method)
+
+    def integrated_calibration_index(
+            self,
+            make_figure: Optional[bool] = True,
+            figure_range: Optional[tuple] = None
+    ) -> (dict, plt.figure):
+        """
+        Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
+        :param make_figure: bool, default = True
+            Whether to create a figure showing the graphical calibration curve.
+        :param figure_range: tuple, optional
+            The range of the figure to be plotted. If None, the range is automatically determined.
+        :return: dict, plt.figure
+            A dictionary containing the summary of ICI for the target time point, and a figure showing the
+            graphical calibration curve.
+        """
+        return integrated_calibration_index(1 - self._predicted_probs, self.event_times, self.event_indicators,
+                                            self.target_time, make_figure, figure_range)
 
 
 class QuantileRegEvaluator(SurvivalEvaluator):

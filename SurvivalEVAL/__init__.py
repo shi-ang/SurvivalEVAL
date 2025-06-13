@@ -2,13 +2,13 @@ from SurvivalEVAL.Evaluator import SurvivalEvaluator,  QuantileRegEvaluator
 from SurvivalEVAL.Evaluator import DistributionEvaluator, PointEvaluator, SingleTimeEvaluator
 from SurvivalEVAL.Evaluator import PycoxEvaluator, ScikitSurvivalEvaluator, LifelinesEvaluator
 
-from SurvivalEVAL.Evaluations.AreaUnderCurve import auc
+from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multiple_points
 from SurvivalEVAL.Evaluations.Concordance import concordance
-from SurvivalEVAL.Evaluations.D_Calibration import d_calibration
+from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration
 from SurvivalEVAL.Evaluations.KM_Calibration import km_calibration
 from SurvivalEVAL.Evaluations.MeanError import mean_error
-from SurvivalEVAL.Evaluations.OneCalibration import one_calibration
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
 
 from SurvivalEVAL.version import __version__
 
