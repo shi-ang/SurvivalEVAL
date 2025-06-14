@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import warnings
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve, predict_multi_probs_from_curve
+from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve, predict_multi_probs_from_curve
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def single_brier_score_pycox(

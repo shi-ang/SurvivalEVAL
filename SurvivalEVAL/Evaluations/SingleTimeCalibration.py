@@ -6,7 +6,8 @@ from patsy import dmatrix  # For spline basis matrix
 import matplotlib.pyplot as plt  # For plotting
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, KaplanMeier, predict_prob_from_curve
+from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def one_calibration(
@@ -172,6 +173,7 @@ def integrated_calibration_index(
     spline = dmatrix(f"bs(x, df={knots}, include_intercept=False)", {"x": pred_clls}, return_type='dataframe')
     fit_info = spline.design_info
     df = pd.concat([pd.Series(event_time, name='time'), pd.Series(event_indicator, name='event'), spline], axis=1)
+    # these model-based estimates are used as the value of observed risks
     cal_fitter = CoxPHFitter().fit(df, duration_col='time', event_col='event')
 
     if make_figure:
@@ -194,6 +196,7 @@ def integrated_calibration_index(
     else:
         fig = None
 
+    # these model-based estimates are used as the value of observed risks
     cal_pred = 1 - cal_fitter.predict_survival_function(spline, times=[target_time]).T.values.flatten()
     abs_err = np.abs(preds - cal_pred)
     ici = abs_err.mean()

@@ -4,8 +4,9 @@ from typing import Optional
 import warnings
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, predict_rmst,
+from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst,
                                            predict_mean_st, predict_median_st)
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea
 
 
 def concordance_pycox(
