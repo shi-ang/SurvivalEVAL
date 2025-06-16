@@ -5,8 +5,8 @@ import warnings
 from tqdm import trange
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, KaplanMeierArea, km_mean,
-                                           predict_mean_st, predict_median_st)
+from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_mean_st, predict_median_st)
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import km_mean, KaplanMeierArea
 
 
 def mae_pycox(

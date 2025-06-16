@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from SurvivalEVAL.Evaluations.util import KaplanMeier, interpolated_survival_curve
+from SurvivalEVAL.Evaluations.util import interpolated_survival_curve
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def km_calibration(
