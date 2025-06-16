@@ -181,10 +181,10 @@ def integrated_calibration_index(
         grid_cll = np.log(-np.log(1 - grid))
 
         spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type='dataframe')
-        cal_pred = 1 - cal_fitter.predict_survival_function(spline_grid, times=[target_time]).T.values.flatten()
+        obs = 1 - cal_fitter.predict_survival_function(spline_grid, times=[target_time]).T.values.flatten()
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(grid, cal_pred, label='Calibration Curve', color='blue')
+        ax.plot(grid, obs, label='Calibration Curve', color='blue')
         ax.plot(grid, grid, label='Perfect Calibration', linestyle='--', color='grey')
         ax.set_xlabel('Predicted Survival Probability')
         ax.set_ylabel('Observed Survival Probability')
@@ -196,9 +196,8 @@ def integrated_calibration_index(
     else:
         fig = None
 
-    # these model-based estimates are used as the value of observed risks
-    cal_pred = 1 - cal_fitter.predict_survival_function(spline, times=[target_time]).T.values.flatten()
-    abs_err = np.abs(preds - cal_pred)
+    obs = 1 - cal_fitter.predict_survival_function(spline, times=[target_time]).T.values.flatten()
+    abs_err = np.abs(preds - obs)
     ici = abs_err.mean()
     e50 = np.median(abs_err)
     e90 = np.quantile(abs_err, 0.9)
