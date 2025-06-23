@@ -8,7 +8,7 @@ from SurvivalEVAL.Evaluations.Concordance import concordance
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration
 from SurvivalEVAL.Evaluations.KM_Calibration import km_calibration
 from SurvivalEVAL.Evaluations.MeanError import mean_error
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration, integrated_calibration_index
 
 from SurvivalEVAL.version import __version__
 
@@ -21,5 +21,5 @@ __all__ = [
     'PycoxEvaluator', 'ScikitSurvivalEvaluator', 'LifelinesEvaluator',
     'auc', 'single_brier_score', 'brier_multiple_points',
     'concordance', 'd_calibration', 'km_calibration',
-    'mean_error', 'one_calibration', '__version__'
+    'mean_error', 'one_calibration', 'integrated_calibration_index', '__version__'
 ]

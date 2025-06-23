@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2025-06-23: Version 0.4.2
+1. Add graphical calibration plot and integrated calibration index (ICI) for the evaluation.
+2. Minor improvements for calculating the median survival time
+
 ## 2025-03-05: Version 0.4.1
 Add copyright disclaimer for two functions in the `SurvivalEVAL/Evaluation/Concordance.py` file.
 

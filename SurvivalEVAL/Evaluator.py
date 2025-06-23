@@ -971,6 +971,9 @@ class SingleTimeEvaluator:
             Binary indicators of censoring for the training samples
         """
         self._predicted_probs = check_and_convert(predicted_probs)
+        if self._predicted_probs.ndim != 1:
+            raise ValueError("predicted_probs should be a 1D array-like object, "
+                             "but got a {}D array-like object".format(self._predicted_probs.ndim))
 
 
         self.event_times, self.event_indicators = check_and_convert(test_event_times, test_event_indicators)
@@ -1057,11 +1060,14 @@ class SingleTimeEvaluator:
 
     def integrated_calibration_index(
             self,
+            knots: Optional[int] = 3,
             make_figure: Optional[bool] = True,
             figure_range: Optional[tuple] = None
     ) -> (dict, plt.figure):
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
+        :param knots: int, default = 3
+            The number of knots to use for the spline fit. If None, the number of knots is automatically determined.
         :param make_figure: bool, default = True
             Whether to create a figure showing the graphical calibration curve.
         :param figure_range: tuple, optional
@@ -1071,7 +1077,7 @@ class SingleTimeEvaluator:
             graphical calibration curve.
         """
         return integrated_calibration_index(1 - self._predicted_probs, self.event_times, self.event_indicators,
-                                            self.target_time, make_figure, figure_range)
+                                            self.target_time, knots, make_figure, figure_range)
 
 
 class QuantileRegEvaluator(SurvivalEvaluator):

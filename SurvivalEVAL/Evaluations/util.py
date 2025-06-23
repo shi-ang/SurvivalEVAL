@@ -498,7 +498,8 @@ def predict_median_st(
 def predict_median_st_ind(
         survival_curve: np.ndarray,
         times_coordinate: np.ndarray,
-        interpolation: str = "Linear"
+        interpolation: str = "Linear",
+        discretize_num: int = 1000
 ) -> float:
     """
     Get the median survival time from the survival curve for 1 individual.
@@ -516,9 +517,12 @@ def predict_median_st_ind(
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    discretize_num: int
+        The number of points to discretize the time range for interpolation. Default: 1000.
+        This is used only when interpolation is 'Pchip'.
     Returns
     -------
-    median_survival_time: float
+    median_st: float
         The median survival time.
     """
     # If all the predicted probabilities are 1 the integral will be infinite.
@@ -526,37 +530,35 @@ def predict_median_st_ind(
         warnings.warn("All the predicted probabilities are 1, the median survival time will be infinite.")
         return np.inf
 
-    min_prob = float(min(survival_curve))
+    min_prob = min(survival_curve)
 
-    if 0.5 in survival_curve:
-        median_probability_time = times_coordinate[np.where(survival_curve == 0.5)[0][0]]
-    elif min_prob < 0.5:
-        idx_before_median = np.where(survival_curve > 0.5)[0][-1]
-        idx_after_median = np.where(survival_curve < 0.5)[0][0]
-        min_time_before_median = times_coordinate[idx_before_median]
-        max_time_after_median = times_coordinate[idx_after_median]
+    if min_prob <= 0.5:
+        idx_arr = np.where(survival_curve <=0.5)[0]
 
-        if interpolation == "Linear":
-            # given last time before median and first time after median, solve the linear equation
-            slope = ((survival_curve[idx_after_median] - survival_curve[idx_before_median]) /
-                     (max_time_after_median - min_time_before_median))
-            intercept = survival_curve[idx_before_median] - slope * min_time_before_median
-            median_probability_time = (0.5 - intercept) / slope
-        elif interpolation == "Pchip":
-            # reverse the array because the PchipInterpolator requires the x to be strictly increasing
-            spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
-            time_range = np.linspace(min_time_before_median, max_time_after_median, num=1000)
-            prob_range = spline(time_range)
-            inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
-            median_probability_time = np.array(inverse_spline(0.5)).item()
+        idx_after_median = idx_arr[0]
+        if idx_after_median == 0 or survival_curve[idx_after_median] == 0.5:
+            median_st = times_coordinate[idx_after_median]
         else:
-            raise ValueError("interpolation should be one of ['Linear', 'Pchip']")
+            p1, p2 = survival_curve[idx_after_median - 1], survival_curve[idx_after_median]
+            if interpolation == "Linear":
+                # linear interpolation to find the median time
+                t1, t2 = times_coordinate[idx_after_median - 1], times_coordinate[idx_after_median]
+                median_st = (t1 + (0.5 - p1) * (t2 - t1) / (p2 - p1))
+            elif interpolation == "Pchip":
+                # reverse the array because the PchipInterpolator requires the x to be strictly increasing
+                spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
+                time_range = np.linspace(p1, p2, num=discretize_num)
+                prob_range = spline(time_range)
+                inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
+                median_st = np.array(inverse_spline(0.5)).item()
+            else:
+                raise ValueError("interpolation should be one of ['Linear', 'Pchip']")
     else:
-        max_time = float(max(times_coordinate))
-        min_prob = float(min(survival_curve))
+        max_time = max(times_coordinate)
+        min_prob = min(survival_curve)
         slope = (1 - min_prob) / (0 - max_time)
-        median_probability_time = - 0.5 / slope
-    return median_probability_time
+        median_st = - 0.5 / slope
+    return median_st
 
 
 def quantile_to_survival(quantile_levels, quantile_predictions, time_coordinates, interpolate='Pchip'):

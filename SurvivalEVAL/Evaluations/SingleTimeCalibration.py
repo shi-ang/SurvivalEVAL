@@ -161,13 +161,12 @@ def integrated_calibration_index(
     Returns
     -------
     summary: dict
-        A dictionary containing the integrated calibration index (ICI), E50, E90, and E_max
+        A dictionary containing the integrated calibration index (ICI), E50, E90, E_max, and the information about the calibration curve.
     plot: plt.figure
         The plot of the graphical calibration curve if make_plot is True, otherwise None.
     """
     preds, event_time, event_indicator = check_and_convert(preds, event_time, event_indicator)
     # get cdfs and cumulative log-log (CLL) values
-    # pred_survs = 1 - preds
     pred_clls = np.log(-np.log(1 - preds))
 
     spline = dmatrix(f"bs(x, df={knots}, include_intercept=False)", {"x": pred_clls}, return_type='dataframe')
@@ -175,26 +174,6 @@ def integrated_calibration_index(
     df = pd.concat([pd.Series(event_time, name='time'), pd.Series(event_indicator, name='event'), spline], axis=1)
     # these model-based estimates are used as the value of observed risks
     cal_fitter = CoxPHFitter().fit(df, duration_col='time', event_col='event')
-
-    if make_figure:
-        grid = np.linspace(np.quantile(preds, 0.01), np.quantile(preds, 0.99), 100)
-        grid_cll = np.log(-np.log(1 - grid))
-
-        spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type='dataframe')
-        cal_pred = 1 - cal_fitter.predict_survival_function(spline_grid, times=[target_time]).T.values.flatten()
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(grid, cal_pred, label='Calibration Curve', color='blue')
-        ax.plot(grid, grid, label='Perfect Calibration', linestyle='--', color='grey')
-        ax.set_xlabel('Predicted Survival Probability')
-        ax.set_ylabel('Observed Survival Probability')
-        ax.set_title('Graphical Calibration Curve')
-        ax.legend()
-        if figure_range is not None:
-            ax.set_xlim(figure_range[0], figure_range[1])
-            ax.set_ylim(figure_range[2], figure_range[3])
-    else:
-        fig = None
 
     # these model-based estimates are used as the value of observed risks
     cal_pred = 1 - cal_fitter.predict_survival_function(spline, times=[target_time]).T.values.flatten()
@@ -209,6 +188,32 @@ def integrated_calibration_index(
         "E90": e90,
         "E_max": e_max
     }
+
+    grid = np.linspace(np.quantile(preds, 0.01), np.quantile(preds, 0.99), 100)
+    grid_cll = np.log(-np.log(1 - grid))
+
+    spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type='dataframe')
+    cal_pred = 1 - cal_fitter.predict_survival_function(spline_grid, times=[target_time]).T.values.flatten()
+
+    summary["curve"] = {
+        "grid": grid,
+        "cal_pred": cal_pred,
+    }
+
+    if make_figure:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        ax.plot(grid, cal_pred, label='Calibration Curve', color='blue')
+        ax.plot(grid, grid, label='Perfect Calibration', linestyle='--', color='grey')
+        ax.set_xlabel('Predicted Survival Probability')
+        ax.set_ylabel('Observed Survival Probability')
+        ax.set_title('Graphical Calibration Curve')
+        ax.legend()
+        if figure_range is not None:
+            ax.set_xlim(figure_range[0], figure_range[1])
+            ax.set_ylim(figure_range[2], figure_range[3])
+    else:
+        fig = None
 
     return summary, fig
 
