@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2025-06-24: Version 0.4.3
+1. Clean up the deprecated code and files.
+2. Improve code efficiency for the evaluation.
+3. Add residuals (Cox-Snell, modified Cox-Snell, Martingale, Deviance) for the evaluation.
+4. Add NA estimator for the evaluation.
+5. Add Copula Graphic estimators
+6. Update readme
+
 ## 2025-06-23: Version 0.4.2
 1. Add graphical calibration plot and integrated calibration index (ICI) for the evaluation.
 2. Minor improvements for calculating the median survival time

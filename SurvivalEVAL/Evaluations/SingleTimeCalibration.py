@@ -124,7 +124,7 @@ def integrated_calibration_index(
         event_indicator: NumericArrayLike,
         target_time: Numeric,
         knots: int = 3,
-        make_figure: bool = False,
+        draw_figure: bool = False,
         figure_range: tuple = None,
 ) -> (dict, plt.figure):
     """
@@ -151,7 +151,7 @@ def integrated_calibration_index(
     knots: int
         The number of knots to use for the spline basis. Default is 3.
         Austin et al. (2020) [1] compared 3-5 knots and found that 3 knots is best.
-    make_figure: bool
+    draw_figure: bool
         Whether to plot the graphical calibration curve and return the plot. Default is False.
     figure_range: tuple
         The range of the x-axis and y-axis for the plot.
@@ -200,7 +200,7 @@ def integrated_calibration_index(
         "cal_pred": cal_pred,
     }
 
-    if make_figure:
+    if draw_figure:
         fig, ax = plt.subplots(figsize=(8, 6))
 
         ax.plot(grid, cal_pred, label='Calibration Curve', color='blue')
@@ -255,7 +255,7 @@ if __name__ == "__main__":
         event_time=df_test['time'].values,
         event_indicator=df_test['event'].values,
         target_time=365 * year,
-        make_figure=True,)
+        draw_figure=True,)
     print(ici_summary)
     if ici_fig is not None:
         ici_fig.show()

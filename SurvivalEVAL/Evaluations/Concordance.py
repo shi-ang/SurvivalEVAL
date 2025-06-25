@@ -1,75 +1,7 @@
 import numpy as np
-import pandas as pd
 from typing import Optional
-import warnings
 
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst,
-                                           predict_mean_st, predict_median_st)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea
-
-
-def concordance_pycox(
-        predicted_survival_curves: pd.DataFrame,
-        event_time: NumericArrayLike,
-        event_indicator: NumericArrayLike,
-        ties: str = "None",
-        predicted_time_method: str = "Median"
-) -> (float, float, int):
-    warnings.warn("This function is deprecated and might be deleted in the future. "
-                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
-    event_time, event_indicator = check_and_convert(event_time, event_indicator)
-    # Extracting the time buckets
-    time_coordinates = predicted_survival_curves.index.values
-    # computing the Survival function, and set the small negative value to zero
-    survival_curves = predicted_survival_curves.values.T
-    survival_curves[survival_curves < 0] = 0
-
-    if predicted_time_method == "Median":
-        predict_method = predict_median_st
-    elif predicted_time_method == "Mean":
-        predict_method = predict_mean_st
-    else:
-        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-        raise TypeError(error)
-
-    # get median/mean survival time from the predicted curve
-    predicted_times = []
-    for i in range(survival_curves.shape[0]):
-        predicted_time = predict_method(survival_curves[i, :], time_coordinates)
-        predicted_times.append(predicted_time)
-    predicted_times = np.array(predicted_times)
-
-    return concordance(predicted_times, event_time, event_indicator, ties=ties)
-
-
-def concordance_sksurv(
-        predicted_survival_curves: np.ndarray,
-        event_time: NumericArrayLike,
-        event_indicator: NumericArrayLike,
-        ties: str = "None",
-        predicted_time_method: str = "Median"
-) -> (float, float, int):
-    warnings.warn("This function is deprecated and might be deleted in the future. "
-                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
-    event_time, event_indicator = check_and_convert(event_time, event_indicator)
-
-    if predicted_time_method == "Median":
-        predict_method = predict_median_st
-    elif predicted_time_method == "Mean":
-        predict_method = predict_mean_st
-    else:
-        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-        raise TypeError(error)
-
-    # get median/mean survival time from the predicted curve
-    predicted_times = []
-    for i in range(predicted_survival_curves.shape[0]):
-        predicted_time = predict_method(predicted_survival_curves[i].y, predicted_survival_curves[i].x)
-        predicted_times.append(predicted_time)
-    predicted_times = np.array(predicted_times)
-
-    return concordance(predicted_times, event_time, event_indicator, ties=ties)
 
 
 def concordance(
@@ -78,7 +10,7 @@ def concordance(
         event_indicators: np.ndarray,
         train_event_times: Optional[np.ndarray] = None,
         train_event_indicators: Optional[np.ndarray] = None,
-        pair_method: str = "Comparable",
+        method: str = "Harrell",
         ties: str = "Risk"
 ) -> (float, float, int):
     """
@@ -93,9 +25,9 @@ def concordance(
         The true survival times of the training set.
     param train_event_indicators: array-like, shape = (n_train_samples,)
         The event indicators of the true survival times of the training set.
-    param pair_method: str, optional (default="Comparable")
+    param pair_method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
-        "Comparable": the pairs are constructed by comparing the predicted survival time of each sample with the
+        "Harrell": the pairs are constructed by comparing the predicted survival time of each sample with the
         event time of all other samples. The pairs are only constructed between samples with comparable
         event times. For example, if sample i has a censor time of 10, then the pairs are constructed by
         comparing the predicted survival time of sample i with the event time of all samples with event
@@ -123,11 +55,11 @@ def concordance(
     assert len(predicted_times) == len(event_times) == len(event_indicators), \
         "The lengths of the predicted times and labels must be the same."
 
-    if pair_method == "Comparable":
+    if method == "Harrell":
         risks = -1 * predicted_times
         partial_weights = None
         bg_event_times = None
-    elif pair_method == "Margin":
+    elif method == "Margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)

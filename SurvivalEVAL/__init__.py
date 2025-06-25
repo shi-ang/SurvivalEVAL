@@ -5,8 +5,7 @@ from SurvivalEVAL.Evaluator import PycoxEvaluator, ScikitSurvivalEvaluator, Life
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multiple_points
 from SurvivalEVAL.Evaluations.Concordance import concordance
-from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration
-from SurvivalEVAL.Evaluations.KM_Calibration import km_calibration
+from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration, km_calibration, residuals
 from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration, integrated_calibration_index
 
@@ -20,6 +19,6 @@ __all__ = [
     'DistributionEvaluator', 'PointEvaluator', 'SingleTimeEvaluator',
     'PycoxEvaluator', 'ScikitSurvivalEvaluator', 'LifelinesEvaluator',
     'auc', 'single_brier_score', 'brier_multiple_points',
-    'concordance', 'd_calibration', 'km_calibration',
+    'concordance', 'd_calibration', 'km_calibration', 'residuals',
     'mean_error', 'one_calibration', 'integrated_calibration_index', '__version__'
 ]
