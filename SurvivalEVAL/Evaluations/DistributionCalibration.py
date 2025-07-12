@@ -1,11 +1,9 @@
 import numpy as np
-import pandas as pd
 from matplotlib import pyplot as plt
 from scipy.stats import chisquare
-import warnings
+from scipy.integrate import trapezoid
 
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve, interpolated_survival_curve
+from SurvivalEVAL.Evaluations.util import interpolated_survival_curve
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, NelsonAalen
 
 
@@ -229,7 +227,7 @@ def km_calibration(
     average_survival_curve = np.clip(average_survival_curve, 0, 1)
 
     # integrated over the joint time coordinates
-    mse = np.trapezoid((average_survival_curve - km_curve) ** 2, unique_event_times)
+    mse = trapezoid((average_survival_curve - km_curve) ** 2, unique_event_times)
     # normalize by the maximum time coordinate
     mse /= np.max(unique_event_times)
 

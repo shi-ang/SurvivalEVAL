@@ -1,6 +1,6 @@
 import warnings
 from dataclasses import dataclass, InitVar, field
-
+from scipy.integrate import trapezoid
 import numpy as np
 
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
@@ -195,7 +195,7 @@ class KaplanMeierArea(KaplanMeier):
         if self.predict(time) == 0:
             best_guess = time
         else:
-            best_guess = time + np.trapezoid(self._km_linear_predict(time_range), time_range) / self.predict(time)
+            best_guess = time + trapezoid(self._km_linear_predict(time_range), time_range) / self.predict(time)
 
         return best_guess
 

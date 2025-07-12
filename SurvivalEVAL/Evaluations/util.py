@@ -3,7 +3,7 @@ import pandas as pd
 import torch
 import warnings
 from typing import Union
-import scipy.integrate as integrate
+from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
@@ -318,7 +318,7 @@ def predict_rmst(
         areas = width * survival_curves[:, :-1] if ndim_surv == 2 else width * survival_curves[:-1]
         rmst = np.sum(areas, axis=1)
     elif interpolation == "Linear":
-        rmst = np.trapezoid(survival_curves, times_coordinates, axis=-1)
+        rmst = trapezoid(survival_curves, times_coordinates, axis=-1)
     elif interpolation == "Pchip":
         if ndim_time == 1:
             spline = PchipInterpolator(times_coordinates, survival_curves, axis=1 if ndim_surv == 2 else 0)
@@ -383,64 +383,6 @@ def predict_mean_st(
     # extrapolation_time is the time point where the survival curve crosses 0 (using the linear function of [0, 1] - [last_time, last_prob])
     residual_area = 0.5 * last_prob**2 * last_time / (1 - last_prob)
     return rmst + residual_area
-
-
-def predict_mean_st_old(
-        survival_curve: np.ndarray,
-        times_coordinate: np.ndarray,
-        interpolation: str = "Linear"
-) -> float:
-    """
-    Get the mean survival time from the survival curve. The mean survival time is defined as the area under the survival
-    curve. The curve is first interpolated by the given monotonic cubic interpolation method (Linear or Pchip). Then the
-    curve gets extroplated by the linear function of (0, 1) and the last time point. The area is calculated by the
-    trapezoidal rule.
-    Parameters
-    ----------
-    survival_curve: np.ndarray
-        The survival curve of the sample. 1-D array.
-    times_coordinate: np.ndarray
-        The time coordinate of the survival curve. 1-D array.
-    interpolation: str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
-        If 'Linear', use the interp1d method from scipy.interpolate.
-        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-    Returns
-    -------
-    mean_survival_time: float
-        The mean survival time.
-    """
-    # deprecated warning
-    warnings.warn("This function is deprecated. Use 'predict_mean_st' instead.", DeprecationWarning)
-
-    # If all the predicted probabilities are 1 the integral will be infinite.
-    if np.all(survival_curve == 1):
-        warnings.warn("All the predicted probabilities are 1, the integral will be infinite.")
-        return np.inf
-
-    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
-
-    # predicting boundary
-    max_time = float(max(times_coordinate))
-
-    # simply calculate the slope by using the [0, 1] - [max_time, S(t|x)]
-    slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
-
-    # zero_probability_time = min(times_coordinate[np.where(survival_curve == 0)],
-    #                             max_time + (0 - np.array(spline(max_time)).item()) / slope)
-    if 0 in survival_curve:
-        zero_probability_time = min(times_coordinate[np.where(survival_curve == 0)])
-    else:
-        zero_probability_time = max_time + (0 - np.array(spline(max_time)).item()) / slope
-
-    def _func_to_integral(time, maximum_time, slope_rate):
-        return np.array(spline(time)).item() if time < maximum_time else (1 + time * slope_rate)
-    # _func_to_integral = lambda time: spline(time) if time < max_time else (1 + time * slope)
-    # limit controls the subdivision intervals used in the adaptive algorithm.
-    # Set it to 1000 is consistent with Haider's R code
-    mean_survival_time, *rest = integrate.quad(_func_to_integral, 0, zero_probability_time,
-                                               args=(max_time, slope), limit=1000)
-    return mean_survival_time
 
 
 def predict_median_st(

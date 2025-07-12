@@ -1,5 +1,9 @@
 # CHANGELOG
 
+
+## 2025-07-12: Version 0.4.4
+1. Drop the use of `numpy.trapz` and `numpy.trapzoid` in the package, use `scipy.integrate.trapzoid` instead.
+
 ## 2025-06-24: Version 0.4.3
 1. Clean up the deprecated code and files.
 2. Improve code efficiency for the evaluation.
