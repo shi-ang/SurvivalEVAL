@@ -138,10 +138,13 @@ def residuals(
     elif method == "Martingale":
         residuals = event_indicators - cox_residuals
     elif method == "Deviance":
+        def safe_log(x):
+            return np.log(x + 1e-8)
+
         martingale_res = event_indicators - cox_residuals
         # get the sign of the martingale residuals
         sign = np.sign(martingale_res)
-        residuals = sign * np.sqrt(-2 * (martingale_res + event_indicators * np.log(cox_residuals)))
+        residuals = sign * np.sqrt(-2 * (martingale_res + event_indicators * safe_log(cox_residuals)))
     else:
         raise ValueError("Unknown method {}".format(method))
 

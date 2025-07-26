@@ -481,15 +481,15 @@ def predict_median_st_ind(
         if idx_after_median == 0 or survival_curve[idx_after_median] == 0.5:
             median_st = times_coordinate[idx_after_median]
         else:
-            p1, p2 = survival_curve[idx_after_median - 1], survival_curve[idx_after_median]
+            t1, t2 = times_coordinate[idx_after_median - 1], times_coordinate[idx_after_median]
             if interpolation == "Linear":
                 # linear interpolation to find the median time
-                t1, t2 = times_coordinate[idx_after_median - 1], times_coordinate[idx_after_median]
+                p1, p2 = survival_curve[idx_after_median - 1], survival_curve[idx_after_median]
                 median_st = (t1 + (0.5 - p1) * (t2 - t1) / (p2 - p1))
             elif interpolation == "Pchip":
                 # reverse the array because the PchipInterpolator requires the x to be strictly increasing
                 spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
-                time_range = np.linspace(p1, p2, num=discretize_num)
+                time_range = np.linspace(t1, t2, num=discretize_num)
                 prob_range = spline(time_range)
                 inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
                 median_st = np.array(inverse_spline(0.5)).item()
