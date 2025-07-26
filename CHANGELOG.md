@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2025-07-26: Version 0.4.5
+1. Bug fixed for Deviance residual
+2. Bug fixed for Pchip interpolator 
+3. Add log-rank test
 
 ## 2025-07-12: Version 0.4.4
 1. Drop the use of `numpy.trapz` and `numpy.trapzoid` in the package, use `scipy.integrate.trapzoid` instead.
