@@ -542,7 +542,7 @@ class SurvivalEvaluator:
             bs_dict = {}
             for time_point, b_score in zip(time_points, b_scores):
                 bs_dict[time_point] = b_score
-            print("Brier scores for multiple time points are".format(bs_dict))
+            print("Brier scores for multiple time points are:\n", bs_dict)
         integral_value = trapezoid(b_scores, time_points)
         ibs_score = integral_value / time_range
         ##########################

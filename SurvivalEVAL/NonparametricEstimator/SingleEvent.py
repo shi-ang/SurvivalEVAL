@@ -2,6 +2,7 @@ import warnings
 from dataclasses import dataclass, InitVar, field
 from scipy.integrate import trapezoid
 import numpy as np
+from typing import Optional
 
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
 
@@ -53,6 +54,8 @@ class KaplanMeier:
     """
     event_times: InitVar[np.array]
     event_indicators: InitVar[np.array]
+
+    # learned / derived attributes
     survival_times: np.array = field(init=False)
     population_count: np.array = field(init=False)
     events: np.array = field(init=False)
@@ -426,3 +429,215 @@ if __name__ == "__main__":
     gumbel_estimator = CopulaGraphic(times, events, alpha=18, type="Gumbel")
 
     frank_estimator = CopulaGraphic(times, events, alpha=18, type="Frank")
+
+
+def initialise_p(
+        tau: np.ndarray
+) -> np.ndarray:
+    """
+    Initialize the interval masses p uniformly for every interval (tau[j], tau[j+1]].
+    """
+    m = len(tau)
+    if m < 2:
+        raise ValueError("tau must contain at least two unique points.")
+    return np.full(m - 1, 1.0 / (m - 1), dtype=float)
+
+
+def build_alphas(
+        left: np.ndarray,
+        right: np.ndarray,
+        tau: np.ndarray
+) -> np.ndarray:
+    """
+    For i-th sample, and j-th unique time (tau):
+    alpha[i, j] = 1 if (tau[j], tau[j+1]] lies within [left_i, right_i].
+    Rows with all zeros are removed.
+    """
+    left = left[:, None]  # shape (n, 1)
+    right = right[:, None]  # shape (n, 1)
+
+    tau_lo = tau[:-1][None, :]  # shape (1, m-1)
+    tau_hi = tau[1:][None, :]   # shape (1, m-1)
+
+    A = ((tau_lo >= left) & (tau_hi <= right)).astype(float)  # (n, m-1)
+
+    # Drop rows that are all zeros
+    keep = ~np.all(A == 0.0, axis=1)
+    A = A[keep, :]
+    return A
+
+
+@dataclass
+class TurnbullEstimator:
+    """
+    Turnbull non-parametric estimator for interval-censored survival data.
+
+    https://www.ms.uky.edu/~mai/splus/icensem.pdf
+    """
+    eps: float = 1e-8
+    iter_max: int = 1000
+    verbose: bool = False
+
+    # learned / derived attributes
+    tau_: Optional[np.ndarray] = field(init=False, default=None)
+    probability_dens_: Optional[np.ndarray] = field(init=False, default=None)        # interval masses, length m-1
+    survival_times_: Optional[np.ndarray] = field(init=False, default=None)     # plotting x (tau possibly truncated)
+    survival_probabilities_: Optional[np.ndarray] = field(init=False, default=None)     # step survival, length len(time_)
+    n_iter_: int = field(init=False, default=0)
+    max_diff_: float = field(init=False, default=np.nan)
+
+    def fit(
+        self,
+        left: np.ndarray,
+        right: np.ndarray,
+        tau: Optional[np.ndarray] = None,
+        p_init: Optional[np.ndarray] = None
+    ) -> "TurnbullEstimator":
+        """
+        Fit the Turnbull estimator to interval-censored data.
+        Parameters
+        ----------
+        left : np.ndarray
+            Left limits of intervals.
+        right : np.ndarray
+            Right limits of intervals. Can contain np.inf for right-censored.
+        tau : np.ndarray, optional
+            Unique time points for the survival function.
+            If None, it is constructed as the unique sorted union of left and right (excluding np.inf).
+        p_init : np.ndarray, optional
+            Initial interval masses for the intervals defined by tau.
+            If None, it is initialized uniformly across intervals.
+        """
+        if tau is None:
+            tau_vals = np.concatenate([left, right[np.isfinite(right)]])
+            tau = np.unique(np.sort(tau_vals))
+        else:
+            tau = np.asarray(tau, dtype=float).copy()
+
+        alphas = build_alphas(left, right, tau)
+        n, m_minus_1 = alphas.shape
+
+        # Initialize the density p
+        if p_init is None:
+            p = initialise_p(tau)
+        else:
+            p = np.asarray(p_init, dtype=float).copy()
+            if p.shape[0] != m_minus_1:
+                raise ValueError("p_init must have length len(tau)-1.")
+            if (p <= 0).any():
+                raise ValueError("p_init must be strictly positive.")
+            p = p / p.sum()
+
+        # EM iterations
+        Q = np.ones_like(p)
+        iter_count = 0
+        maxdiff = np.inf
+
+        while iter_count < self.iter_max:
+            iter_count += 1
+            diff = Q - p
+            maxdiff = float(np.max(np.abs(diff)))
+            if self.verbose:
+                print(f"Iter {iter_count:3d} | maxdiff={maxdiff:.6g}")
+            if maxdiff < self.eps:
+                break
+
+            Q = p.copy()
+            C = alphas @ p  # shape (n,)
+            if np.any(C <= 0):
+                # Safeguard; should not happen if A rows are valid and p>0
+                raise RuntimeError("Zero or negative A @ p encountered.")
+
+            # EM update: p <- p * (t(A) %*% (1/C)) / n
+            p = p * ((alphas.T @ (1.0 / C)) / n)
+            # No explicit normalization needed; the update preserves sum to 1 in theory.
+            # Numerically, we can renormalize slightly:
+            s = p.sum()
+            if s <= 0:
+                raise RuntimeError("p collapsed to zero measure.")
+            p /= s
+
+        # Compute survival step function: surv = [1] + 1 - cumsum(p)
+        surv_full = np.concatenate([[1.0], 1.0 - np.cumsum(p)])
+        # Possibly truncate at the max finite right time
+        if np.any(~np.isfinite(right)):
+            t_max_finite = np.max(right[np.isfinite(right)])
+            mask = tau < t_max_finite
+            time_out = tau[mask]
+            surv_out = surv_full[mask]
+        else:
+            time_out = tau
+            surv_out = surv_full
+
+        self.tau_ = tau
+        self.probability_dens_ = p
+        self.survival_times_ = time_out
+        self.survival_probabilities_ = surv_out
+        self.n_iter_ = iter_count
+        self.max_diff_ = maxdiff
+
+        if self.verbose:
+            print(f"Iterations = {self.n_iter_}")
+            print(f"Max difference = {self.max_diff_}")
+            print(f"Convergence criteria: Max difference < {self.eps}")
+
+        return self
+
+
+if __name__ == "__main__":
+    import os
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
+    os.chdir("../..")
+    data = pd.read_csv("data/breast.csv")
+    data.right = data.right.fillna(np.inf)
+
+    # group1
+    data1 = data.loc[data["ther"] == 1].copy()
+    tb1 = TurnbullEstimator().fit(data1.left.values, data1.right.values)
+
+    # group2
+    data2 = data.loc[data["ther"] == 0].copy()
+    tb2 = TurnbullEstimator().fit(data2.left.values, data2.right.values)
+
+    # plotting
+    plt.figure(figsize=(7, 5))
+    plt.step(tb1.survival_times_, tb1.survival_probabilities_, where="post", linestyle="-", label="Radiotherapy (intervals)")
+    plt.step(tb2.survival_times_, tb2.survival_probabilities_, where="post", linestyle="-", label="Radio + Chemo (intervals)")
+    plt.xlabel("Time")
+    plt.ylabel("S(t)")
+    plt.legend()
+    plt.title("Turnbull Interval-Censored Survival")
+    plt.tight_layout()
+    plt.show()
+
+    # compare midpoint-based KM with Turnbull
+    # Midpoints:
+    p_mid = data["left"].to_numpy(float) + (data["right"].to_numpy(float) - data["left"].to_numpy(float)) / 2.0
+    finite_mid = np.isfinite(p_mid)
+    pm = np.where(finite_mid, p_mid, data["left"].to_numpy(float))
+    cens = finite_mid.astype(int)  # 1 == event, 0 == right-censored
+
+    # KM by group
+    km1 = KaplanMeier(pm[data["ther"] == 1], cens[data["ther"] == 1])
+    km0 = KaplanMeier(pm[data["ther"] == 0], cens[data["ther"] == 0])
+    times1, surv1 = km1.survival_times, km1.survival_probabilities
+    times0, surv0 = km0.survival_times, km0.survival_probabilities
+
+    plt.figure(figsize=(7, 5))
+    # Interval-censored (solid)
+    plt.step(tb1.survival_times_, tb1.survival_probabilities_, where="post", linestyle="-", label="Radiotherapy (intervals)")
+    plt.step(tb2.survival_times_, tb2.survival_probabilities_, where="post", linestyle="-", label="Radio + Chemo (intervals)")
+    # Midpoint-based KM (dashed)
+    if times1.size:
+        plt.step(times1, surv1, where="post", linestyle="--", label="Radiotherapy (midpoints)")
+    if times0.size:
+        plt.step(times0, surv0, where="post", linestyle="--", label="Radio + Chemo (midpoints)")
+
+    plt.xlabel("Time")
+    plt.ylabel("S(t)")
+    plt.legend()
+    plt.title("Interval-Censored (Turnbull) vs Midpoint KM")
+    plt.tight_layout()
+    plt.show()

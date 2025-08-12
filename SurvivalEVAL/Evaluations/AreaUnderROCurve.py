@@ -31,8 +31,12 @@ def auc(
     # get the binary status of the test data, given the target time
     binary_status = (event_times <= target_time).astype(int)
 
+    # check if the binary status is all zeros or all ones
+    if np.all(binary_status == 0) or np.all(binary_status == 1):
+        raise ValueError(f"Survival status is all zeros or all ones at time: {target_time}, AUC cannot be computed.")
+
     # computing the AUC, given the predicted probabilities and the binary status
-    risks = - predict_probs
+    risks = 1 - predict_probs
     return roc_auc_score(binary_status, risks)
 
 
