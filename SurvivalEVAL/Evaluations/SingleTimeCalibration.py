@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt  # For plotting
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimator
 
 
 def one_calibration(
@@ -21,6 +21,7 @@ def one_calibration(
 ) -> (float, list, list):
     """
     Compute the one calibration score for a given set of predictions and true event times.
+
     Parameters
     ----------
     preds: np.ndarray
@@ -42,6 +43,7 @@ def one_calibration(
         "Uncensored" method simply removes the censored patients, and uses the standard Hosmer-Lemeshow test.
         "DN" method uses the D'Agostino-Nam method, which uses the Kaplan-Meier estimate of the survival function
         to compute the average observed probabilities in each bin.
+
     Returns
     -------
     score: float
@@ -73,6 +75,9 @@ def one_calibration(
             binned_event_time.append(event_time[bin_mask])
             binned_event_indicator.append(event_indicator[bin_mask])
             binned_predictions.append(preds[bin_mask])
+    else:
+        error = "Please enter one of 'C','H' for binning_strategy."
+        raise TypeError(error)
 
     hl_statistics = 0
     observed_probabilities = []
@@ -110,6 +115,121 @@ def one_calibration(
     # recalculate the number of bins as the number of bins with data
     num_bins = len(observed_probabilities)
     degree_of_freedom = num_bins - 1 if (num_bins <= 15 and method == "DN") else num_bins - 2
+    if degree_of_freedom <= 0:
+        raise ValueError("The number of bins is too small to calculate the p-value. "
+                         "Please increase the number of bins or check your data.")
+    p_value = 1 - chi2.cdf(hl_statistics, degree_of_freedom)
+
+    return p_value, observed_probabilities, expected_probabilities
+
+
+def one_cal_interval_cen(
+        preds: np.ndarray,
+        left_limits: np.ndarray,
+        right_limits: np.ndarray,
+        target_time: Numeric,
+        num_bins: int = 10,
+        binning_strategy: str = "C",
+        method: str = "Turnbull"
+) -> (float, list, list):
+    """
+    Compute the one calibration score for a given set of predictions and true event times.
+    Parameters
+    ----------
+    preds: np.ndarray
+        The predicted probabilities of experiencing the event at the time of interest.
+    left_limits: np.ndarray
+        The left limits of the interval-censored event times.
+    right_limits: np.ndarray
+        The right limits of the interval-censored event times.
+    target_time: Numeric
+        The time of interest.
+    num_bins: int
+        The number of bins to divide the predictions into.
+    binning_strategy: str
+        The strategy to bin the predictions. The options are: "C" (default), and "H".
+        C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
+        H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
+    method: str
+        The method to handle censored patients. The options are: "Turnbull" (default), and "MidPoint".
+        "MidPoint" method simply treats the midpoint of the interval as the event time, and
+        uses the DN's method (Kaplan-Meier estimate of the survival function).
+        "Turnbull" method uses the Turnbull estimator for the survival function
+        to compute the average observed probabilities in each bin.
+    Returns
+    -------
+    score: float
+        The one calibration score.
+    observed_probabilities: list
+        The observed probabilities in each bin.
+    expected_probabilities: list
+        The expected probabilities in each bin.
+    """
+    if binning_strategy == "C":
+        sorted_idx = np.argsort(-preds)
+        sorted_predictions = preds[sorted_idx]
+        sorted_left = left_limits[sorted_idx]
+        sorted_right = right_limits[sorted_idx]
+
+        binned_left = np.array_split(sorted_left, num_bins)
+        binned_right = np.array_split(sorted_right, num_bins)
+        binned_predictions = np.array_split(sorted_predictions, num_bins)
+    elif binning_strategy == "H":
+        # Create bins from 0 to 1 with equal increments
+        bin_edges = np.linspace(0, 1, num_bins + 1)
+        binned_left = []
+        binned_right = []
+        binned_predictions = []
+
+        for i in range(num_bins):
+            # Get the indices of predictions that fall into the current bin
+            bin_mask = (preds >= bin_edges[i]) & (preds < bin_edges[i + 1])
+            binned_left.append(left_limits[bin_mask])
+            binned_right.append(right_limits[bin_mask])
+            binned_predictions.append(preds[bin_mask])
+    else:
+        error = "Please enter one of 'C','H' for binning_strategy."
+        raise TypeError(error)
+
+    hl_statistics = 0
+    observed_probabilities = []
+    expected_probabilities = []
+
+    for b in range(num_bins):
+        bin_size = len(binned_predictions[b])
+
+        if bin_size == 0:
+            # This is for H-statistics binning strategy,
+            # If a bin has no data, skip it
+            continue
+
+        l_limits = np.array(binned_left[b])
+        r_limits = np.array(binned_right[b])
+        mean_prob = np.mean(binned_predictions[b])
+
+        if method == "MidPoint":
+            mid = l_limits + (r_limits - l_limits) / 2.0
+            finite_mid = np.isfinite(mid)
+            event_times = np.where(finite_mid, mid, left_limits)
+            event_indicators = finite_mid.astype(int)
+
+            km_model = KaplanMeier(event_times, event_indicators)
+            event_probability = 1 - km_model.predict(target_time)
+        elif method == "Turnbull":
+            tb = TurnbullEstimator().fit(left_limits, right_limits)
+            event_probability = 1 - tb.predict(target_time)
+        else:
+            error = "Please enter one of 'MidPoint','Turnbull' for method."
+            raise TypeError(error)
+        hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (
+                    bin_size * mean_prob * (1 - mean_prob))
+
+        observed_probabilities.append(event_probability)
+        expected_probabilities.append(mean_prob)
+
+    # recalculate the number of bins as the number of bins with data
+    num_bins = len(observed_probabilities)
+    degree_of_freedom = num_bins - 1 if num_bins <= 15 else num_bins - 2
     if degree_of_freedom <= 0:
         raise ValueError("The number of bins is too small to calculate the p-value. "
                          "Please increase the number of bins or check your data.")

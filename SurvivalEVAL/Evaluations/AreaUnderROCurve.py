@@ -11,11 +11,21 @@ def auc(
     """
     Calculate the Area Under the Curve (AUC) for the survival model.
 
-    :param predict_probs: the predicted survival probabilities
-    :param event_times: the event times
-    :param event_indicators: the event indicators
-    :param target_time: the target time
-    :return: the AUC
+    Parameters
+    ----------
+    predict_probs: np.ndarray
+        The predicted survival probabilities
+    event_times: np.ndarray
+        The event or censoring times for the test data
+    event_indicators: np.ndarray
+        The binary indicators of whether the event occurred (1) or was censored (0)
+    target_time: float, optional
+        The specific time point at which to calculate the AUC. If not specified, the median of the event times is used.
+
+    Returns
+    -------
+    auc: float
+        The AUC value calculated at the specified target time.
     """
     # if the target time is not specified, then we use the median of the event times
     if target_time is None:
@@ -42,9 +52,9 @@ def auc(
 
 if __name__ == '__main__':
     # test the AUC function
-    predict_probs = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.2, 0.8, 0.9])
-    event_times = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
-    event_indicators = np.array([1, 1, 0, 1, 1, 1, 1, 1, 1])
-    target_time = 5
+    probs = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.2, 0.8, 0.9])
+    times = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    indicators = np.array([1, 1, 0, 1, 1, 1, 1, 1, 1])
+    target_t = 5
 
-    print(auc(predict_probs, event_times, event_indicators, target_time))
+    print(auc(probs, times, indicators, target_t))

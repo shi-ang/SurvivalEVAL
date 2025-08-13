@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2025-08-13: Version 0.4.6
+1. Add warning message for AUROC (when all positive or all negative labels).
+2. Add Turnbull estimator.
+3. Format the comment and docstring for the package.
+4. Add d-calibration and 1-calibration for interval censoring
+
 ## 2025-07-26: Version 0.4.5
 1. Bug fixed for Deviance residual
 2. Bug fixed for Pchip interpolator 

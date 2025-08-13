@@ -1,125 +1,9 @@
 import numpy as np
-import pandas as pd
 from typing import Optional
-import warnings
 from tqdm import trange
 
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_mean_st, predict_median_st)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import km_mean, KaplanMeierArea
 
-
-def mae_pycox(
-        predicted_survival_curves: pd.DataFrame,
-        event_times: NumericArrayLike,
-        event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
-        method: str = "Hinge",
-        log_scale: bool = False,
-        predicted_time_method: str = "Median"
-) -> float:
-    """
-    Calculate the MAE score for the predicted survival curves from PyCox models.
-    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
-        Predicted survival curves for the testing samples
-        DataFrame index represents the time coordinates for the given curves.
-        DataFrame value represents the survival probabilities.
-    param event_times: structured array, shape = (n_samples, )
-        Actual event/censor time for the testing samples.
-    param event_indicators: structured array, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
-    param train_event_times:structured array, shape = (n_train_samples, )
-        Actual event/censor time for the training samples.
-    param train_event_indicators: structured array, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
-    param method: string, default: "Hinge"
-    param log_scale: boolean, default: False
-    param predicted_time_method: string, default: "Median"
-    :return:
-        Value for the calculated MAE score.
-    """
-    warnings.warn("This function is deprecated and might be deleted in the future. "
-                  "Please use the class 'PyCoxEvaluator' from Evaluator.py.", DeprecationWarning)
-    event_times, event_indicators = check_and_convert(event_times, event_indicators)
-    if (train_event_times is not None) and (train_event_indicators is not None):
-        train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
-    # Extracting the time buckets
-    time_coordinates = predicted_survival_curves.index.values
-    # computing the Survival function, and set the small negative value to zero
-    survival_curves = predicted_survival_curves.values.T
-    survival_curves[survival_curves < 0] = 0
-
-    if predicted_time_method == "Median":
-        predict_method = predict_median_st
-    elif predicted_time_method == "Mean":
-        predict_method = predict_mean_st
-    else:
-        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-        raise TypeError(error)
-
-    # get median/mean survival time from the predicted curve
-    predicted_times = []
-    for i in range(survival_curves.shape[0]):
-        predicted_time = predict_method(survival_curves[i, :], time_coordinates)
-        predicted_times.append(predicted_time)
-    predicted_times = np.array(predicted_times)
-    return mean_error(predicted_times, event_times, event_indicators, train_event_times,
-                      train_event_indicators, "absolute", method, True, log_scale)
-
-
-def mae_sksurv(
-        predicted_survival_curves: pd.DataFrame,
-        event_times: NumericArrayLike,
-        event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
-        method: str = "Hinge",
-        log_scale: bool = False,
-        predicted_time_method: str = "Median"
-) -> float:
-    """
-    Calculate the MAE score for the predicted survival curves from scikit-survival models.
-    param predicted_survival_curves: pd.DataFrame, shape = (n_samples, n_times)
-        Predicted survival curves for the testing samples
-        DataFrame index represents the time coordinates for the given curves.
-        DataFrame value represents the survival probabilities.
-    param event_times: structured array, shape = (n_samples, )
-        Actual event/censor time for the testing samples.
-    param event_indicators: structured array, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
-    param train_event_times:structured array, shape = (n_train_samples, )
-        Actual event/censor time for the training samples.
-    param train_event_indicators: structured array, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
-    param method: string, default: "Hinge"
-    param log_scale: boolean, default: False
-    param predicted_time_method: string, default: "Median"
-    :return:
-        Value for the calculated MAE score.
-    """
-    warnings.warn("This function is deprecated and might be deleted in the future. "
-                  "Please use the class 'ScikitSurvivalEvaluator' from Evaluator.py.", DeprecationWarning)
-    event_times, event_indicators = check_and_convert(event_times, event_indicators)
-    if (train_event_times is not None) and (train_event_indicators is not None):
-        train_event_times, train_event_indicators = check_and_convert(train_event_times, train_event_indicators)
-
-    if predicted_time_method == "Median":
-        predict_method = predict_median_st
-    elif predicted_time_method == "Mean":
-        predict_method = predict_mean_st
-    else:
-        error = "Please enter one of 'Median' or 'Mean' for calculating predicted survival time."
-        raise TypeError(error)
-
-    # get median/mean survival time from the predicted curve
-    predicted_times = []
-    for i in range(predicted_survival_curves.shape[0]):
-        predicted_time = predict_method(predicted_survival_curves[i].y, predicted_survival_curves[i].x)
-        predicted_times.append(predicted_time)
-    predicted_times = np.array(predicted_times)
-    return mean_error(predicted_times, event_times, event_indicators, train_event_times,
-                      train_event_indicators, "absolute", method, True, log_scale)
 
 def mean_error(
         predicted_times: np.ndarray,
@@ -136,6 +20,7 @@ def mean_error(
 ) -> float:
     """
     Calculate the mean absolute/squared error score for the predicted survival times.
+
     Parameters
     ----------
     predicted_times: np.ndarray, shape = (n_samples, )

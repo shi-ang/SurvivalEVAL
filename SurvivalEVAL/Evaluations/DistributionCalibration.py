@@ -8,7 +8,7 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, NelsonA
 
 
 def d_calibration(
-        predict_probs: np.ndarray,
+        pred_probs: np.ndarray,
         event_indicators: np.ndarray,
         num_bins: int = 10
 ) -> (float, np.ndarray):
@@ -16,7 +16,7 @@ def d_calibration(
     Calculate the D-Calibration score.
     Parameters
     ----------
-    predict_probs: np.ndarray
+    pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
         The event indicators.
@@ -27,43 +27,48 @@ def d_calibration(
     -------
     pvalue: float
         The p-value of the D-Calibration test.
-    combine_binning: np.ndarray
+    combine_hist: np.ndarray
         The binning histogram of the D-Calibration test.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
     censor_indicators = 1 - event_indicators
 
-    event_probabilities = predict_probs[event_indicators.astype(bool)]
-    event_position = np.digitize(event_probabilities, quantile)
+    event_probs = pred_probs[event_indicators.astype(bool)]
+    event_position = np.digitize(event_probs, quantile)
     event_position[event_position == 0] = 1     # class probability==1 to the first bin
 
-    event_binning = np.zeros([num_bins])
+    event_hist = np.zeros([num_bins])
     for i in range(len(event_position)):
-        event_binning[event_position[i] - 1] += 1
+        event_hist[event_position[i] - 1] += 1
 
-    censored_probabilities = predict_probs[censor_indicators.astype(bool)]
+    censored_probs = pred_probs[censor_indicators.astype(bool)]
 
-    censor_binning = np.zeros([num_bins])
-    if len(censored_probabilities) > 0:
-        for i in range(len(censored_probabilities)):
-            partial_binning = create_censor_binning(censored_probabilities[i], num_bins)
-            censor_binning += partial_binning
+    censor_hist = np.zeros([num_bins])
+    if len(censored_probs) > 0:
+        for i in range(len(censored_probs)):
+            partial_binning = create_censor_hist(censored_probs[i], num_bins)
+            censor_hist += partial_binning
 
-    combine_binning = event_binning + censor_binning
-    _, pvalue = chisquare(combine_binning)
-    return pvalue, combine_binning
+    combine_hist = event_hist + censor_hist
+    _, pvalue = chisquare(combine_hist)
+    return pvalue, combine_hist
 
 
-def create_censor_binning(
-        probability: float,
+def create_censor_hist(
+        prob: float,
         num_bins: int
 ) -> np.ndarray:
-    """
+    """    Create the binning histogram for a right censored instance.
+
+    The bins are defined as follows:
+    [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
+
     For censoring instance,
-    b1 will be the infimum probability of the bin that contains S(c),
-    for the bin of [b1, b2) which contains S(c), probability = (S(c) - b1) / S(c)
-    for the rest of the bins, [b2, b3), [b3, b4), etc., probability = 1 / (B * S(c)), where B is the number of bins.
-    :param probability: float
+    b2 will be the infimum probability of the bin that contains S(c),
+    for the bin of [b2, b3) which contains S(c), probability = (S(c) - b2) / S(c)
+    for the rest of the bins, [b0, b1), [b1, b2), etc., probability = 1 / (B * S(c)), where B is the number of bins.
+    :param prob: float
+
         The predicted probability at the censored time of a censoring instance.
     :param num_bins: int
         The number of bins to use for the D-Calibration score.
@@ -74,17 +79,128 @@ def create_censor_binning(
     quantile = np.linspace(1, 0, num_bins + 1)
     censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
-        if probability == 1:
+        if prob == 1:
             censor_binning += 0.1
             break
-        elif quantile[i] > probability >= quantile[i + 1]:
-            first_bin = (probability - quantile[i + 1]) / probability if probability != 0 else 1
-            rest_bins = 1 / (num_bins * probability) if probability != 0 else 0
+        elif quantile[i] > prob >= quantile[i + 1]:
+            first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
+            rest_bins = 1 / (num_bins * prob) if prob != 0 else 0
             censor_binning[i] += first_bin
             censor_binning[i + 1:] += rest_bins
             break
     # assert len(censor_binning) == num_bins, f"censor binning should have size of {num_bins}"
     return censor_binning
+
+
+def d_cal_interval_cen(
+        pred_probs_left: np.ndarray,
+        pred_probs_right: np.ndarray,
+        num_bins: int = 10
+) -> (float, np.ndarray):
+    """
+    Calculate the D-Calibration score for interval censored data.
+    Parameters
+    ----------
+    pred_probs_left: np.ndarray
+        The predicted survival probabilities at individual's left event/censor time.
+    pred_probs_right: np.ndarray
+        The predicted survival probabilities at individual's right event/censor time.
+        For right-censored instances, the right event/censor time is infinity, so the predicted probability is 0.
+    num_bins: int
+        The number of bins to use for the D-Calibration score.
+    Returns
+    -------
+    pvalue: float
+        The p-value of the D-Calibration test.
+    binning: np.ndarray
+        The binning histogram of the D-Calibration test.
+    """
+    assert len(pred_probs_left) == len(pred_probs_right), \
+        "The length of pred_probs_left and pred_probs_right should have same length."
+
+    assert np.all(pred_probs_left >= pred_probs_right), \
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+
+    assert (np.all(pred_probs_left >= 0) and np.all(pred_probs_right >= 0) and
+            np.all(pred_probs_left <= 1) and np.all(pred_probs_right <= 1)), \
+        "The predicted probabilities should be in the range [0, 1]."
+
+    n = len(pred_probs_left)
+
+    binning = np.zeros([num_bins])
+    for i in range(n):
+        partial_binning = create_interval_c_hist(pred_probs_left[i], pred_probs_right[i], num_bins)
+        binning += partial_binning
+
+    _, pvalue = chisquare(binning)
+    return pvalue, binning
+
+
+def create_interval_c_hist(
+        prob_left: float,
+        prob_right: float,
+        num_bins: int
+) -> np.ndarray:
+    """
+    Create the binning histogram for an interval censored instance.
+    For interval censored instance, we have two predicted probabilities: left and right.
+    The left probability is the predicted survival probability at the left censored time,
+    and the right probability is the predicted survival probability at the right censored time.
+
+    The bins are defined as follows:
+    [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
+
+    (1) If the left and right probabilities are within the same bin, then the histogram will be 1 for that bin,
+    and 0 for the rest of the bins.
+    (2) If the left and right probabilities are in different bins, then the histogram will be split:
+        - The bin (e.g., [b3, b4))that contains the left probability will have a probability of
+        (prob_left - b3) / (prob_left - prob_right)
+        - The bin (e.g., [b1, b2)) that contains the right probability will have a probability of
+        (b2 - prob_right) / (prob_left - prob_right)
+        - The intermediate bins (e.g., [b2, b3)) will have a probability of
+        1 / (num_bins * (prob_left - prob_right))
+
+    :param prob_left: float
+        The predicted probability at the left censored time of an interval censoring instance.
+    :param prob_right: float
+        The predicted probability at the right censored time of an interval censoring instance.
+    :param num_bins: int
+        The number of bins to use for the D-Calibration score.
+    :return:
+    hist: np.ndarray
+        The "split" histogram of this interval censored subject.
+    """
+    # make sure the left and right probabilities are in the range [0, 1]
+    if prob_right == 0:
+        # if the right probability is 0, then it is a right-censored instance,
+        return create_censor_hist(prob_left, num_bins)
+    else:
+        if prob_left < prob_right:
+            # enforce the natural order for survival probs
+            prob_left, prob_right = prob_right, prob_left
+
+        edges = np.linspace(1.0, 0.0, num_bins + 1)  # descending: 1, 1-1/K, ..., 0
+
+        left_idx = np.digitize(prob_left, edges) - 1 if prob_left < 1.0 else 0
+        right_idx = np.digitize(prob_right, edges) - 1
+        hist = np.zeros(num_bins, dtype=float)
+        if left_idx == right_idx:
+            hist[left_idx] = 1.0
+            return hist
+        else:
+            # if the left and right probabilities are in different bins
+            first_hist = (prob_left - edges[left_idx + 1]) / (prob_left - prob_right)
+            hist[left_idx] += first_hist
+
+            last_hist = (edges[right_idx] - prob_right) / (prob_left - prob_right)
+            hist[right_idx] += last_hist
+
+            # fill the intermediate bins with equal probability
+            if right_idx > left_idx + 1:
+                intermediate_hist = (1.0 - first_hist - last_hist) / (right_idx - left_idx - 1)
+                hist[left_idx + 1:right_idx] = intermediate_hist
+
+            return hist
 
 
 _residual_names = {
@@ -97,7 +213,7 @@ _residual_names = {
 
 
 def residuals(
-        predict_probs: np.ndarray,
+        pred_probs: np.ndarray,
         event_indicators: np.ndarray,
         method: str = "CoxSnell",
         draw_figure: bool = False
@@ -109,7 +225,7 @@ def residuals(
 
     Parameters
     ----------
-    predict_probs: np.ndarray
+    pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
         The event indicators.
@@ -123,7 +239,7 @@ def residuals(
     np.ndarray
         The calculated residuals.
     """
-    cox_residuals = - np.log(predict_probs)
+    cox_residuals = - np.log(pred_probs)
 
     if method == "CoxSnell":
         residuals = cox_residuals
@@ -251,22 +367,27 @@ def km_calibration(
 if __name__ == '__main__':
     ### test the KM calibration
 
-    # first we define the time coordinates
-    times = np.linspace(0, 100, 11)
-    # then we define the survival probabilities at each time coordinate
-    survival_probabilities = np.exp(-times / 100)
+    # # first we define the time coordinates
+    # times = np.linspace(0, 100, 11)
+    # # then we define the survival probabilities at each time coordinate
+    # survival_probabilities = np.exp(-times / 100)
+    #
+    #
+    # # randomly generate the event time and event indicator for 20 samples
+    # num_samples = 20
+    # true_t = np.random.randint(0, 100, num_samples)
+    # true_e = np.random.randint(0, 2, num_samples)
+    #
+    # # make some random predictions between 0 and 1
+    # pred_at_observed_times = np.random.rand(num_samples)
+    #
+    # # # calculate the KM calibration score
+    # # km_calibration_score = km_calibration(survival_probabilities, times, true_t, true_e, draw_figure=True)
+    # # print(km_calibration_score)
+    # # calculate the Cox-Snell residuals
+    # coxsnell_residuals = residuals(pred_at_observed_times, true_e, method="Martingale", draw_figure=True)
 
-
-    # randomly generate the event time and event indicator for 20 samples
-    num_samples = 20
-    true_t = np.random.randint(0, 100, num_samples)
-    true_e = np.random.randint(0, 2, num_samples)
-
-    # make some random predictions between 0 and 1
-    pred_at_observed_times = np.random.rand(num_samples)
-
-    # # calculate the KM calibration score
-    # km_calibration_score = km_calibration(survival_probabilities, times, true_t, true_e, draw_figure=True)
-    # print(km_calibration_score)
-    # calculate the Cox-Snell residuals
-    coxsnell_residuals = residuals(pred_at_observed_times, true_e, method="Martingale", draw_figure=True)
+    # test interval censored D-calibration
+    pred_prob_left = np.array([0.84, 0.65, 0.42, 0.75, 1, 1])
+    pred_prob_right = np.array([0.72, 0.63, 0.03, 0, 0.24, 0])
+    pvalue, binning = d_cal_interval_cen(pred_prob_left, pred_prob_right, num_bins=10)

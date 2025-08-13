@@ -15,26 +15,29 @@ def concordance(
 ) -> (float, float, int):
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
-    param predicted_times: array-like, shape = (n_samples,)
+
+    Parameters
+    ----------
+    predicted_times: np.ndarray, shape = (n_samples,)
         The predicted survival times.
-    param event_times: array-like, shape = (n_samples,)
+    event_times: np.ndarray, shape = (n_samples,)
         The true survival times.
-    param event_indicators: array-like, shape = (n_samples,)
+    event_indicators: np.ndarray, shape = (n_samples,)
         The event indicators of the true survival times.
-    param train_event_times: array-like, shape = (n_train_samples,)
+    train_event_times: np.ndarray, shape = (n_train_samples,)
         The true survival times of the training set.
-    param train_event_indicators: array-like, shape = (n_train_samples,)
+    train_event_indicators: np.ndarray, shape = (n_train_samples,)
         The event indicators of the true survival times of the training set.
-    param pair_method: str, optional (default="Harrell")
+    method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
         "Harrell": the pairs are constructed by comparing the predicted survival time of each sample with the
         event time of all other samples. The pairs are only constructed between samples with comparable
-        event times. For example, if sample i has a censor time of 10, then the pairs are constructed by
+        event times. For example, if i-th sample has a censor time of 10, then the pairs are constructed by
         comparing the predicted survival time of sample i with the event time of all samples with event
         time of 10 or less.
         "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
         will be calculated and used to construct the pairs.
-    param ties: str, optional (default="Risk")
+    ties: str, optional (default="Risk")
         A string indicating the way ties should be handled.
         Options: "None" (default), "Time", "Risk", or "All"
         "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -43,8 +46,15 @@ def concordance(
         "All" includes all ties.
         Note the concordance calculation is given by
         (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-    :return: (float, float, int)
-        The concordance index, the number of concordant pairs, and the number of total pairs.
+
+    Returns
+    -------
+    c_index: float
+        The concordance index.
+    concordant_pairs: float
+        The number of concordant pairs.
+    total_pairs: int
+        The total number of comparable pairs.
     """
     # the scikit-survival concordance function only takes risk scores to calculate.
     # So at first we should transfer the predicted time -> risk score.
@@ -86,31 +96,31 @@ def concordance(
         raise TypeError("Method for calculating concordance is unrecognized.")
     # risk_ties means predicted times are the same while true times are different.
     # time_ties means true times are the same while predicted times are different.
-    # cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
+    # c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
     #     event_indicators, event_times, estimate=risk)
-    cindex, concordant_pairs, discordant_pairs, risk_ties, time_ties = _estimate_concordance_index(
+    c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = _estimate_concordance_index(
         event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
     if ties == "None":
         total_pairs = concordant_pairs + discordant_pairs
-        cindex = concordant_pairs / total_pairs
+        c_index = concordant_pairs / total_pairs
     elif ties == "Time":
         total_pairs = concordant_pairs + discordant_pairs + time_ties
         concordant_pairs = concordant_pairs + 0.5 * time_ties
-        cindex = concordant_pairs / total_pairs
+        c_index = concordant_pairs / total_pairs
     elif ties == "Risk":
-        # This should be the same as original outputted cindex from above
+        # This should be the same as original outputted c_index from above
         total_pairs = concordant_pairs + discordant_pairs + risk_ties
         concordant_pairs = concordant_pairs + 0.5 * risk_ties
-        cindex = concordant_pairs / total_pairs
+        c_index = concordant_pairs / total_pairs
     elif ties == "All":
         total_pairs = concordant_pairs + discordant_pairs + risk_ties + time_ties
         concordant_pairs = concordant_pairs + 0.5 * (risk_ties + time_ties)
-        cindex = concordant_pairs / total_pairs
+        c_index = concordant_pairs / total_pairs
     else:
         error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
         raise TypeError(error)
 
-    return cindex, concordant_pairs, total_pairs
+    return c_index, concordant_pairs, total_pairs
 
 
 def _estimate_concordance_index(
@@ -120,7 +130,7 @@ def _estimate_concordance_index(
         bg_event_time: np.ndarray = None,
         partial_weights: np.ndarray = None,
         tied_tol: float = 1e-8
-):
+) -> (float, float, float, float, float):
     """
     Estimate the concordance index.
     This backbone of this function is borrowed from scikit-survival:
@@ -130,22 +140,34 @@ def _estimate_concordance_index(
     All functions in scikit-survival are licensed under the GPLv3 License:
     https://github.com/sebp/scikit-survival/blob/master/COPYING
 
-    param event_indicators: array-like, shape = (n_samples,)
+    Parameters
+    ----------
+    event_indicator: np.ndarray, shape = (n_samples,)
         The event indicators of the true survival times.
-    param event_times: array-like, shape = (n_samples,)
+    event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
-    param estimate: array-like, shape = (n_samples,)
+    estimate: np.ndarray, shape = (n_samples,)
         The estimated risk scores. A higher score should correspond to a higher risk.
-    param bg_event_time: array-like, shape = (n_samples,), optional (default=None)
+    bg_event_time: np.ndarray, shape = (n_samples,), optional (default=None)
         The best-guess event times. For uncensored samples, this should be the same as the true event times.
         For censored samples, this should be the best-guess time (margin time) for the censored samples.
-    param partial_weights: array-like, shape = (n_samples,), optional (default=None)
+    partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
         The partial weights for the censored samples.
-    param tied_tol: float, optional (default=1e-8)
+    tied_tol: float, optional (default=1e-8)
         The tolerance for considering two times as tied.
-    :return: (float, float, float, float, float)
-        The concordance index, the number of concordant pairs, the number of discordant pairs,
-        the number of tied risk scores, and the number of tied times.
+
+    Returns
+    -------
+    c_index: float
+        The concordance index.
+    concordant: float
+        The number of concordant pairs.
+    discordant: float
+        The number of discordant pairs.
+    tied_risk: float
+        The number of tied risk scores.
+    tied_time: float
+        The number of tied times.
     -------
     """
     order = np.argsort(event_time, kind="stable")
@@ -197,8 +219,8 @@ def _estimate_concordance_index(
         # discordant += est.size - n_con - n_ties
         discordant += np.dot(w_i, mask.T) - n_con - n_ties
 
-    cindex = numerator / denominator
-    return cindex, concordant, discordant, tied_risk, tied_time
+    c_index = numerator / denominator
+    return c_index, concordant, discordant, tied_risk, tied_time
 
 
 def _get_comparable(
@@ -206,7 +228,7 @@ def _get_comparable(
         event_time: np.ndarray,
         order: np.ndarray,
         partial_weights: np.ndarray = None
-):
+) -> (dict, int, dict):
     """
     Given the labels of the survival outcomes, get the comparable pairs.
 
@@ -217,23 +239,27 @@ def _get_comparable(
     All functions in scikit-survival are licensed under the GPLv3 License:
     https://github.com/sebp/scikit-survival/blob/master/COPYING
 
-    param event_indicators: array-like, shape = (n_samples,)
+    Parameters
+    ----------
+    event_indicator: np.ndarray, shape = (n_samples,)
         The event indicators of the true survival times.
-    param event_times: array-like, shape = (n_samples,)
+    event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
-    param estimate: array-like, shape = (n_samples,)
-        The estimated risk scores. A higher score should correspond to a higher risk.
-    param bg_event_time: array-like, shape = (n_samples,), optional (default=None)
-        The best-guess event times. For uncensored samples, this should be the same as the true event times.
-        For censored samples, this should be the best-guess time (margin time) for the censored samples.
-    param partial_weights: array-like, shape = (n_samples,), optional (default=None)
+    order: np.ndarray, shape = (n_samples,)
+        The indices that would sort the event times.
+    partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
         The partial weights for the censored samples.
-    param tied_tol: float, optional (default=1e-8)
-        The tolerance for considering two times as tied.
-    :return: (float, float, float, float, float)
-        The concordance index, the number of concordant pairs, the number of discordant pairs,
-        the number of tied risk scores, and the number of tied times.
+
+    Returns
     -------
+    comparable: dict
+        A dictionary where the keys are the indices of the samples with events, and the values are boolean masks
+        indicating which samples are comparable to the key sample.
+    tied_time: int
+        The number of tied times.
+    weight: dict
+        A dictionary where the keys are the indices of the samples with events, and the values are the weights
+        for each comparable sample.
     """
 
     if partial_weights is None:

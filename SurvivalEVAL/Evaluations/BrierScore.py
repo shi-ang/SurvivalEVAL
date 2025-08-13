@@ -1,10 +1,4 @@
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import warnings
-
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, predict_prob_from_curve, predict_multi_probs_from_curve
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
@@ -19,22 +13,28 @@ def single_brier_score(
 ) -> float:
     """
     Calculate the Brier score at a specific time.
-    param preds: numpy array, shape = (n_samples, )
+
+    Parameters
+    ----------
+    preds: np.ndarray, shape = (n_samples, )
         Estimated survival probabilities at the specific time for the testing samples.
-    param event_times: numpy array, shape = (n_samples, )
+    event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    param event_indicators: numpy array, shape = (n_samples, )
+    event_indicators: np.ndarray, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    param train_event_times:numpy array, shape = (n_train_samples, )
+    train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    param train_event_indicators: numpy array, shape = (n_train_samples, )
+    train_event_indicators: np.ndarray, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    param target_time: float, default: None
+    target_time: float, default: None
         The specific time point for which to estimate the Brier score.
-    param ipcw: boolean, default: True
+    ipcw: bool, default: True
         Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
-    :return:
-        Values of the brier score.
+
+    Returns
+    -------
+    brier_score: float
+        Value of the brier score.
     """
     if target_time is None:
         target_time = np.median(event_times)
@@ -68,7 +68,7 @@ def single_brier_score(
     ###########################
     # Here we are ordering event times and then using predict with level.chaos = 1 which returns
     # predictions ordered by time.
-    # This is from Haider's code in R but I feel it doesn't need to be ordered by time.
+    # This is from Haider's code in R, but I feel it doesn't need to be ordered by time.
     # Refer above few lines for the justified code
     ###########################
     # order_of_times = np.argsort(event_times)
@@ -103,21 +103,26 @@ def brier_multiple_points(
     """
     Calculate multiple Brier scores at multiple specific times.
 
-    :param pred_mat: structured array, shape = (n_samples, n_time_points)
+    Parameters
+    ----------
+    pred_mat: np.ndarray, shape = (n_samples, n_time_points)
         Predicted probability array (2-D) for each instances at each time point.
-    :param event_times: structured array, shape = (n_samples, )
+    event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    :param event_indicators: structured array, shape = (n_samples, )
+    event_indicators: np.ndarray, shape = (n_samples, )
         Binary indicators of censoring for the testing samples
-    :param train_event_times:structured array, shape = (n_train_samples, )
+    train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    :param train_event_indicators: structured array, shape = (n_train_samples, )
+    train_event_indicators: np.ndarray, shape = (n_train_samples, )
         Binary indicators of censoring for the training samples
-    :param target_times: float, default: None
+    target_times: float, default: None
         The specific time points for which to estimate the Brier scores.
-    :param ipcw: boolean, default: True
+    ipcw: bool, default: True
         Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
-    :return:
+
+    Returns
+    -------
+    brier_scores: np.ndarray, shape = (n_time_points, )
         Values of multiple Brier scores.
     """
     if target_times.ndim != 1:

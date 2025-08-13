@@ -10,25 +10,25 @@ from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
 def check_and_convert(*args):
-    """ Makes sure that the given inputs are numpy arrays, list,
-        tuple, panda Series, pandas DataFrames, or torch Tensors.
+    """
+    Makes sure that the given inputs are numpy arrays, list, tuple, panda Series, pandas DataFrames, or torch Tensors.
 
-        Also makes sure that the given inputs have the same shape.
+    Also makes sure that the given inputs have the same shape.
 
-        Then convert the inputs to numpy array.
+    Then convert the inputs to numpy array.
 
-        Parameters
-        ----------
-        * args : tuple of objects
-                 Input object to check / convert.
+    Parameters
+    ----------
+    * args : tuple of objects
+             Input object to check / convert.
 
-        Returns
-        -------
-        * result : tuple of numpy arrays
-                   The converted and validated arg.
+    Returns
+    -------
+    * result : tuple of numpy arrays
+               The converted and validated arg.
 
-        If the input isn't numpy arrays, list or pandas DataFrames, it will
-        fail and ask to provide the valid format.
+    If the input isn't numpy arrays, list or pandas DataFrames, it will
+    fail and ask to provide the valid format.
     """
 
     result = ()
@@ -97,6 +97,7 @@ def make_monotonic(
 ):
     """
     Make the survival curves monotonic.
+
     Parameters
     ----------
     survival_curves: np.ndarray
@@ -183,6 +184,7 @@ def predict_prob_from_curve(
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+
     Returns
     -------
     predict_probability: float
@@ -230,6 +232,7 @@ def predict_multi_probs_from_curve(
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+
     Returns
     -------
     predict_probabilities: np.ndarray
@@ -289,6 +292,7 @@ def predict_rmst(
     """
     Get the restricted mean survival time (RMST) from the survival curve.
     The restricted mean survival time is defined as the area under the survival curve up to a certain time point.
+
     Parameters
     ----------
     survival_curves: np.ndarray
@@ -303,6 +307,7 @@ def predict_rmst(
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+
     Returns
     -------
     restricted_mean_survival_times: float
@@ -350,6 +355,7 @@ def predict_mean_st(
     """
     Get the mean survival time(s) from the survival curve for a group of samples.
     The mean survival time is calculated as the area under the survival curve, which is the RMST + residual area.
+
     Parameters
     ----------
     survival_curves: np.ndarray
@@ -364,6 +370,7 @@ def predict_mean_st(
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+
     Returns
     -------
     median_survival_time: float
@@ -393,6 +400,7 @@ def predict_median_st(
     """
     Get the median survival time(s) from the survival curve for a group of samples.
     The median survival time is defined as the time point where the survival curve crosses 0.5.
+
     Parameters
     ----------
     survival_curves: np.ndarray
@@ -407,6 +415,7 @@ def predict_median_st(
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+
     Returns
     -------
     median_survival_time: float
@@ -447,8 +456,9 @@ def predict_median_st_ind(
     Get the median survival time from the survival curve for 1 individual.
     The median survival time is defined as the time point where the survival curve crosses 0.5.
     The curve is first interpolated by the given monotonic cubic interpolation method (Linear or Pchip).
-    Then the curve gets extroplated by the linear function of (0, 1) and the last time point. The
+    Then the curve gets extrapolated by the linear function of (0, 1) and the last time point. The
     median survival time is calculated by finding the time point where the survival curve crosses 0.5.
+
     Parameters
     ----------
     survival_curve: np.ndarray
@@ -462,6 +472,7 @@ def predict_median_st_ind(
     discretize_num: int
         The number of points to discretize the time range for interpolation. Default: 1000.
         This is used only when interpolation is 'Pchip'.
+
     Returns
     -------
     median_st: float
