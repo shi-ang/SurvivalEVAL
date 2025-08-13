@@ -24,4 +24,4 @@ test_event_indicators = event_indicators[n_train:]
 predicted_times = np.random.uniform(0, 6, size=200).round(1)
 
 cindex, _, _ = concordance(predicted_times, test_event_times, test_event_indicators,
-                           train_event_times, train_event_indicators, pair_method="Margin")
+                           train_event_times, train_event_indicators, method="Margin")

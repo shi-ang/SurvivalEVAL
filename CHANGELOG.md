@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## 2025-08-13: Version 0.4.6
+1. Add warning message for AUROC (when all positive or all negative labels).
+2. Add Turnbull estimator.
+3. Format the comment and docstring for the package.
+4. Add d-calibration and 1-calibration for interval censoring
+
+## 2025-07-26: Version 0.4.5
+1. Bug fixed for Deviance residual
+2. Bug fixed for Pchip interpolator 
+3. Add log-rank test
+
+## 2025-07-12: Version 0.4.4
+1. Drop the use of `numpy.trapz` and `numpy.trapzoid` in the package, use `scipy.integrate.trapzoid` instead.
+
+## 2025-06-24: Version 0.4.3
+1. Clean up the deprecated code and files.
+2. Improve code efficiency for the evaluation.
+3. Add residuals (Cox-Snell, modified Cox-Snell, Martingale, Deviance) for the evaluation.
+4. Add NA estimator for the evaluation.
+5. Add Copula Graphic estimators
+6. Update readme
+
+## 2025-06-23: Version 0.4.2
+1. Add graphical calibration plot and integrated calibration index (ICI) for the evaluation.
+2. Minor improvements for calculating the median survival time
+
 ## 2025-03-05: Version 0.4.1
 Add copyright disclaimer for two functions in the `SurvivalEVAL/Evaluation/Concordance.py` file.
 
