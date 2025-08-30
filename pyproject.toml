@@ -10,8 +10,6 @@ authors = [
     {name = "Shi-ang Qi", email = "shiang@ualberta.ca" },
     {name = "Weijie Sun", email = "weijie2@ualberta.ca" },
 ]
-long-description = { file = "README.md", content-type = "text/markdown" }
-long-description-content-type = "text/markdown"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
@@ -55,7 +53,7 @@ Changelog = "https://github.com/shi-ang/SurvivalEVAL/blob/main/CHANGELOG.md"
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = { attr = "survivaleval.__version__" }
+version = { attr = "SurvivalEVAL.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
