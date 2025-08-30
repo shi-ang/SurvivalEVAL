@@ -1,3 +1,68 @@
 [build-system]
-requires = ["setuptools>=42.0", "wheel"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "SurvivalEVAL"
+dynamic = ["version"]
+description = "The most comprehensive Python package for evaluating survival analysis models."
+authors = [
+    {name = "Shi-ang Qi", email = "shiang@ualberta.ca" },
+    {name = "Weijie Sun", email = "weijie2@ualberta.ca" },
+]
+long-description = { file = "README.md", content-type = "text/markdown" }
+long-description-content-type = "text/markdown"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=2.1.3",
+    "pandas>=2.2.3",
+    "tqdm>=4.49.0",
+    "scipy>=1.14.1",
+    "matplotlib>=3.9.2",
+    "scikit-learn>=1.5",
+    "lifelines>=0.30",
+    "patsy>=1.0.1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/shi-ang/SurvivalEVAL"
+Documentation = "https://github.com/shi-ang/SurvivalEVAL/blob/main/README.md"
+Issues = "https://github.com/shi-ang/SurvivalEVAL/issues"
+Changelog = "https://github.com/shi-ang/SurvivalEVAL/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "survivaleval.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.optional-dependencies]
+dev = [
+    "pycox>=0.2.3",
+    "scikit-survival>=0.20.2",
+]
+

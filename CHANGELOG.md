@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2025-08-30: Version 0.4.7
+1. Update dependencies in setup.py, requirements.txt
+2. Generate pyproject.toml for the package
+3. Minor function rename
+4. Adding more interval censoring metrics, and testing them
+
 ## 2025-08-13: Version 0.4.6
 1. Add warning message for AUROC (when all positive or all negative labels).
 2. Add Turnbull estimator.

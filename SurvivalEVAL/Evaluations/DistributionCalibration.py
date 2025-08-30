@@ -92,7 +92,7 @@ def create_censor_hist(
     return censor_binning
 
 
-def d_cal_interval_cen(
+def d_cal_ic(
         pred_probs_left: np.ndarray,
         pred_probs_right: np.ndarray,
         num_bins: int = 10
@@ -390,4 +390,4 @@ if __name__ == '__main__':
     # test interval censored D-calibration
     pred_prob_left = np.array([0.84, 0.65, 0.42, 0.75, 1, 1])
     pred_prob_right = np.array([0.72, 0.63, 0.03, 0, 0.24, 0])
-    pvalue, binning = d_cal_interval_cen(pred_prob_left, pred_prob_right, num_bins=10)
+    pvalue, binning = d_cal_ic(pred_prob_left, pred_prob_right, num_bins=10)
