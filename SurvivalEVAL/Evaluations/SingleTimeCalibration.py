@@ -123,7 +123,7 @@ def one_calibration(
     return p_value, observed_probabilities, expected_probabilities
 
 
-def one_cal_interval_cen(
+def one_cal_ic(
         preds: np.ndarray,
         left_limits: np.ndarray,
         right_limits: np.ndarray,
