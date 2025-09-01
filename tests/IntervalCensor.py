@@ -101,3 +101,135 @@ ps, obs, slope = calibration_slope_right_censor(
 )
 print("slope:", slope)
 '''
+
+def cov_from_cdf_grid(
+    cdf: np.ndarray,         # (N, T) per-patient CDF on an increasing time grid
+    t_grid: np.ndarray,    # (T,)
+):
+    """
+    Compute per-patient CoV = SD[F]/E[F] from a discretized CDF
+    0.1, 0.2, 0.3, 0.4
+    1, 5, 8, 10
+    CoV = (Var (0.1 * (1+5)/2 + 0.1 * 5+8/2 ,... ))
+    """
+
+    # # 2) discrete pdf mass per bin: dF_k = F(t_{k+1}) - F(t_k)
+    dF = np.diff(cdf, axis=1)
+
+    t_mid = 0.5 * (t_grid[1:] + t_grid[:-1])           # (T-1,)    
+    # 3) midpoint rule to approximate E[T] and E[T^2]
+    m1 = np.sum(dF * t_mid, axis=1)                    # E[F]
+    m2 = np.sum(dF * (t_mid**2), axis=1)               # E[F^2]
+    var = m2 - m1**2               # Var[F] ≥ 0 = E[F^2] - E[F]^2
+
+    # 4) CoV per patient; guard divide-by-zero
+    cov = np.where(m1 > 0, np.sqrt(var) / m1, np.nan)  # (N,)
+
+    return cov                                     # patient-wise CoV
+
+def _prepare_cdf(F, t_grid):
+    """Clip CDF to [0,1] and (optionally) enforce non-decreasing over time."""
+    F = np.asarray(F, float)
+    t_grid = np.asarray(t_grid, float)
+    assert F.ndim == 2 and F.shape[1] == t_grid.shape[0], "shape mismatch"
+    assert np.all(np.diff(t_grid) >= 0), "time_grid must be increasing"
+    return F, t_grid
+
+def _interp_cdf_row(F_i, t_grid, t_eval):
+    """
+    1D interpolation for a single patient's CDF:
+    - left of grid: use F(t_min)
+    - right of grid: use 1.0 (CDF tail)
+    """
+    # np.interp is fast and stable
+    return np.interp(t_eval, t_grid, F_i, left=F_i[0], right=1.0)
+
+def survival_auprc_uncensored_grid(
+    event_times: np.ndarray,      # (Nu,)
+    predictions_cdf: np.ndarray,  # (Nu, T)
+    time_grid: np.ndarray,        # (T,)
+    n_quad: int = 256,
+) -> np.ndarray:
+    """
+    Per-patient Survival-AUPRC for UNcensored samples:
+        AUPRC(y; F) = ∫_0^1 [ F(y/t) - F(y*t) ] dt
+    Returns: (N,) array of scores in [0, 1].
+    """
+    F, t = _prepare_cdf(predictions_cdf, time_grid)
+    event_times = np.asarray(event_times, float)
+    N = event_times.shape[0]
+
+    # Midpoint quadrature over (0, 1]
+    ts = np.linspace(0.0, 1.0, n_quad + 1)
+    ts_mid = 0.5 * (ts[1:] + ts[:-1])       # (Q,)
+    widths = ts[1:] - ts[:-1]               # (Q,)
+
+    scores = np.empty(N, float)
+    for i in range(N):
+        yi = float(event_times[i])
+        # Evaluate F at transformed times
+        t_right = yi / ts_mid               # y / t 
+        t_left  = yi * ts_mid               # y * t
+        Fi_right = _interp_cdf_row(F[i], t, t_right)
+        Fi_left  = _interp_cdf_row(F[i], t, t_left)
+        integrand = Fi_right - Fi_left
+        scores[i] = float(np.sum(integrand * widths))
+    return scores
+
+def survival_auprc_right_censored_grid(
+    censor_times: np.ndarray,     # (N_c,)
+    predictions_cdf: np.ndarray,  # (N_c, T)
+    time_grid: np.ndarray,        # (T,)
+    n_quad: int = 256,
+) -> np.ndarray:
+    """
+    Per-patient Survival-AUPRC for RIGHT-censored samples:
+        AUPRC([L,∞); F) = ∫_0^1 [ 1 - F(L*t) ] dt
+        (F(t_k) - F(t_k+1))/(t_k+1 - t_k)
+    Returns: (Nc,) array of scores in [0, 1].
+    """
+    F, t = _prepare_cdf(predictions_cdf, time_grid)
+    censor_times = np.asarray(censor_times, float)
+    Nc = censor_times.shape[0]
+
+    ts = np.linspace(0.0, 1.0, n_quad + 1)
+    ts_mid = 0.5 * (ts[1:] + ts[:-1])
+    widths = ts[1:] - ts[:-1]
+
+    scores = np.empty(Nc, float)
+    for i in range(Nc):
+        Fi_at = _interp_cdf_row(F[i], t, float(censor_times[i]) * ts_mid)
+        integrand = 1.0 - Fi_at
+        scores[i] = float(np.sum(integrand * widths))
+    return scores
+
+def survival_auprc_right(
+    event_indicators: np.ndarray,   # (N,) True=event observed, False=right-censored
+    observed_times: np.ndarray,     # (N,) event time or censor time
+    predictions_cdf: np.ndarray,    # (N, T)
+    time_grid: np.ndarray,          # (T,)
+    n_quad: int = 256,
+) -> np.ndarray:
+    """
+    AUPRC formula for uncensored and right-censored scenarios
+    Returns: (N,) array of per-patient AUPRC
+    """
+    e = np.asarray(event_indicators, bool)
+    t_obs = np.asarray(observed_times, float)
+    F = np.asarray(predictions_cdf, float)
+
+    # Split rows
+    idx_event, idx_cens = np.where(e)[0], np.where(~e)[0]
+
+    scores = np.empty(F.shape[0], float)
+    if idx_event.size: # for uncensor
+        scores[idx_event] = survival_auprc_uncensored_grid(
+            t_obs[idx_event], F[idx_event], time_grid,
+            n_quad=n_quad
+        )
+    if idx_cens.size: # for right censor
+        scores[idx_cens] = survival_auprc_right_censored_grid(
+            t_obs[idx_cens], F[idx_cens], time_grid,
+            n_quad=n_quad
+        )
+    return scores
