@@ -6,6 +6,12 @@ from scipy.optimize import brentq
 # reuse interpolated_survival_curve
 def _invert_from_survival_with_interpolator(S_grid: np.ndarray, t_grid: np.ndarray,
                                             ps: Sequence[float], method: str) -> np.ndarray:
+    '''
+    S_grid: Survival Prediction curve matrix
+    t_grid: time grid
+    ps: quantile
+    method: "Linear"|"Pchip"
+    '''
     S = np.minimum.accumulate(np.clip(S_grid, 0.0, 1.0), axis=1)  # keep montonic decreasing
     N, _ = S.shape; ps = np.asarray(ps, float)
     t_lo, t_hi = float(t_grid[0]), float(t_grid[-1])
@@ -120,7 +126,7 @@ def cov_from_cdf_grid(
     # 3) midpoint rule to approximate E[T] and E[T^2]
     m1 = np.sum(dF * t_mid, axis=1)                    # E[F]
     m2 = np.sum(dF * (t_mid**2), axis=1)               # E[F^2]
-    var = m2 - m1**2               # Var[F] ≥ 0 = E[F^2] - E[F]^2
+    var = m2 - m1**2                                   # Var[F] ≥ 0 = E[F^2] - E[F]^2
 
     # 4) CoV per patient; guard divide-by-zero
     cov = np.where(m1 > 0, np.sqrt(var) / m1, np.nan)  # (N,)
@@ -135,14 +141,15 @@ def _prepare_cdf(F, t_grid):
     assert np.all(np.diff(t_grid) >= 0), "time_grid must be increasing"
     return F, t_grid
 
-def _interp_cdf_row(F_i, t_grid, t_eval):
+def _interp_cdf_row(F_i, t_grid, t_eval, left_fill=None):
     """
     1D interpolation for a single patient's CDF:
-    - left of grid: use F(t_min)
+    - left of grid: by default use F(t_min) (or 0.0 if left_fill=0.0 is passed)
     - right of grid: use 1.0 (CDF tail)
     """
-    # np.interp is fast and stable
-    return np.interp(t_eval, t_grid, F_i, left=F_i[0], right=1.0)
+    if left_fill is None:
+        left_fill = F_i[0]
+    return np.interp(t_eval, t_grid, F_i, left=left_fill, right=1.0)
 
 def survival_auprc_uncensored_grid(
     event_times: np.ndarray,      # (Nu,)
@@ -233,3 +240,124 @@ def survival_auprc_right(
             n_quad=n_quad
         )
     return scores
+
+
+
+def survival_auprc_interval(
+    left_bounds: np.ndarray,       # (N,) L_i
+    right_bounds: np.ndarray,      # (N,) U_i  (use np.inf for right-censor)
+    predictions_cdf: np.ndarray,   # (N, T)   per-patient CDF on time_grid
+    time_grid: np.ndarray,         # (T,)
+    n_quad: int = 256,             # Q
+    left_extrapolation_value: float = None,  # set to 0.0 if you want F(t<grid_min)=0
+) -> np.ndarray:
+    """
+    Per-patient Survival-AUPRC for INTERVAL-censored samples:
+        AUPRC([L,U]; F) = ∫_0^1 [ F(U/t) - F(L*t) ] dt
+    Handles special cases automatically:
+        - exact: L==U
+        - right-censored: U==+inf  → term F(U/t)=1
+        - left-censored:  L==0     → term F(L*t)=F(0)≈0
+    Returns: (N,) array of scores in [0, 1].
+    """
+    F, t = _prepare_cdf(predictions_cdf, time_grid)
+    L = np.asarray(left_bounds,  float)
+    U = np.asarray(right_bounds, float)
+    N = L.shape[0]
+
+    # Midpoint quadrature over (0, 1]
+    ts = np.linspace(0.0, 1.0, n_quad + 1)
+    ts_mid = 0.5 * (ts[1:] + ts[:-1])   # (Q,)
+    widths = ts[1:] - ts[:-1]           # (Q,)
+
+    scores = np.empty(N, float)
+    for i in range(N):
+        Li, Ui = float(L[i]), float(U[i])
+
+        # Right term: F(U/t). 
+        if np.isinf(Ui):
+            Fi_right = np.ones_like(ts_mid) #If Ui is +inf, this term is identically 1.
+        else:
+            t_right = Ui / ts_mid          # can exceed grid → right=1.0
+            Fi_right = _interp_cdf_row(F[i], t, t_right, left_fill=left_extrapolation_value)
+
+        # Left term: F(L*t). If L=0 and you want F(0)=0, set left_extrapolation_value=0.0
+        t_left  = Li * ts_mid              # can be < grid_min → left fill is used
+        Fi_left = _interp_cdf_row(F[i], t, t_left, left_fill=left_extrapolation_value)
+
+        integrand = Fi_right - Fi_left
+        scores[i] = float(np.sum(integrand * widths))
+    return scores
+
+# --- Interval-censor calibration slope ---
+def calibration_slope_interval_censor(
+    left_bounds: np.ndarray,                 # (N,) float  L_i
+    right_bounds: np.ndarray,                # (N,) float  U_i (use np.inf for right-censor)
+    predictions_cdf: np.ndarray,             # (N, T)     per-patient CDF on time_grid
+    time_grid: np.ndarray,                   # (T,)       increasing
+    ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9),
+    *,
+    quantile_method: str = "Linear",          # "Linear" | "Pchip"  (for survival interpolator)
+    through_origin: bool = True,             # fit slope through origin (default in paper)
+    clip_p: float = 1e-6
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Compute calibration points (p, obs(p)) and slope under INTERVAL censoring:
+      - Include as 1 if t_{i,p} >= U_i
+      - Include as 0 if t_{i,p} <= L_i
+      - Skip if L_i < t_{i,p} < U_i
+    Returns (p_list, obs_list, slope).
+    """
+    L = np.asarray(left_bounds,  float)
+    U = np.asarray(right_bounds, float)
+    F = np.asarray(predictions_cdf, float)
+    t = np.asarray(time_grid,     float)
+
+    # basic checks
+    assert F.ndim == 2 and F.shape[0] == L.shape[0] and F.shape[1] == t.shape[0], "shape mismatch"
+    assert np.all(np.diff(t) >= 0), "time_grid must be increasing"
+    ps = np.clip(np.asarray(ps, float), clip_p, 1.0 - clip_p)
+
+    # sanitize CDF and convert to Survival for quantile inversion
+    F = np.maximum.accumulate(np.clip(F, 0.0, 1.0), axis=1)  # enforce monotone ↑
+    S = 1.0 - F
+
+    # compute all quantiles t_{i,p} at once
+    t_all = _invert_from_survival_with_interpolator(S, t, ps, method=quantile_method)  # (N, P)
+
+    p_list, obs_list = [], []
+
+    # per-p loop to apply interval rules
+    for j, p in enumerate(ps):
+        t_ip = t_all[:, j]
+
+        # Include as 1 if t_ip >= U   (note: U may be +inf -> never true)
+        keep_one = t_ip >= U
+
+        # Include as 0 if t_ip <= L, but not those already counted as 1 (tie goes to 1)
+        keep_zero = (~keep_one) & (t_ip <= L)
+
+        keep = keep_one | keep_zero
+        denom = int(np.sum(keep))
+        
+        num_ones = int(np.sum(keep_one))
+        obs = num_ones / float(denom)
+
+        p_list.append(float(p))
+        obs_list.append(float(obs))
+
+    p_arr = np.array(p_list, dtype=float)
+    o_arr = np.array(obs_list, dtype=float)
+
+    x, y_fit = p_arr, o_arr
+    if through_origin:
+        slope = float((x @ y_fit) / (x @ x + 1e-12))
+    else:
+        X = np.c_[np.ones_like(x), x]
+        beta, *_ = np.linalg.lstsq(X, y_fit, rcond=None)
+        slope = float(beta[1])        
+
+    return p_arr, o_arr, slope
+
+# TODO survival_auprc_interval
+
