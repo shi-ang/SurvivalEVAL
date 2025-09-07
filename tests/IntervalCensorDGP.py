@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, Literal, Optional
+from typing import Tuple, Literal, Optional, Dict
 
 def convert_right_censor_to_interval_censor(
     event_indicators: np.ndarray,   # (N,) bool: True=event, False=right-censor
@@ -39,8 +39,6 @@ def convert_right_censor_to_interval_censor(
 
     return left, right
 
-VisitMethod = Literal["fixed", "poisson", "lognormal"]
-
 def _visits_fixed(end: float, step: float) -> np.ndarray:
     if end <= 0:
         return np.array([0.0])
@@ -69,18 +67,57 @@ def _visits_lognormal(rng: np.random.Generator, end: float, mean: float, sigma: 
     times.append(end)
     return np.unique(np.array(times))
 
+def _visits_exp(rng, end, rate: float = 1.0):
+    t = 0.0
+    times = [0.0]
+    while True:
+        t += rng.exponential(1.0 / rate)
+        if t >= end:
+            break
+        times.append(t)
+    times.append(end)
+    return np.array(times)
+
+def _hawkes_times(rng: np.random.Generator, mu: float = 0.2, alpha: float = 0.3, beta: float = 1.5, end: float = 1000, max_events: int = 100) -> np.ndarray:
+    """
+    Simulate Hawkes with intensity: λ(t) = μ + α * sum_k exp(-β (t - t_k)).
+    Returns sorted event times in (0, T].
+    """
+    assert mu >= 0 and alpha >= 0 and beta > 0 and end >= 0
+    t, g = 0.0, 0.0                  # g = sum exp(-β (t - t_k))
+    lam = mu + alpha * g
+    times = []
+
+    while t < end and len(times) < max_events:
+        if lam <= 0:
+            break
+        w = rng.exponential(1.0 / lam)     # candidate gap
+        t_cand = t + w
+        if t_cand > end:
+            break
+        # decay g over gap
+        g *= np.exp(-beta * w)
+        lam_cand = mu + alpha * g
+        # accept with prob lam_cand / lam
+        if rng.random() * lam <= lam_cand and lam_cand > 0:
+            # event at t_cand
+            times.append(t_cand)
+            g += 1.0                       # kernel at 0 is 1
+            t = t_cand
+            lam = mu + alpha * g
+        else:
+            t = t_cand
+            lam = lam_cand
+
+    return np.array(times, dtype=float)    
+
 def interval_censor_DGP_from_synthetic_times(
     event_times: np.ndarray,           # (N,) true event time
     censoring_times: np.ndarray,       # (N,) right-censor/admin end per subject
     *,
-    method: VisitMethod = "fixed",
+    method: str = "fixed",
     # fixed
-    step: float = 1.0,
-    # poisson
-    rate: float = 4.0,                 # expected visits per unit time
-    # lognormal
-    ln_mean: float = 0.0,              # lognormal(mean=ln_mean, sigma=ln_sigma) for inter-visit gaps
-    ln_sigma: float = 1.0,
+    params: Optional[Dict[str, float]] = None,
     seed: int = 42
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -105,19 +142,31 @@ def interval_censor_DGP_from_synthetic_times(
         end_i = max(end_i, 0.0)
 
         if method == "fixed":
+            step = params['step'] if 'step' in params else 1.0
             visits = _visits_fixed(end=end_i, step=step)
         elif method == "poisson":
+            rate = params['rate'] if 'rate' in params else 1.0
             visits = _visits_poisson(rng, end=end_i, rate=rate)
         elif method == "lognormal":
+            ln_mean = params['ln_mean'] if 'ln_mean' in params else 0.0
+            ln_sigma = params['ln_sigma'] if 'ln_sigma' in params else 1.0
             visits = _visits_lognormal(rng, end=end_i, mean=ln_mean, sigma=ln_sigma)
+        elif method == "exp":
+            rate = params['rate'] if 'rate' in params else 2.0            
+            visits = _visits_exp(rng, end=end_i, rate = rate)
+        elif method == "hawkes":
+            mu = params['mu'] if 'mu' in params else 0.2
+            alpha = params['alpha'] if 'alpha' in params else 0.3
+            beta = params['beta'] if 'beta' in params else 1.5      
+            visits = _hawkes_times(rng, end=end_i, mu = mu, alpha = alpha, beta = beta)
         else:
-            raise ValueError("method must be 'fixed'|'poisson'|'lognormal'")
+            raise ValueError("method must be 'fixed'|'poisson'|'lognormal'|'hawkes'|'exp'")
 
         n_visits[i] = visits.size
 
         t = float(e[i])
         # right censor
-        if t > c[i]:
+        if t > c[i] or t > visits[-1]:
             left[i] = c[i]
             right[i] = np.inf
             continue
@@ -134,3 +183,4 @@ def interval_censor_DGP_from_synthetic_times(
             left[i], right[i] = L, U
 
     return left, right, n_visits
+
