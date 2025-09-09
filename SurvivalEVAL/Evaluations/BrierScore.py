@@ -2,6 +2,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from lifelines import WeibullAFTFitter
+from SurvivalEVAL.Evaluations.custom_types import Numeric
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimator
 
 
@@ -102,7 +103,7 @@ def brier_score_ic(
         train_right_limits: Optional[np.ndarray] = None,
         x: Optional[np.ndarray] = None,
         x_train: Optional[np.ndarray] = None,
-        target_time: Optional[float] = None,
+        target_time: Optional[Numeric] = None,
         method: str = "Tsouprou-marginal",
 ) -> float:
     """
@@ -120,12 +121,12 @@ def brier_score_ic(
         Actual left limit event/censor time for the training samples.
     train_right_limits: np.ndarray, shape = (n_train_samples, )
         Actual right limit event/censor time for the training samples.
-    target_time: float, default: None
-        The specific time point for which to estimate the Brier score.
     x: np.ndarray, shape = (n_samples, n_features), default: None
         Features for the testing samples. Use only when method is 'Tsouprou-conditional'.
     x_train: np.ndarray, shape = (n_train_samples, n_features), default: None
         Features for the training samples. Use only when method is 'Tsouprou-conditional'.
+    target_time: numeric, default: None
+        The specific time point for which to estimate the Brier score.
     method: str, default: IPCW
         Method to use for handling censoring. One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
         'uncensored': Treat censored data as uncensored.
@@ -224,10 +225,14 @@ def brier_score_ic(
                 target_probs = target_probs[~bad]
 
         # supress warnings for divide by zero
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide='ignore', invalid='ignore'):
             survival_status = (target_probs - right_probs) / (left_probs - right_probs)
         survival_status[right_limits < target_time] = 0
         survival_status[left_limits >= target_time] = 1
+
+        if np.any((survival_status < 0) | (survival_status > 1)):
+            raise ValueError("Calculated survival status contains values outside [0, 1].")
+
         # calculate the brier score
         brier_score = np.mean(np.square(preds - survival_status))
     else:

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import warnings
-from typing import Union, Optional, Callable
+from typing import Union, Optional, Callable, Tuple
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 from abc import ABC
@@ -10,7 +10,8 @@ from lifelines.statistics import logrank_test
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst, predict_mean_st, predict_median_st,
-                                           predict_prob_from_curve, predict_multi_probs_from_curve, quantile_to_survival)
+                                           predict_prob_from_curve, predict_multi_probs_from_curve,
+                                           quantile_to_survival, zero_padding)
 
 from SurvivalEVAL.Evaluations.Concordance import concordance
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
@@ -63,54 +64,7 @@ class SurvivalEvaluator:
 
         self.ndim_time = time_coordinates.ndim
         self.ndim_surv = pred_survs.ndim
-        zero_pad_msg = ("The first time coordinate is not 0. A authentic survival curve should start from 0 "
-                        "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
-                        "and 1 to the beginning of the predicted curves.")
-        if self.ndim_time == 1:
-            assert self.ndim_surv == 2, "Either predicted_survival_curves or time_coordinates " \
-                    "must be a 2D array, got {} and {}".format(self.ndim_surv, self.ndim_time)
-            if time_coordinates[0] != 0:
-                warnings.warn(zero_pad_msg)
-                self._pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
-                self._pred_survs[:, 1:] = pred_survs
-                self._pred_survs[:, 0] = 1.0
-                self._time_coordinates = np.empty(time_coordinates.shape[0] + 1)
-                self._time_coordinates[1:] = time_coordinates
-                self._time_coordinates[0] = 0
-            else:
-                self._pred_survs = pred_survs
-                self._time_coordinates = time_coordinates
-        elif self.ndim_time == 2:
-            if self.ndim_surv == 1:
-                if pred_survs[0] != 1:
-                    warnings.warn(zero_pad_msg)
-                    self._pred_survs = np.empty(pred_survs.shape[0] + 1)
-                    self._pred_survs[1:] = pred_survs
-                    self._pred_survs[0] = 1.0
-                    self._time_coordinates = np.empty((time_coordinates.shape[0], time_coordinates.shape[1] + 1))
-                    self._time_coordinates[:, 1:] = time_coordinates
-                    self._time_coordinates[:, 0] = 0
-                else:
-                    self._pred_survs = pred_survs
-                    self._time_coordinates = time_coordinates
-            elif self.ndim_surv == 2:
-                if np.any(pred_survs[:, 0] != 1):
-                    warnings.warn(zero_pad_msg)
-                    self._pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
-                    self._pred_survs[:, 1:] = pred_survs
-                    self._pred_survs[:, 0] = 1.0
-                    self._time_coordinates = np.empty((time_coordinates.shape[0], time_coordinates.shape[1] + 1))
-                    self._time_coordinates[:, 1:] = time_coordinates
-                    self._time_coordinates[:, 0] = 0.0
-                else:
-                    self._pred_survs = pred_survs
-                    self._time_coordinates = time_coordinates
-            else:
-                error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(self.ndim_surv)
-                raise TypeError(error)
-        else:
-            error = "Time coordinates must be a 1D or 2D array, got {} instead".format(self.ndim_time)
-            raise TypeError(error)
+        self._pred_survs, self._time_coordinates = zero_padding(pred_survs, time_coordinates)
 
         event_times, event_indicators = check_and_convert(event_times, event_indicators)
         self.event_times = event_times
@@ -132,6 +86,9 @@ class SurvivalEvaluator:
             raise TypeError(error)
 
         self.interpolation = interpolation
+
+        self._NO_CENSOR = np.all(self.event_indicators == 1)
+
 
     def _error_trainset(self, method_name: str):
         if (self.train_event_times is None) or (self.train_event_indicators is None):
@@ -450,7 +407,7 @@ class SurvivalEvaluator:
         """
         # Choose prediction method based on the input argument
         # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             method = "Harrell"
 
         if method == "Margin":
@@ -517,8 +474,7 @@ class SurvivalEvaluator:
         :return: float
             The Brier score at the target time point.
         """
-        # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             IPCW_weighted = False
 
         if IPCW_weighted:
@@ -557,7 +513,7 @@ class SurvivalEvaluator:
             Values of multiple Brier scores.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             IPCW_weighted = False
 
         if IPCW_weighted:
@@ -597,7 +553,7 @@ class SurvivalEvaluator:
             The integrated Brier score.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             IPCW_weighted = False
 
         if IPCW_weighted:
@@ -685,6 +641,9 @@ class SurvivalEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         if weighted is None:
             weighted = False if method == "Uncensored" or "Hinge" else True
 
@@ -733,6 +692,9 @@ class SurvivalEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         if weighted is None:
             weighted = False if method == "Uncensored" or "Hinge" else True
 
@@ -815,6 +777,9 @@ class SurvivalEvaluator:
         expected_probabilities: list
             The expected probabilities in each bin.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         predict_probs = self.predict_probability_from_curve(target_time)
         return one_calibration(
             preds=1 - predict_probs,
@@ -913,6 +878,9 @@ class SurvivalEvaluator:
         residuals: np.ndarray
             The residuals calculated from the predicted survival curve.
         """
+        if self._NO_CENSOR:
+            method = "CoxSnell" if method in ["CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2"] else method
+
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return residuals(
             pred_probs=predict_probs,
@@ -979,7 +947,7 @@ class SurvivalEvaluator:
             weightings: Optional[str] = None,
             p: Optional[float] = 0,
             q: Optional[float] = 0,
-    ) -> (float, float):
+    ) -> Tuple[float, float]:
         """
         Calculate the log-rank test statistic and p-value for the predicted survival curve.
 
@@ -1190,6 +1158,8 @@ class PointEvaluator:
         self.train_event_times = train_event_times
         self.train_event_indicators = train_event_indicators
 
+        self._NO_CENSOR = np.all(self.event_indicators == 1)
+
     def _error_trainset(self, method_name: str):
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError("Train set information is missing. "
@@ -1244,7 +1214,7 @@ class PointEvaluator:
             The total number of comparable pairs considered in the concordance calculation.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             method = "Harrell"
 
         if method == "Margin":
@@ -1291,6 +1261,9 @@ class PointEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         if weighted is None:
             weighted = False if method == "Uncensored" or "Hinge" else True
 
@@ -1339,6 +1312,9 @@ class PointEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         if weighted is None:
             weighted = False if method == "Uncensored" or "Hinge" else True
 
@@ -1389,6 +1365,49 @@ class PointEvaluator:
         """
         return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
+    def log_rank(
+            self,
+            weightings: Optional[str] = None,
+            p: Optional[float] = 0,
+            q: Optional[float] = 0,
+    ) -> Tuple[float, float]:
+        """
+        Calculate the log-rank test statistic and p-value for the predicted survival curve.
+
+        Parameters
+        ----------
+        weightings: str, optional
+           The weighting method is for weighted log-rank test.
+           Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
+           None means unweighted log-rank test.
+           Wilcoxon uses the number of at-risk population at each time point as the weight.
+           Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
+           Peto uses the estimated survival probability as the weight.
+           Fleming-Harrington uses
+               w_i = S(t_i) ** p * (1 - S(t_i)) ** q
+        p: float, default: 0
+            The p parameter for the Fleming-Harrington weighting method.
+        q: float, default: 0
+            The q parameter for the Fleming-Harrington weighting method.
+
+        Returns
+        -------
+        p_value: float
+            The p-value of the log-rank test.
+        test_statistic: float
+            The test statistic of the log-rank test.
+        """
+        results = logrank_test(
+            durations_A = self.event_times,
+            durations_B = self._pred_times,
+            event_observed_A = self.event_indicators,
+            event_observed_B = np.ones_like(self.event_indicators, dtype=bool),
+            weightings=weightings,
+            p=p,
+            q=q
+        )
+        return results.p_value, results.test_statistic
+
 
 class SingleTimeEvaluator:
     def __init__(
@@ -1438,6 +1457,7 @@ class SingleTimeEvaluator:
                 if self.train_event_times is not None else self.event_times
             target_time = np.quantile(event_times, 0.5)
         self.target_time = target_time
+        self._NO_CENSOR = np.all(self.event_indicators == 1)
 
     def _error_trainset(self, method_name: str):
         if (self.train_event_times is None) or (self.train_event_indicators is None):
@@ -1489,7 +1509,7 @@ class SingleTimeEvaluator:
             The Brier score at the target time point.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
-        if np.all(self.event_indicators == 1):
+        if self._NO_CENSOR:
             IPCW_weighted = False
 
         if IPCW_weighted:
@@ -1533,6 +1553,9 @@ class SingleTimeEvaluator:
         expected_probabilities: list
             The expected probabilities in each bin.
         """
+        if self._NO_CENSOR:
+            method = "Uncensored"
+
         return one_calibration(
             preds=1 - self._pred_probs,
             event_time=self.event_times,
