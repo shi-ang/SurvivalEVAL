@@ -580,3 +580,58 @@ def get_prob_at_zero(
     probability = np.append(1, survival_probabilities)[probability_index]
 
     return probability
+
+
+def zero_padding(pred_survs, time_coordinates):
+    ndim_time = time_coordinates.ndim
+    ndim_surv = pred_survs.ndim
+    zero_pad_msg = ("The first time coordinate is not 0. A authentic survival curve should start from 0 "
+                    "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
+                    "and 1 to the beginning of the predicted curves.")
+    if ndim_time == 1:
+        assert ndim_surv == 2, "Either predicted_survival_curves or time_coordinates " \
+                                    "must be a 2D array, got {} and {}".format(ndim_surv, ndim_time)
+        if time_coordinates[0] != 0:
+            warnings.warn(zero_pad_msg)
+            _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
+            _pred_survs[:, 1:] = pred_survs
+            _pred_survs[:, 0] = 1.0
+            _time_coordinates = np.empty(time_coordinates.shape[0] + 1)
+            _time_coordinates[1:] = time_coordinates
+            _time_coordinates[0] = 0
+        else:
+            _pred_survs = pred_survs
+            _time_coordinates = time_coordinates
+    elif ndim_time == 2:
+        if ndim_surv == 1:
+            if pred_survs[0] != 1:
+                warnings.warn(zero_pad_msg)
+                _pred_survs = np.empty(pred_survs.shape[0] + 1)
+                _pred_survs[1:] = pred_survs
+                _pred_survs[0] = 1.0
+                _time_coordinates = np.empty((time_coordinates.shape[0], time_coordinates.shape[1] + 1))
+                _time_coordinates[:, 1:] = time_coordinates
+                _time_coordinates[:, 0] = 0
+            else:
+                _pred_survs = pred_survs
+                _time_coordinates = time_coordinates
+        elif ndim_surv == 2:
+            if np.any(pred_survs[:, 0] != 1):
+                warnings.warn(zero_pad_msg)
+                _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
+                _pred_survs[:, 1:] = pred_survs
+                _pred_survs[:, 0] = 1.0
+                _time_coordinates = np.empty((time_coordinates.shape[0], time_coordinates.shape[1] + 1))
+                _time_coordinates[:, 1:] = time_coordinates
+                _time_coordinates[:, 0] = 0.0
+            else:
+                _pred_survs = pred_survs
+                _time_coordinates = time_coordinates
+        else:
+            error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(ndim_surv)
+            raise TypeError(error)
+    else:
+        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(ndim_time)
+        raise TypeError(error)
+
+    return _pred_survs, _time_coordinates
