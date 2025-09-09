@@ -38,3 +38,24 @@ print(f"The MAE is {mae}.")
 # calculate the rmse
 rmse = evaluator.rmse(method="Margin", weighted=False)
 print(f"The RMSE is {rmse}.")
+
+# calculate the log-rank test p-value
+p_value, _ = evaluator.log_rank()
+print(f"The log-rank test p-value is {p_value}.")
+
+# plot the figure for kaplan-meier curves for true labels and predicted times
+import matplotlib.pyplot as plt
+from lifelines import KaplanMeierFitter
+km1 = KaplanMeierFitter().fit(test_event_times, test_event_indicators)
+km2 = KaplanMeierFitter().fit(predicted_times, np.ones_like(predicted_times))
+fig, ax= plt.subplots()
+km1.plot_survival_function(ax=ax, label="True")
+km2.plot_survival_function(ax=ax, label="Predicted")
+plt.title("Kaplan-Meier Curves")
+plt.xlabel("Time")
+plt.ylabel("Survival Probability")
+plt.legend()
+plt.show()
+
+
+
