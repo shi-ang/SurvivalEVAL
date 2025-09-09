@@ -1389,6 +1389,49 @@ class PointEvaluator:
         """
         return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
+    def log_rank(
+            self,
+            weightings: Optional[str] = None,
+            p: Optional[float] = 0,
+            q: Optional[float] = 0,
+    ) -> (float, float):
+        """
+        Calculate the log-rank test statistic and p-value for the predicted survival curve.
+
+        Parameters
+        ----------
+        weightings: str, optional
+           The weighting method is for weighted log-rank test.
+           Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
+           None means unweighted log-rank test.
+           Wilcoxon uses the number of at-risk population at each time point as the weight.
+           Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
+           Peto uses the estimated survival probability as the weight.
+           Fleming-Harrington uses
+               w_i = S(t_i) ** p * (1 - S(t_i)) ** q
+        p: float, default: 0
+            The p parameter for the Fleming-Harrington weighting method.
+        q: float, default: 0
+            The q parameter for the Fleming-Harrington weighting method.
+
+        Returns
+        -------
+        p_value: float
+            The p-value of the log-rank test.
+        test_statistic: float
+            The test statistic of the log-rank test.
+        """
+        results = logrank_test(
+            durations_A = self.event_times,
+            durations_B = self._pred_times,
+            event_observed_A = self.event_indicators,
+            event_observed_B = np.ones_like(self.event_indicators, dtype=bool),
+            weightings=weightings,
+            p=p,
+            q=q
+        )
+        return results.p_value, results.test_statistic
+
 
 class SingleTimeEvaluator:
     def __init__(
