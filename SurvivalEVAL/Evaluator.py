@@ -178,12 +178,22 @@ class SurvivalEvaluator:
         predicted_probability: np.ndarray, shape = (n_samples, )
             Predicted probabilities of event at the target time point(s).
         """
-        n_samples = self._pred_survs.shape[0]
+        if self.ndim_surv == 2 and self.ndim_time == 1:
+            n_samples = self._pred_survs.shape[0]
+        elif self.ndim_surv == 1 and self.ndim_time == 2:
+            n_samples = self._time_coordinates.shape[0]
+        elif self.ndim_surv == 2 and self.ndim_time == 2:
+            assert self._pred_survs.shape[0] == self._time_coordinates.shape[0], \
+                "The number of samples in pred_survs and time_coordinates must be the same"
+            n_samples = self._pred_survs.shape[0]
+        else:
+            raise TypeError("Dimensional error")
+
         if isinstance(target_time, (float, int)):
             target_time = target_time * np.ones(n_samples, dtype=self._time_coordinates.dtype)
         elif isinstance(target_time, np.ndarray):
             assert target_time.ndim == 1, "Target time must be a 1D array"
-            assert target_time.shape[0] == self._pred_survs.shape[0], "Target time must have the same length as " \
+            assert target_time.shape[0] == n_samples, "Target time must have the same length as " \
                                                                            "the number of samples"
         else:
             error = "Target time must be a float, int, or 1D array, got '{}' instead".format(type(target_time))
