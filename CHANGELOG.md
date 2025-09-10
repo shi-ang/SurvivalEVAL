@@ -1,9 +1,11 @@
 # CHANGELOG
 
+## 2025-09-09: Version 0.5.1
+1. Fix bugs for quantile regression evaluator
+
 ## 2025-09-08: Version 0.5.0
 1. Add interval censoring support for the evaluation.
 2. Add log rank test for point evaluation.
-
 
 ## 2025-09-08: Version 0.4.8
 1. Downgrade the dependencies in setup.py, requirements.txt to improve compatibility with older versions of other packages.
