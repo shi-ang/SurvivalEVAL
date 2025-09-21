@@ -19,17 +19,12 @@ pmf = predictions / predictions.sum(axis=1)[:, None]
 survival_curves = 1 - np.cumsum(pmf, axis=1)
 predictions_cdf = np.cumsum(pmf, axis=1)
 
+evaluator = SurvivalEvaluator(survival_curves, time_grid, observed_times, event_indicators, predict_time_method="Mean")
+print("Successfully initialized the evaluator.")
+
 print ("Test calibration_points_right_censor")
 
-from IntervalCensor import calibration_slope_right_censor
-p_list = (0.1,0.3,0.5,0.7,0.9)
-p_list, obsevation_list, slope = calibration_slope_right_censor(
-    event_indicators=event_indicators,     # bool
-    observed_times=observed_times,    # float
-    predictions=predictions_cdf,      # (N,T), CDF
-    time_grid=time_grid,
-    ps=p_list,
-)
+p_list, obsevation_list, slope = evaluator.calibration_slope_right_censor()
 print("slope:", slope)
 print("p_list:", p_list)
 print("obsevation_list:", obsevation_list)
@@ -60,31 +55,22 @@ ratio_k = (tt / lambda_i[:, None])**shape_k
 predictions_cdf = 1.0 - np.exp(-ratio_k)            
 predictions_surv = 1.0 - predictions_cdf            
 
-p_list = (0.1,0.3,0.5,0.7,0.9)
-p_list, obsevation_list, slope = calibration_slope_right_censor(
-    event_indicators=event_indicators,     # bool
-    observed_times=observed_times,    # float
-    predictions=predictions_cdf,      # (N,T), CDF
-    time_grid=time_grid,
-    ps=p_list,
-)
+evaluator = SurvivalEvaluator(predictions_surv, time_grid, observed_times, event_indicators, predict_time_method="Mean")
+
+p_list = [0.1, 0.3, 0.5, 0.7, 0.9]
+p_list, obsevation_list, slope = evaluator.calibration_slope_right_censor(ps=p_list)
 print("slope:", slope)
 print("p_list:", p_list)
 print("obsevation_list:", obsevation_list)
 
 print ("Test CoV")
 
-from IntervalCensor import cov_from_cdf_grid
+# from IntervalCensor import cov_from_cdf_grid
 
-cov_list = cov_from_cdf_grid(cdf = predictions_cdf, t_grid = time_grid)
-print ('CoV:', np.nanmean(cov_list))
+cov_list = evaluator.cov_from_cdf_grid()
+print("Mean coverage from evaluator:", np.mean(cov_list))
 
 print ("Test survival-auprc right censor")
 
-from IntervalCensor import survival_auprc_right
-
-scores = survival_auprc_right(event_indicators = event_indicators,
-                              observed_times = observed_times,
-                              predictions_cdf = predictions_cdf, 
-                              time_grid = time_grid)
-print (np.mean(scores))
+Survival_AUPRC = evaluator.survival_auprc_right_censor(n_quad=256)
+print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
