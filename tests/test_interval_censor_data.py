@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from interval_censor_sythentic_data import convert_right_censor_to_interval_censor 
+from IntervalCensorDGP import convert_right_censor_to_interval_censor 
 
 print ('Test convert_right_censor_to_interval_censor df.head()')
 
