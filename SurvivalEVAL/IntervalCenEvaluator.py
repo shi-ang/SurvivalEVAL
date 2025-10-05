@@ -1,13 +1,13 @@
 import numpy as np
 from typing import Optional
-
+from functools import cached_property
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
-from SurvivalEVAL.Evaluations.IntervalCensor import survival_auprc_interval, calibration_slope_interval_censor, cov_from_cdf_grid
+from SurvivalEVAL.Evaluations.IntervalCensor import survival_auprc_interval, calibration_slope_interval_censor, cov_from_cdf_grid, median_in_interval_from_point
 
 class IntervalCenEvaluator(SurvivalEvaluator):
     """
@@ -79,6 +79,16 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         self.interpolation = interpolation
         self._NO_CENSOR = np.all(left_limits == right_limits)
+
+    @cached_property
+    def predicted_event_times(self):
+        return self.predict_time_from_curve(self.predict_time_method)
+
+    def _clear_cache(self):
+        # See how to clear cache in functools:
+        # https://docs.python.org/3/library/functools.html#functools.cached_property
+        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
+        self.__dict__.pop('predicted_event_times', None)
 
     def _error_trainset(self, method_name: str):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
@@ -277,3 +287,21 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         """
         predictions_cdf = 1 - self._pred_survs
         return cov_from_cdf_grid(cdf=predictions_cdf, t_grid=self._time_coordinates)
+    
+    def median_in_interval_from_point(self) -> (float, float):
+        """
+        Calculate the proportion of predicted median survival times that fall outside the interval
+        and the average distance from the predicted median survival times to the nearest interval boundary.
+
+        Returns
+        -------
+        p_out: float
+            The proportion of predicted median survival times that fall outside the interval.
+        d_out: float
+            The average distance from the predicted median survival times to the nearest interval boundary.
+        outside_array: np.ndarray
+            A boolean array indicating whether each predicted median survival time falls outside the interval.
+        distance_array: np.ndarray
+            An array of distances from each predicted median survival time to the nearest interval boundary.
+        """
+        return median_in_interval_from_point(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)

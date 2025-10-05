@@ -357,3 +357,51 @@ def calibration_slope_interval_censor(
 
     return p_arr, o_arr, slope
 
+def median_in_interval_from_point(
+    left_bounds: np.ndarray,          # (N,) L_i
+    right_bounds: np.ndarray,         # (N,) R_i (use np.inf for right-censor)
+    predicted_times: np.ndarray,      # (N,)  your point prediction per sample (e.g., median time)
+    *,
+    return_details: bool = False
+) -> Tuple[float, float] | Tuple[float, float, np.ndarray, np.ndarray]:
+    """
+    Compute:
+      p_out = mean( 1{ t_hat ∉ (L, R] } ),
+      d_out = mean( 1{outside} * min( |t_hat - L|, |t_hat - R| ) ).
+
+    Conventions:
+      - Interval is left-open, right-closed: (L, R]
+      - Right-censor: R = +inf → inside iff t_hat > L
+      - If t_hat is inside, its contribution to distance is 0.
+    """
+    L = np.asarray(left_bounds, float)
+    R = np.asarray(right_bounds, float)
+    t_hat = np.asarray(predicted_times, float)
+
+    assert L.shape == R.shape == t_hat.shape, "shape mismatch"
+
+    # Masks for special cases
+    is_right_cens = np.isinf(R)
+
+    # Inside test:
+    #   - general finite-interval: (L, R]  -> (t_hat > L) & (t_hat <= R)
+    #   - right-censored:          (L, +inf) -> t_hat > L
+    #   - exact-interval (L==R): treat as {R}: |t_hat - R| <= atol
+    inside_finite = (~is_right_cens) & (t_hat > L) & (t_hat <= R)
+    inside_right  = is_right_cens & (t_hat > L)
+
+    inside = inside_finite | inside_right
+    outside = ~inside
+
+    # Distance to closest boundary (0 if inside).
+    # For right-censored (R=inf), distance to R is +inf, so min reduces to |t_hat - L|.
+    dist_to_L = np.abs(t_hat - L)
+    dist_to_R = np.where(is_right_cens, np.inf, np.abs(t_hat - R))
+    d_i = np.where(outside, np.minimum(dist_to_L, dist_to_R), 0.0)
+
+    p_out = float(np.mean(outside))
+    d_out = float(np.mean(d_i))
+
+    if return_details:
+        return p_out, d_out, outside, d_i
+    return p_out, d_out
