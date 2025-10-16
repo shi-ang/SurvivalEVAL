@@ -38,6 +38,7 @@ evaluator = IntervalCenEvaluator(
     predict_time_method="Median",
     interpolation="Linear"
 )
+ci = evaluator.concordance()
 bs = evaluator.brier_score(method="Tsouprou-marginal", x=x, x_train=x_train)
 one_cal = evaluator.one_calibration(target_time=target_time)
 d_cal = evaluator.d_calibration()

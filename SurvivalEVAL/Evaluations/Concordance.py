@@ -12,7 +12,7 @@ def concordance(
         train_event_indicators: Optional[np.ndarray] = None,
         method: str = "Harrell",
         ties: str = "Risk"
-) -> tuple[float, float, int]:
+) -> tuple[float, float, float]:
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
 
@@ -53,7 +53,7 @@ def concordance(
         The concordance index.
     concordant_pairs: float
         The number of concordant pairs.
-    total_pairs: int
+    total_pairs: float
         The total number of comparable pairs.
     """
     # the scikit-survival concordance function only takes risk scores to calculate.

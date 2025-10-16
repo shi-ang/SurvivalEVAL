@@ -89,10 +89,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             raise TypeError("Train set information is missing. "
                             "Evaluator cannot perform {} evaluation.".format(method_name))
 
-    def c_index(
+    def concordance(
             self,
-            tie_strategy: str = "skip",
-    ) -> tuple[float, np.ndarray, np.ndarray]:
+            ties: str = "skip",
+            *args,
+            **kwargs
+    ) -> tuple[float, float, float]:
         """
         Calculate the concordance index from the predicted survival curve.
 
@@ -118,14 +120,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             interpolation=self.interpolation
         )
 
-        return concordance_ic(
+        c_index, num, den = concordance_ic(
             eta=pred_times,
             left=self.left_limits,
             right=self.right_limits,
             left_train=self.train_left_limits,
             right_train=self.train_right_limits,
-            tie_strategy=tie_strategy
+            tie_strategy=ties
         )
+        return c_index, np.sum(num), np.sum(den)
 
     def brier_score(
             self,
