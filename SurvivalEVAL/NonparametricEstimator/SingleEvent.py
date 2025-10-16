@@ -469,7 +469,7 @@ class TurnbullEstimator:
             If None, it is initialized uniformly across intervals.
         """
         if tau is None:
-            tau_vals = np.concatenate([left, right[np.isfinite(right)]])
+            tau_vals = np.concatenate([left, right])
             tau = np.unique(np.sort(tau_vals))
         else:
             tau = np.asarray(tau, dtype=float).copy()
@@ -519,15 +519,19 @@ class TurnbullEstimator:
 
         # Compute survival step function: surv = [1] + 1 - cumsum(p)
         surv_full = np.concatenate([[1.0], 1.0 - np.cumsum(p)])
-        # Possibly truncate at the max finite right time
-        if np.any(~np.isfinite(right)):
-            t_max_finite = np.max(right[np.isfinite(right)])
-            mask = tau < t_max_finite
-            time_out = tau[mask]
-            surv_out = surv_full[mask]
+        # Possibly truncate at the max finite time
+        finite_mask = np.isfinite(tau)
+        if finite_mask.sum() < len(tau):
+            time_out = tau[finite_mask]
+            surv_out = surv_full[finite_mask]
         else:
             time_out = tau
             surv_out = surv_full
+
+        # add a point at time 0 if not present
+        if time_out[0] > 0:
+            time_out = np.insert(time_out, 0, 0.0)
+            surv_out = np.insert(surv_out, 0, 1.0)
 
         self.tau_ = tau
         self.probability_dens_ = p

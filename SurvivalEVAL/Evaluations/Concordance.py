@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, TurnbullEstimator
 
 
 def concordance(
@@ -12,7 +12,7 @@ def concordance(
         train_event_indicators: Optional[np.ndarray] = None,
         method: str = "Harrell",
         ties: str = "Risk"
-) -> (float, float, int):
+) -> tuple[float, float, int]:
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
 
@@ -130,7 +130,7 @@ def _estimate_concordance_index(
         bg_event_time: np.ndarray = None,
         partial_weights: np.ndarray = None,
         tied_tol: float = 1e-8
-) -> (float, float, float, float, float):
+) -> tuple[float, float, float, float, float]:
     """
     Estimate the concordance index.
     This backbone of this function is borrowed from scikit-survival:
@@ -228,7 +228,7 @@ def _get_comparable(
         event_time: np.ndarray,
         order: np.ndarray,
         partial_weights: np.ndarray = None
-) -> (dict, int, dict):
+) -> tuple[dict, int, dict]:
     """
     Given the labels of the survival outcomes, get the comparable pairs.
 
@@ -292,3 +292,168 @@ def _get_comparable(
         i = end
 
     return comparable, tied_time, weight
+
+
+def pairwise_w(S_Li, S_Ri, eps=1e-12):
+    """
+    Compute pair weights w_{i<j} for interval-censored pairs.
+
+    Parameters
+    ----
+    S_Li, S_Ri : (n,) arrays
+        Survival probabilities at left and right endpoints of intervals.
+    tb : object
+        Has a vectorized .predict(x) -> S(x) that broadcasts over x's shape.
+    eps : float
+        Numerical tolerance for zero denominators.
+
+    Returns
+    -------
+    w : (n, n) array
+        Pairwise weights w_{i<j}.
+    """
+    # column/row views for broadcasting
+    S_Li = S_Li[:, None]          # (n,1)
+    S_Ri = S_Ri[:, None]          # (n,1)
+
+    S_Lj = S_Li.T            # (1,n)
+    S_Rj = S_Ri.T            # (1,n)
+
+    # Monotonicity shortcuts:
+    # S(max(Lj, Ri)) = min(S(Lj), S(Ri)),  S(l_max) = min(S(Lj), S(Li)),  S(r_min) = max(S(Rj), S(Ri))
+    S_maxLj_ri = np.minimum(S_Lj, S_Ri)   # (n,n)
+    S_lmax     = np.minimum(S_Lj, S_Li)   # (n,n)
+    S_rmin     = np.maximum(S_Rj, S_Ri)   # (n,n)
+
+    pos = lambda x: np.clip(x, 0.0, None)
+
+    # Base denominator and J terms
+    denom = (S_Li - S_Ri) * (S_Lj - S_Rj)                      # (n,n)
+    J1 = (S_Li - 0.5 * S_lmax - 0.5 * S_rmin) * pos(S_lmax - S_rmin)
+    J2 = (S_Li - S_Ri) * pos(S_maxLj_ri - S_Rj)
+    J  = J1 + J2
+
+    # Masks for the three edge cases:
+    # A: (S_Li - S_Ri) == 0  (row-wise condition broadcast over columns)
+    # B: (S_Lj - S_Rj) == 0  (column-wise condition broadcast over rows)
+    A = np.isclose(S_Li - S_Ri, 0.0, atol=eps)   # (n,1)
+    B = np.isclose(S_Lj - S_Rj, 0.0, atol=eps)   # (1,n)
+
+    only_i  = A & (~B)        # denominator zero due to i
+    only_j  = (~A) & B        # denominator zero due to j
+    both    = A & B           # both zero
+    neither = (~A) & (~B)
+
+    w = np.zeros_like(denom, dtype=float)
+
+    # Case 0: neither zero -> use main formula
+    if np.any(neither):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w[neither] = (J / np.where(np.abs(denom) > eps, denom, np.inf))[neither]
+
+    # Case 1: (S_Li - S_Ri) == 0, (S_Lj - S_Rj) != 0
+    # w = ((S(max(l_j,l_i)) - S(r_j))_+) / (S(l_j) - S(r_j))
+    if np.any(only_i):
+        num1 = pos(S_lmax - S_Rj)                   # (n,n)
+        den1 = (S_Lj - S_Rj)                        # (n,n)
+        w[only_i] = (num1 / np.clip(den1, eps, None))[only_i]
+
+    # Case 2: (S_Lj - S_Rj) == 0, (S_Li - S_Ri) != 0
+    # w = ((S(l_i) - S(min(r_i,r_j)))_+) / (S(l_i) - S(r_i))
+    if np.any(only_j):
+        num2 = pos(S_Li - S_rmin)                   # (n,n)
+        den2 = (S_Li - S_Ri)                        # (n,1) broadcast
+        w[only_j] = (num2 / np.clip(den2, eps, None))[only_j]
+
+    # Case 3: both zero -> compare S_Li vs S_Lj
+    # if S_Li > S_Lj => w=1 else 0
+    if np.any(both):
+        w[both] = (S_Li > S_Lj)[both].astype(float)
+
+    # Clean up: zero diagonal, clamp tiny negatives, and (optionally) cap at 1
+    np.fill_diagonal(w, 0.0)
+    w = np.clip(w, 0.0, 1.0)
+
+    return w
+
+
+def concordance_ic(
+    eta,
+    left,
+    right,
+    left_train,
+    right_train,
+    tie_strategy: str = "skip",
+    eps: float = 1e-12,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """
+    Concordance index for interval-censored outcomes using closed-form pair weights.
+
+    Parameters
+    ----------
+    eta : array-like of shape (n_sample,)
+        Predicted risk scores  (higher = riskier).
+    left : array-like of shape (n_sample,)
+        Left endpoints l_i (can be -inf).
+    right : array-like of shape (n_sample,)
+        Right endpoints r_i (can be +inf to represent right censoring).
+    left_train : array-like of shape (n_train_sample,)
+        Left endpoints of training data for Turnbull estimator.
+    right_train : array-like of shape (n_train_sample,)
+        Right endpoints of training data for Turnbull estimator.
+    tie_strategy : {"skip", "half"}, default="skip"
+        How to handle ties in eta:
+          - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
+          - "half":  ties contribute 0.5 * w_{i<j} to the numerator.
+    eps : float, default=1e-12
+        Numerical guard to avoid division by ~0.
+
+    Returns
+    -------
+    c_index : float
+        The interval-censored concordance index as in Eq. (cindex_ic).
+        Returns np.nan if the total weight denominator is 0.
+    num_matrix : np.ndarray of shape (n_sample, n_sample)
+        per-pair contributions to numerator,
+    den_matrix : np.ndarray of shape (n_sample, n_sample)
+        per-pair weights (same as weights) in denominator.
+    """
+    eta = np.asarray(eta, dtype=float)
+    l = np.asarray(left, dtype=float)
+    r = np.asarray(right, dtype=float)
+    l_train = np.asarray(left_train, dtype=float)
+    r_train = np.asarray(right_train, dtype=float)
+    n = eta.shape[0]
+    if l.shape != (n,) or r.shape != (n,):
+        raise ValueError("eta, left, right must all be 1-D arrays of same length.")
+
+    # Basic sanity
+    if np.any(l > r):
+        raise ValueError("Found an interval with left > right in testing data.")
+    if np.any(l_train > r_train):
+        raise ValueError("Found an interval with left > right in training data.")
+
+    # train Turnbull estimator on training data
+    tb = TurnbullEstimator().fit(l_train, r_train)
+
+    S_l = tb.predict(l)
+    S_r = tb.predict(r)
+    w = pairwise_w(S_l, S_r, eps=eps)
+
+    # Concordant matrix based on eta
+    gt = (eta[:, None] > eta[None, :]).astype(float)
+    if tie_strategy == "half":
+        gt += 0.5 * (eta[:, None] == eta[None, :]).astype(float)
+        # still zero on diagonal because w_ii is 0
+    elif tie_strategy == "skip":
+        pass
+    else:
+        raise ValueError("tie_strategy must be 'skip' or 'half'.")
+
+    # Numerator and denominator (sum over ordered pairs i != j)
+    num = np.sum(gt * w)
+    den = np.sum(w)
+
+    c_idx = num / den if den > 0 else float("nan")
+
+    return c_idx, gt * w, w
