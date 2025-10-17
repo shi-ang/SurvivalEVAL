@@ -12,6 +12,7 @@ event_times = np.random.weibull(a=1, size=n_data).round(1)
 censoring_times = np.random.lognormal(mean=1, sigma=1, size=n_data).round(1)
 event_indicators = event_times < censoring_times
 observed_times = np.minimum(event_times, censoring_times)
+predicted_times = np.random.uniform(0, 5, size=n_data).round(1)
 
 # get some synthetic predictions
 n_times = 100
@@ -43,21 +44,25 @@ evaluator = IntervalCenEvaluator(pred_survs = survival_curves,
                                  left_limits = left,
                                  right_limits = right)
 
-print("Successfully initialized the evaluator.")
+# print("Successfully initialized the evaluator.")
 
-print ('Test  Survival AUPRC')
+# print ('Test  Survival AUPRC')
 
-Survival_AUPRC = evaluator.survival_auprc_interval(n_quad=256)
-print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
+# Survival_AUPRC = evaluator.survival_auprc_interval(n_quad=256)
+# print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
 
-print ('Test calibration_slope_interval_censor')
+# print ('Test calibration_slope_interval_censor')
 
-p_arr, o_arr, slope = evaluator.calibration_slope_interval_censor(ps = (0.1, 0.3, 0.5, 0.7, 0.9))
-print ("interval_censor slope:", slope)
+# p_arr, o_arr, slope = evaluator.calibration_slope_interval_censor(ps = (0.1, 0.3, 0.5, 0.7, 0.9))
+# print ("interval_censor slope:", slope)
 
-print ('Test cov_from_cdf_grid')
+# print ('Test cov_from_cdf_grid')
 
-cov_list = evaluator.cov_from_cdf_grid()
-print("Mean coverage from evaluator:", np.mean(cov_list))
+# cov_list = evaluator.cov_from_cdf_grid()
+# print("Mean coverage from evaluator:", np.mean(cov_list))
 
+print ('Median survival time in interval consistency')
 
+p_out, d_out = evaluator.median_in_interval_from_point()
+print ("p_out:", p_out)
+print ("d_out:", d_out)

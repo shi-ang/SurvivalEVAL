@@ -18,7 +18,6 @@ predictions = np.random.rand(n_data, n_times)
 pmf = predictions / predictions.sum(axis=1)[:, None]
 survival_curves = 1 - np.cumsum(pmf, axis=1)
 predictions_cdf = np.cumsum(pmf, axis=1)
-
 evaluator = SurvivalEvaluator(survival_curves, time_grid, observed_times, event_indicators, predict_time_method="Mean")
 print("Successfully initialized the evaluator.")
 
@@ -54,7 +53,8 @@ tt = time_grid[None, :]
 ratio_k = (tt / lambda_i[:, None])**shape_k
 predictions_cdf = 1.0 - np.exp(-ratio_k)            
 predictions_surv = 1.0 - predictions_cdf            
-
+print (predictions_surv.shape)
+print (time_grid.shape)
 evaluator = SurvivalEvaluator(predictions_surv, time_grid, observed_times, event_indicators, predict_time_method="Mean")
 
 p_list = [0.1, 0.3, 0.5, 0.7, 0.9]
