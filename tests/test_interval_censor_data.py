@@ -44,22 +44,22 @@ evaluator = IntervalCenEvaluator(pred_survs = survival_curves,
                                  left_limits = left,
                                  right_limits = right)
 
-# print("Successfully initialized the evaluator.")
+print("Successfully initialized the evaluator.")
 
-# print ('Test  Survival AUPRC')
+print ('Test  Survival AUPRC')
 
-# Survival_AUPRC = evaluator.survival_auprc_interval(n_quad=256)
-# print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
+Survival_AUPRC = evaluator.survival_auprc_interval(n_quad=256)
+print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
 
-# print ('Test calibration_slope_interval_censor')
+print ('Test calibration_slope_interval_censor')
 
-# p_arr, o_arr, slope = evaluator.calibration_slope_interval_censor(ps = (0.1, 0.3, 0.5, 0.7, 0.9))
-# print ("interval_censor slope:", slope)
+p_arr, o_arr, slope = evaluator.calibration_slope_interval_censor(ps = (0.1, 0.3, 0.5, 0.7, 0.9))
+print ("interval_censor slope:", slope)
 
-# print ('Test cov_from_cdf_grid')
+print ('Test cov_from_cdf_grid')
 
-# cov_list = evaluator.cov_from_cdf_grid()
-# print("Mean coverage from evaluator:", np.mean(cov_list))
+cov_list = evaluator.cov_from_cdf_grid()
+print("Mean coverage from evaluator:", np.mean(cov_list))
 
 print ('Median survival time in interval consistency')
 
