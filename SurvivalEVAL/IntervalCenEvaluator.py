@@ -4,6 +4,7 @@ from functools import cached_property
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding
+from SurvivalEVAL.Evaluations.Concordance import concordance_ic
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
@@ -59,11 +60,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self._pred_survs, self._time_coordinates = zero_padding(pred_survs, time_coordinates)
 
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
+        if np.any(left_limits > right_limits):
+            raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
         self.right_limits = right_limits
 
         if (train_left_limits is not None) and (train_right_limits is not None):
             train_left_limits, train_right_limits = check_and_convert(train_left_limits, train_right_limits)
+            if np.any(train_left_limits > train_right_limits):
+                raise ValueError("Found an interval with left > right in the training data.")
         self.train_left_limits = train_left_limits
         self.train_right_limits = train_right_limits
 
@@ -94,6 +99,47 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
             raise TypeError("Train set information is missing. "
                             "Evaluator cannot perform {} evaluation.".format(method_name))
+
+    def concordance(
+            self,
+            ties: str = "skip",
+            *args,
+            **kwargs
+    ) -> tuple[float, float, float]:
+        """
+        Calculate the concordance index from the predicted survival curve.
+
+        Parameters
+        ----------
+        tie_strategy: str, default: "skip"
+            How to handle ties in eta:
+              - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
+              - "half":  ties contribute 0.5 * w_{i<j} to the numerator.
+
+        Returns
+        -------
+        c_index: float
+            The concordance index.
+        num_matrix: np.ndarray of shape (n_sample, n_sample)
+            per-pair contributions to numerator,
+        den_matrix: np.ndarray of shape (n_sample, n_sample)
+            per-pair weights (same as weights) in denominator.
+        """
+        pred_times = self.predict_time_method(
+            self._pred_survs,
+            self._time_coordinates,
+            interpolation=self.interpolation
+        )
+
+        c_index, num, den = concordance_ic(
+            eta=pred_times,
+            left=self.left_limits,
+            right=self.right_limits,
+            left_train=self.train_left_limits,
+            right_train=self.train_right_limits,
+            tie_strategy=ties
+        )
+        return c_index, np.sum(num), np.sum(den)
 
     def brier_score(
             self,

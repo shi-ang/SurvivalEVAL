@@ -387,7 +387,7 @@ class SurvivalEvaluator:
             self,
             ties: str = "None",
             method: str = "Harrell"
-    ) -> (float, float, int):
+    ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
