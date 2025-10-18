@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple
 
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, TurnbullEstimator
 
@@ -457,3 +457,56 @@ def concordance_ic(
     c_idx = num / den if den > 0 else float("nan")
 
     return c_idx, gt * w, w
+
+def impute_times_midpoint(
+    left: np.ndarray,
+    right: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    according to (left, right] intervals, construct (t, delta) via "endpoint/midpoint imputation".
+    
+    rules:
+      - Interval censoring: both L and R finite => t = (L+R)/2, delta=1
+      - Right censor: L finite, R non-finite => t = L, delta= 0
+      - Left censor: L non-finite, R finite => t = R, delta= 1
+      - Other (both non-finite) => discard
+
+    Returns
+    -------
+    t : observed/imputed time
+    delta : event indicator (1=event, 0=censor)
+    """
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+
+    is_L_finite = np.isfinite(left)
+    is_R_finite = np.isfinite(right)
+
+    n = left.shape[0]
+    t = np.empty(n, dtype=float)
+    delta = np.empty(n, dtype=int)
+
+    # interval censoring：L limited, R limited -> use midpoint as event time
+    mask_interval = is_L_finite & is_R_finite
+    t[mask_interval] = 0.5 * (left[mask_interval] + right[mask_interval])
+    delta[mask_interval] = 1
+
+    # left censor: L non-finite, R finite -> use R as event time
+    mask_left_cens = (~is_L_finite) & is_R_finite
+    t[mask_left_cens] = right[mask_left_cens]
+    delta[mask_left_cens] = 1
+
+    # right censor: L finite, R non-finite -> use L, mark as censor
+    mask_right_cens = is_L_finite & (~is_R_finite)
+    t[mask_right_cens] = left[mask_right_cens]
+    delta[mask_right_cens] = 0
+
+    # other: both non-finite -> discard
+    mask_bad = (~is_L_finite) & (~is_R_finite)
+    if mask_bad.any():
+        t[mask_bad] = np.nan
+        delta[mask_bad] = -1  # mark as invalid
+
+    # remove invalid entries
+    valid = ~np.isnan(t) & (delta >= 0)
+    return t[valid], delta[valid]
