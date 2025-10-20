@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import warnings
-from typing import Union, Optional, Callable, Tuple
+from typing import Sequence, Union, Optional, Callable, Tuple
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 from abc import ABC
@@ -19,7 +19,7 @@ from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multip
 from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration, integrated_calibration_index
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration, km_calibration, residuals
-
+from SurvivalEVAL.Evaluations.IntervalCensor import cov_from_cdf_grid, survival_auprc_right_censor, calibration_slope_right_censor
 
 class SurvivalEvaluator:
     def __init__(
@@ -994,6 +994,55 @@ class SurvivalEvaluator:
             q=q
         )
         return results.p_value, results.test_statistic
+
+    def cov_from_cdf_grid(self) -> np.ndarray:
+        """
+        Calculate the Coefficient of Variation (CoV) from the predicted CDF grid.
+
+        Returns
+        -------
+        cov_list: np.ndarray
+            The CoV for each sample.
+        """
+        predictions_cdf = 1 - self._pred_survs
+        return cov_from_cdf_grid(cdf=predictions_cdf, t_grid=self._time_coordinates)
+    
+    def calibration_slope_right_censor(self, 
+                                       ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9)) -> (list, list, float):
+        """
+        Calculate the calibration slope for right-censored data.
+
+        Returns
+        -------
+        slope: float
+            The calibration slope.
+        """
+        predictions_cdf = 1 - self._pred_survs
+        return calibration_slope_right_censor(
+            event_indicators=self.event_indicators,     # bool
+            observed_times=self.event_times,    # float
+            predictions=predictions_cdf,      # (N,T), CDF
+            time_grid=self._time_coordinates,
+            ps=ps
+        )
+    
+    def survival_auprc_right_censor(self, n_quad: int=256) -> np.ndarray:
+        """
+        Calculate the survival AUPRC for right-censored data.
+
+        Returns
+        -------
+        auprc: float
+            The survival AUPRC.
+        """
+        predictions_cdf = 1 - self._pred_survs
+        return survival_auprc_right_censor(
+            event_indicators=self.event_indicators,     # bool
+            observed_times=self.event_times,    # float
+            predictions_cdf=predictions_cdf,      # (N,T), CDF
+            time_grid=self._time_coordinates,
+            n_quad=n_quad
+        )
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(

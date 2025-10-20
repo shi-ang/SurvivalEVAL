@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Optional
-
+from functools import cached_property
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding
@@ -8,6 +8,7 @@ from SurvivalEVAL.Evaluations.Concordance import concordance_ic
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
+from SurvivalEVAL.Evaluations.IntervalCensor import survival_auprc_interval, calibration_slope_interval_censor, cov_from_cdf_grid, median_in_interval_from_point
 
 class IntervalCenEvaluator(SurvivalEvaluator):
     """
@@ -83,6 +84,16 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         self.interpolation = interpolation
         self._NO_CENSOR = np.all(left_limits == right_limits)
+
+    @cached_property
+    def predicted_event_times(self):
+        return self.predict_time_from_curve(self.predict_time_method)
+
+    def _clear_cache(self):
+        # See how to clear cache in functools:
+        # https://docs.python.org/3/library/functools.html#functools.cached_property
+        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
+        self.__dict__.pop('predicted_event_times', None)
 
     def _error_trainset(self, method_name: str):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
@@ -254,4 +265,89 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             num_bins=num_bins
         )
 
+    def survival_auprc_interval(self, n_quad: int = 256) -> np.ndarray:
+        """
+        Calculate the Survival-AUPRC from the predicted survival curve for interval-censored data.
 
+        Parameters
+        ----------
+        n_quad: int, default: 256
+            Number of quadrature points to use for numerical integration.
+        returns AUPRC acores for each sample.
+        -------
+        """
+        temp = 1 - self._pred_survs        
+        return survival_auprc_interval(
+            left_bounds=self.left_limits,
+            right_bounds=self.right_limits,
+            predictions_cdf=1 - self._pred_survs,
+            time_grid=self._time_coordinates,
+            n_quad=n_quad
+        )
+
+    def calibration_slope_interval_censor(self, 
+            ps: tuple = (0.1, 0.3, 0.5, 0.7, 0.9),
+            quantile_method: str = "Linear",
+            through_origin: bool = True
+    ) -> (list, list, float):
+        """
+        Calculate the calibration slope for interval-censored data.
+
+        Parameters
+        ----------
+        ps: tuple, default: (0.1, 0.3, 0.5, 0.7, 0.9)
+            The quantiles to evaluate.
+        quantile_method: str, default: "Linear"
+            The method to use for calculating the quantiles. Options are "Linear", "Lower", "Higher", "Midpoint", and "Nearest".
+        through_origin: bool, default: True
+            Whether to force the calibration slope through the origin.
+
+        Returns
+        -------
+        predicted_probabilities: list
+            The predicted probabilities for each quantile.
+        observed_probabilities: list
+            The observed probabilities for each quantile.
+        slope: float
+            The calibration slope.
+        """
+        predictions_cdf = 1 - self._pred_survs
+        return calibration_slope_interval_censor(
+            left_bounds=self.left_limits,
+            right_bounds=self.right_limits,
+            predictions_cdf=predictions_cdf,
+            time_grid=self._time_coordinates,
+            ps=ps,
+            quantile_method=quantile_method,
+            through_origin=through_origin
+        )
+    
+    def cov_from_cdf_grid(self) -> np.ndarray:
+        """
+        Calculate the Coefficient of Variation (CoV) from the predicted CDF grid.
+
+        Returns
+        -------
+        cov_list: np.ndarray
+            The CoV for each sample.
+        """
+        predictions_cdf = 1 - self._pred_survs
+        return cov_from_cdf_grid(cdf=predictions_cdf, t_grid=self._time_coordinates)
+    
+    def median_in_interval_from_point(self) -> (float, float):
+        """
+        Calculate the proportion of predicted median survival times that fall outside the interval
+        and the average distance from the predicted median survival times to the nearest interval boundary.
+
+        Returns
+        -------
+        p_out: float
+            The proportion of predicted median survival times that fall outside the interval.
+        d_out: float
+            The average distance from the predicted median survival times to the nearest interval boundary.
+        outside_array: np.ndarray
+            A boolean array indicating whether each predicted median survival time falls outside the interval.
+        distance_array: np.ndarray
+            An array of distances from each predicted median survival time to the nearest interval boundary.
+        """
+        return median_in_interval_from_point(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)
