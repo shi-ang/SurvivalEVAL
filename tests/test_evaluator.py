@@ -31,7 +31,7 @@ mae = evaluator.mae(method="Hinge", weighted=False)
 print(f"The MAE is {mae}.")
 
 # calculate the d-calibration
-pvalue, _ = evaluator.d_calibration(num_bins=10)
+pvalue, d_cal_details = evaluator.d_calibration(num_bins=10, return_details=True)
 print(f"The p-value of the D-Calibration test is {pvalue}.")
 
 # calculate the ibs
@@ -43,7 +43,7 @@ brier_score = evaluator.brier_score(target_time=2, IPCW_weighted=False)
 print(f"The Brier score at time 2 is {brier_score}.")
 
 # calculate the one calibration
-one_cal = evaluator.one_calibration(target_time=2)
+one_cal, one_cal_details = evaluator.one_calibration(target_time=2, return_details=True)
 print(f"The one calibration at time 2 is {one_cal}.")
 
 # calculate the AUC

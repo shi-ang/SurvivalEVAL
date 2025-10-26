@@ -230,7 +230,7 @@ def insert_km(
         as_risk_count: np.ndarray,
         new_t: float,
         new_e: int
-) -> (np.ndarray, np.ndarray):
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Insert a new time point into the Kaplan-Meier curve.
 
@@ -277,6 +277,69 @@ def insert_km(
     survival_probabilities = np.cumprod(event_ratios)
 
     return survival_times, survival_probabilities
+
+
+def cover_and_dist_ic(
+        left_bounds: np.ndarray,
+        right_bounds: np.ndarray,
+        predicted_times: np.ndarray,
+        *,
+        return_details: bool = False
+) -> tuple[float, float] | tuple[float, float, np.ndarray, np.ndarray]:
+    """
+    Coverage and distance for interval-censored data.
+    Compute:
+      p_out = mean( 1{ t_hat \not\int (L, R] } ),
+      d_out = mean( 1{outside} * min( |t_hat - L|, |t_hat - R| ) ).
+
+    Parameters
+    ----------
+    left_bounds: np.ndarray, (n_samples,)
+        Left limits of the interval-censored data.
+    right_bounds: np.ndarray, (n_samples,)
+        Right limits of the interval-censored data (use np.inf for right-censor).
+    predicted_times: np.ndarray, (n_samples,)
+        Your point predictions (e.g., median predicted times, mean predictd times, etc).
+    return_details: bool, default False
+        If True, also return per-sample outside indicators and distances.
+    Returns
+    -------
+    p_out: float
+        Proportion of samples with predicted times outside their intervals.
+    d_out: float
+        Average distance of outside predictions to the nearest interval boundary.
+    """
+    L = np.asarray(left_bounds, float)
+    R = np.asarray(right_bounds, float)
+    t_hat = np.asarray(predicted_times, float)
+
+    assert L.shape == R.shape == t_hat.shape, "shape mismatch"
+
+    # Masks for special cases
+    is_right_cens = np.isinf(R)
+
+    # Inside test:
+    #   - general finite-interval: (L, R]  -> (t_hat > L) & (t_hat <= R)
+    #   - right-censored:          (L, +inf) -> t_hat > L
+    #   - exact-interval (L==R): treat as {R}: |t_hat - R| <= atol
+    inside_finite = (~is_right_cens) & (t_hat > L) & (t_hat <= R)
+    inside_right = is_right_cens & (t_hat > L)
+
+    inside = inside_finite | inside_right
+    outside = ~inside
+
+    # Distance to closest boundary (0 if inside).
+    # For right-censored (R=inf), distance to R is +inf, so min reduces to |t_hat - L|.
+    dist_to_L = np.abs(t_hat - L)
+    dist_to_R = np.where(is_right_cens, np.inf, np.abs(t_hat - R))
+    d_i = np.where(outside, np.minimum(dist_to_L, dist_to_R), 0.0)
+
+    p_out = float(np.mean(outside))
+    d_out = float(np.mean(d_i))
+
+    if return_details:
+        return p_out, d_out, outside, d_i
+    return p_out, d_out
 
 
 if __name__ == "__main__":

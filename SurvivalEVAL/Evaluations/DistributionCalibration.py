@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import chisquare
 from scipy.integrate import trapezoid
 
-from SurvivalEVAL.Evaluations.util import interpolated_survival_curve
+from SurvivalEVAL.Evaluations.util import interpolated_curve
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, NelsonAalen
 
 
@@ -11,7 +11,7 @@ def d_calibration(
         pred_probs: np.ndarray,
         event_indicators: np.ndarray,
         num_bins: int = 10
-) -> (float, np.ndarray):
+) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score.
     Parameters
@@ -25,6 +25,8 @@ def d_calibration(
 
     Returns
     -------
+    statistic: float
+        The test statistic of the D-Calibration test.
     pvalue: float
         The p-value of the D-Calibration test.
     combine_hist: np.ndarray
@@ -50,8 +52,8 @@ def d_calibration(
             censor_hist += partial_binning
 
     combine_hist = event_hist + censor_hist
-    _, pvalue = chisquare(combine_hist)
-    return pvalue, combine_hist
+    statistic, pvalue = chisquare(combine_hist)
+    return statistic, pvalue, combine_hist
 
 
 def create_censor_hist(
@@ -96,7 +98,7 @@ def d_cal_ic(
         pred_probs_left: np.ndarray,
         pred_probs_right: np.ndarray,
         num_bins: int = 10
-) -> (float, np.ndarray):
+) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score for interval censored data.
     Parameters
@@ -110,6 +112,8 @@ def d_cal_ic(
         The number of bins to use for the D-Calibration score.
     Returns
     -------
+    statistic: float
+        The test statistic of the D-Calibration test.
     pvalue: float
         The p-value of the D-Calibration test.
     binning: np.ndarray
@@ -132,8 +136,8 @@ def d_cal_ic(
         partial_binning = create_interval_c_hist(pred_probs_left[i], pred_probs_right[i], num_bins)
         binning += partial_binning
 
-    _, pvalue = chisquare(binning)
-    return pvalue, binning
+    statistic, pvalue = chisquare(binning)
+    return statistic, pvalue, binning
 
 
 def create_interval_c_hist(
@@ -293,7 +297,7 @@ def km_calibration(
         event_indicators: np.ndarray,
         interpolation_method: str = 'Linear',
         draw_figure: bool = False
-) -> float:
+) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
     The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.
@@ -306,9 +310,6 @@ def km_calibration(
     2. This calculation is symmetric (note that KL-divergence is not).
     3. The score is between 0 and 1, where 0 means perfect calibration and 1 means worst calibration.
         And the random prediction curve will have a score of 0.25.
-
-    [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
-    [2] Yanagisawa, Proper Scoring Rules for Survival Analysis, ICML, 2023
 
     Parameters
     ----------
@@ -327,6 +328,14 @@ def km_calibration(
     -------
     mse: float
         The (normalized) integrated mean squared error between the KM curve and the average prediction curve.
+    fig: tuple(plt.Figure, plt.Axes)
+        The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
+        is True.
+    
+    References
+    ----------
+    [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
+    [2] Yanagisawa, Proper Scoring Rules for Survival Analysis, ICML, 2023
     """
     unique_event_times = np.unique(event_times[event_indicators == 1])
 
@@ -341,7 +350,7 @@ def km_calibration(
         average_survival_curve = np.concatenate([[1], average_survival_curve])
 
     # interpolate the average curve, so that it will have the same time coordinates as km_curve
-    spline = interpolated_survival_curve(time_coordinates, average_survival_curve, interpolation_method)
+    spline = interpolated_curve(time_coordinates, average_survival_curve, interpolation_method)
     average_survival_curve = spline(unique_event_times)
     average_survival_curve = np.clip(average_survival_curve, 0, 1)
 
@@ -351,15 +360,17 @@ def km_calibration(
     mse /= np.max(unique_event_times)
 
     if draw_figure:
-        plt.plot(unique_event_times, average_survival_curve, label='Average Prediction Curve')
-        plt.plot(unique_event_times, km_curve, label='KM Curve')
-        plt.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
+        fig, ax = plt.subplots(dpi=400)
+        ax.plot(unique_event_times, average_survival_curve, label='Average Prediction Curve')
+        ax.plot(unique_event_times, km_curve, label='KM Curve')
+        ax.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
         score_text = r'KM-Calibration$= {:.3f}$'.format(mse)
-        plt.plot([], [], ' ', label=score_text)
-        plt.legend()
-        plt.xlabel('Time')
-        plt.ylabel('Survival Probability')
+        ax.plot([], [], ' ', label=score_text)
+        ax.legend()
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Survival Probability')
         plt.show()
+        return mse, (fig, ax)
 
     return mse
 

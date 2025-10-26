@@ -72,5 +72,5 @@ print("Mean coverage from evaluator:", np.mean(cov_list))
 
 print ("Test survival-auprc right censor")
 
-Survival_AUPRC = evaluator.survival_auprc_right_censor(n_quad=256)
+Survival_AUPRC = evaluator.auprc(n_quad=256)
 print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
