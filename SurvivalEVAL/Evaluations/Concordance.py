@@ -383,6 +383,7 @@ def concordance_ic(
     right,
     left_train,
     right_train,
+    method: str = "probability",
     tie_strategy: str = "skip",
     eps: float = 1e-12,
 ) -> tuple[float, np.ndarray, np.ndarray]:
@@ -401,6 +402,10 @@ def concordance_ic(
         Left endpoints of training data for Turnbull estimator.
     right_train : array-like of shape (n_train_sample,)
         Right endpoints of training data for Turnbull estimator.
+    method : {"probability", "midpoint"}, default="probability"
+        Method for forming pair weights:
+          - "probability": use closed-form pair weights based on Turnbull estimator.
+          - "midpoint": use standard right-censored C-index on midpoint imputed times.
     tie_strategy : {"skip", "half"}, default="skip"
         How to handle ties in eta:
           - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
@@ -438,7 +443,12 @@ def concordance_ic(
 
     S_l = tb.predict(l)
     S_r = tb.predict(r)
-    w = pairwise_w(S_l, S_r, eps=eps)
+    if method == "midpoint":
+        pass
+    elif method == "probability":
+        w = pairwise_w(S_l, S_r, eps=eps)
+    else:
+        raise ValueError("method must be 'probability' or 'midpoint'.")
 
     # Concordant matrix based on eta
     gt = (eta[:, None] > eta[None, :]).astype(float)
@@ -457,6 +467,7 @@ def concordance_ic(
     c_idx = num / den if den > 0 else float("nan")
 
     return c_idx, gt * w, w
+
 
 def impute_times_midpoint(
     left: np.ndarray,

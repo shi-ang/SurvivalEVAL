@@ -48,7 +48,7 @@ print("Successfully initialized the evaluator.")
 
 print ('Test  Survival AUPRC')
 
-Survival_AUPRC = evaluator.survival_auprc_interval(n_quad=256)
+Survival_AUPRC = evaluator.auprc(n_quad=256)
 print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
 
 print ('Test calibration_slope_interval_censor')
@@ -63,6 +63,6 @@ print("Mean coverage from evaluator:", np.mean(cov_list))
 
 print ('Median survival time in interval consistency')
 
-p_out, d_out = evaluator.median_in_interval_from_point()
+p_out, d_out = evaluator.coverage_and_distance()
 print ("p_out:", p_out)
 print ("d_out:", d_out)

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import warnings
-from typing import Sequence, Union, Optional, Callable, Tuple
+from typing import Union, Optional, Callable, Tuple
 from scipy.integrate import trapezoid
 import matplotlib.pyplot as plt
 from abc import ABC
@@ -11,15 +11,16 @@ from lifelines.statistics import logrank_test
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst, predict_mean_st, predict_median_st,
                                            predict_prob_from_curve, predict_multi_probs_from_curve,
-                                           quantile_to_survival, zero_padding)
-
+                                           quantile_to_survival, zero_padding, fit_least_squares)
+from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import single_brier_score, brier_multiple_points
 from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration, integrated_calibration_index
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_calibration, km_calibration, residuals
-from SurvivalEVAL.Evaluations.IntervalCensor import cov_from_cdf_grid, survival_auprc_right_censor, calibration_slope_right_censor
+from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
+
 
 class SurvivalEvaluator:
     def __init__(
@@ -273,7 +274,7 @@ class SurvivalEvaluator:
             x_label: str = 'Time',
             y_label: str = 'Survival probability',
             **kwargs
-    ) -> (plt.Figure, plt.Axes):
+    ) -> tuple[plt.Figure, plt.Axes]:
         """
         Plot survival curves from the predicted survival curves.
 
@@ -332,7 +333,7 @@ class SurvivalEvaluator:
             x_label: str = 'Quantile',
             y_label: str = 'Time',
             **kwargs
-    ) -> (plt.Figure, plt.Axes):
+    ) -> tuple[plt.Figure, plt.Axes]:
         """
         Plot quantile curves from the predicted survival curves.
 
@@ -438,7 +439,7 @@ class SurvivalEvaluator:
             target_time: Optional[Numeric] = None
     ) -> float:
         """
-        Calculate the area under the ROC curve (AUC) score at a given time point from the predicted survival curve.
+        Calculate the area under the ROC curve (AUC/AUROC) score at a given time point from the predicted survival curve.
 
         Parameters
         ----------
@@ -448,8 +449,8 @@ class SurvivalEvaluator:
 
         Returns
         -------
-        brier_score: float
-            The Brier score at the target time point.
+        AUC: float
+            The AUC score at the target time point.
         """
         event_times = np.concatenate((self.event_times, self.train_event_times)) \
             if self.train_event_times is not None else self.event_times
@@ -465,6 +466,27 @@ class SurvivalEvaluator:
             event_indicators=self.event_indicators,
             target_time=target_time
         )
+
+    def auroc(
+            self,
+            target_time: Optional[Numeric] = None
+    ):
+        """
+        Calculate the area under the ROC curve (AUC/AUROC) score at a given time point from the predicted survival curve.
+
+        Alias for the '.auc()' method.
+        Parameters
+        ----------
+        target_time: float, int, or None, default = None
+            Time point at which the AUC score is to be calculated. If None, the AUC score is calculated at the
+            median time of all the event/censor times from the training and test sets.
+
+        Returns
+        -------
+        AUC: float
+            The AUC score at the target time point.
+        """
+        return self.auc(target_time)
 
     def brier_score(
             self,
@@ -546,7 +568,7 @@ class SurvivalEvaluator:
             num_points: int = None,
             IPCW_weighted: bool = True,
             draw_figure: bool = False
-    ) -> float:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated Brier score (IBS) from the predicted survival curve.
 
@@ -611,13 +633,16 @@ class SurvivalEvaluator:
 
         # Draw the Brier score graph
         if draw_figure:
-            plt.plot(time_points, b_scores, 'bo-')
+            fig, ax = plt.subplots()
+            ax.plot(time_points, b_scores, 'bo-')
             score_text = r'IBS$= {:.3f}$'.format(ibs_score)
-            plt.plot([], [], ' ', label=score_text)
-            plt.legend()
-            plt.xlabel('Time')
-            plt.ylabel('Brier Score')
+            ax.plot([], [], ' ', label=score_text)
+            ax.legend()
+            ax.set_xlabel('Time')
+            ax.set_ylabel('Brier Score')
+            ax.set_title('Integrated Brier Score')
             plt.show()
+            return ibs_score, (fig, ax)
         return ibs_score
 
     def mae(
@@ -760,8 +785,9 @@ class SurvivalEvaluator:
             target_time: Numeric,
             num_bins: int = 10,
             binning_strategy: str = "C",
-            method: str = "DN"
-    ) -> (float, list, list):
+            method: str = "DN",
+            return_details: bool = False
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
         Parameters
@@ -777,6 +803,8 @@ class SurvivalEvaluator:
         method: string, default: "DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
+        return_details: bool, default: False
+            Whether to return detailed calibration information, including plots and statistics.
 
         Returns
         -------
@@ -786,12 +814,24 @@ class SurvivalEvaluator:
             The observed probabilities in each bin.
         expected_probabilities: list
             The expected probabilities in each bin.
+        details: dict, optional
+            A dictionary containing detailed calibration information, including:
+            - p_value: The p-value of the calibration test.
+            - statistics: The Hosmer-Lemeshow statistics.
+            - observed_probabilities: The observed probabilities in each bin.
+            - expected_probabilities: The expected probabilities in each bin.   
+            - slope: The slope of the calibration curve.
+            - intercept: The intercept of the calibration curve.
+            - max_local_deviation: The maximum local deviation between observed and expected probabilities.
+            - histogram_plot: A tuple containing the figure and axes of the histogram plot.
+            - pp_plot: A tuple containing the figure and axes of the P-P plot.
+            Only returned when 'return_details' is set to True.
         """
         if self._NO_CENSOR:
             method = "Uncensored"
 
         predict_probs = self.predict_probability_from_curve(target_time)
-        return one_calibration(
+        p_value, hl_stats, obs, exp = one_calibration(
             preds=1 - predict_probs,
             event_time=self.event_times,
             event_indicator=self.event_indicators,
@@ -800,6 +840,43 @@ class SurvivalEvaluator:
             binning_strategy=binning_strategy,
             method=method
         )
+        if return_details:
+            # Fit least squares line
+            slope, intercept = fit_least_squares(np.array(exp), np.array(obs), left_anchor=True, right_anchor=True)
+
+            # Maximum local deviation, x is expected, y is observed
+            local_devs = np.diff(obs) / np.diff(exp)
+            max_local_dev = np.max(np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs))
+
+            # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
+            fig1, ax1 = plt.subplots()
+            bar_width = 0.35
+            indices = np.arange(len(obs))
+            ax1.bar(indices, obs, width=bar_width, label='Observed', alpha=0.7)
+            ax1.bar(indices + bar_width, exp, width=bar_width, label='Expected', alpha=0.7)
+            ax1.set_xlabel('Bins')
+            ax1.set_xticks(indices + bar_width / 2)
+            ax1.set_ylabel('Probabilities')
+            ax1.legend()
+            fig1.tight_layout()
+
+            # P-P plot
+            fig2, ax2 = pp_plot(obs, exp, xlim=(-0.05, 1.05), ylim=(-0.05, 1.05), color='blue')
+
+            details = {
+                "p_value": p_value,
+                "statistics": hl_stats,
+                "observed_probabilities": obs,
+                "expected_probabilities": exp,
+                "slope": slope,
+                "intercept": intercept,
+                "max_local_deviation": max_local_dev,
+                "histogram_plot": (fig1, ax1),
+                "pp_plot": (fig2, ax2)
+            }
+            return p_value, details
+
+        return p_value, obs, exp
 
     def integrated_calibration_index(
             self,
@@ -807,7 +884,7 @@ class SurvivalEvaluator:
             knots: int = 3,
             draw_figure: Optional[bool] = True,
             figure_range: Optional[tuple] = None
-    ) -> (dict, plt.figure):
+    ) -> tuple[dict, plt.Figure]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
@@ -844,27 +921,88 @@ class SurvivalEvaluator:
 
     def d_calibration(
             self,
-            num_bins: int = 10
-    ) -> (float, np.ndarray):
+            num_bins: int = 10,
+            return_details: bool = False
+    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
         ----------
         num_bins: int, default: 10
             Number of bins used to calculate the D calibration score.
+        return_details: bool, default: False
+            Whether to return detailed calibration information, including plots and statistics.
+
         Returns
         -------
         p_value: float
             The p-value of the calibration test.
         hist: np.ndarray
             The histogram of the predicted probabilities in each bin.
+        details: dict, optional
+            A dictionary containing detailed calibration information, including:
+            - statistics: The D calibration statistics.
+            - p_value: The p-value of the calibration test.
+            - histogram: The histogram of the predicted probabilities in each bin.
+            - x_calibration: The x-calibration score.
+            - linear_slope_intercept: A dictionary containing the slope and intercept of the linear fit.
+            - max_local_slope: The maximum local slope deviation.
+            - histogram_plot: A tuple containing the figure and axes of the histogram plot.
+            - pp_plot: A tuple containing the figure and axes of the P-P plot.
         """
         predict_probs = self.predict_probability_from_curve(self.event_times)
-        return d_calibration(
+        statistics, p_value, hist = d_calibration(
             pred_probs=predict_probs,
             event_indicators=self.event_indicators,
             num_bins=num_bins
         )
+        if return_details:
+            # normalize the histogram
+            N = hist.sum()
+            d_cal_pdf = hist / N
+            # compute the x-calibration score
+            optimal = np.ones_like(d_cal_pdf) / num_bins
+            x_cal = np.sum(np.square(d_cal_pdf - optimal))
+
+            d_cal_cdf = np.cumsum(d_cal_pdf[::-1]) # so that the first number belongs to the lowest prob bin
+            d_cal_cdf = np.insert(d_cal_cdf, 0, 0)
+            optimal_cdf = np.linspace(0, 1, num_bins + 1)
+
+            # LS fit of observed CDF vs expected CDF 
+            slope, intercept = fit_least_squares(optimal_cdf, d_cal_cdf, left_anchor=False, right_anchor=False)
+
+            # Local slope deviation, max slope with the highest ratio difference from 1
+            slopes = d_cal_pdf[::-1] / np.diff(optimal_cdf)
+            max_slope = np.max(np.maximum(slopes / (1 + 1e-8), (1 + 1e-8) / slopes))
+            
+
+            # horizontal histograms
+            fig1, ax1 = plt.subplots()
+            widths = hist
+            y_positions = (optimal_cdf[:-1] + optimal_cdf[1:]) / 2  # midpoints of bins
+            ax1.barh(y_positions, widths, height=np.diff(optimal_cdf), color='blue', alpha=0.7, label='Prediction')
+            ax1.axvline(N / num_bins, ls='dashed', c='grey', label='Ideal Calibration')
+            ax1.set_xlabel('Probability Bins')
+            ax1.set_ylabel('Frequency')
+            ax1.legend()
+            fig1.tight_layout()
+
+            # P-P plot
+            fig2, ax2 = pp_plot(d_cal_cdf, optimal_cdf)
+
+            details = {
+                "statistics": statistics,
+                "p_value": p_value,
+                "histogram": hist,
+                "x_calibration": x_cal,
+                "linear_slope_intercept": {"slope": slope, "intercept": intercept},
+                "max_local_slope": max_slope,
+                "histogram_plot": (fig1, ax1),
+                "pp_plot": (fig2, ax2)
+            }
+            return p_value, details
+
+        return p_value, hist
 
     def residuals(
             self,
@@ -899,36 +1037,10 @@ class SurvivalEvaluator:
             draw_figure=draw_figure
         )
 
-    def x_calibration(
-            self,
-            num_bins: int = 10
-    ) -> float:
-        """
-        Calculate the X calibration score from the predicted survival curve.
-        Parameters
-        ----------
-        num_bins: int, default: 10
-            Number of bins used to calculate the X calibration score.
-
-        Returns
-        -------
-        x_cal: float
-            The X calibration score, which is the sum of squared differences between the predicted and optimal
-            probabilities in each bin.
-        """
-        _, bin_hist = self.d_calibration(num_bins)
-        n_bins = bin_hist.shape[0]
-        # normalize the histogram
-        d_cal_pdf = bin_hist / bin_hist.sum()
-        # compute the x-calibration score
-        optimal = np.ones_like(d_cal_pdf) / n_bins
-        x_cal = np.sum(np.square(d_cal_pdf - optimal))
-        return x_cal
-
     def km_calibration(
             self,
             draw_figure: bool = False
-    ) -> float:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
         Parameters
@@ -995,38 +1107,7 @@ class SurvivalEvaluator:
         )
         return results.p_value, results.test_statistic
 
-    def cov_from_cdf_grid(self) -> np.ndarray:
-        """
-        Calculate the Coefficient of Variation (CoV) from the predicted CDF grid.
-
-        Returns
-        -------
-        cov_list: np.ndarray
-            The CoV for each sample.
-        """
-        predictions_cdf = 1 - self._pred_survs
-        return cov_from_cdf_grid(cdf=predictions_cdf, t_grid=self._time_coordinates)
-    
-    def calibration_slope_right_censor(self, 
-                                       ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9)) -> (list, list, float):
-        """
-        Calculate the calibration slope for right-censored data.
-
-        Returns
-        -------
-        slope: float
-            The calibration slope.
-        """
-        predictions_cdf = 1 - self._pred_survs
-        return calibration_slope_right_censor(
-            event_indicators=self.event_indicators,     # bool
-            observed_times=self.event_times,    # float
-            predictions=predictions_cdf,      # (N,T), CDF
-            time_grid=self._time_coordinates,
-            ps=ps
-        )
-    
-    def survival_auprc_right_censor(self, n_quad: int=256) -> np.ndarray:
+    def auprc(self, n_quad: int=256) -> float:
         """
         Calculate the survival AUPRC for right-censored data.
 
@@ -1036,13 +1117,9 @@ class SurvivalEvaluator:
             The survival AUPRC.
         """
         predictions_cdf = 1 - self._pred_survs
-        return survival_auprc_right_censor(
-            event_indicators=self.event_indicators,     # bool
-            observed_times=self.event_times,    # float
-            predictions_cdf=predictions_cdf,      # (N,T), CDF
-            time_grid=self._time_coordinates,
-            n_quad=n_quad
-        )
+        return auprc_right_censor(pred_cdf=predictions_cdf, time_grid=self._time_coordinates,
+                                  event_times=self.event_times, event_indicators=self.event_indicators, n_quad=n_quad,
+                                  return_details=False)
 
 class PycoxEvaluator(SurvivalEvaluator, ABC):
     def __init__(
@@ -1237,7 +1314,7 @@ class PointEvaluator:
             self,
             ties: str = "None",
             method: str = "Harrell"
-    ) -> (float, float, int):
+    ) -> tuple[float, float, int]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
@@ -1586,8 +1663,9 @@ class SingleTimeEvaluator:
         self,
         num_bins: int = 10,
         binning_strategy: str = "C",
-        method: str = "DN"
-    ) -> (float, list, list):
+        method: str = "DN",
+        return_details: bool = False
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -1602,6 +1680,8 @@ class SingleTimeEvaluator:
         method: string, default: "DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
+        return_details: bool, default: False
+            Whether to return the detailed calibration information.
 
         Returns
         -------
@@ -1611,11 +1691,23 @@ class SingleTimeEvaluator:
             The observed probabilities in each bin.
         expected_probabilities: list
             The expected probabilities in each bin.
+        details: dict, optional
+            A dictionary containing detailed calibration information, including:
+            - p_value: The p-value of the calibration test.
+            - statistics: The Hosmer-Lemeshow statistics.
+            - observed_probabilities: The observed probabilities in each bin.
+            - expected_probabilities: The expected probabilities in each bin.   
+            - slope: The slope of the calibration curve.
+            - intercept: The intercept of the calibration curve.
+            - max_local_deviation: The maximum local deviation between observed and expected probabilities.
+            - histogram_plot: A tuple containing the figure and axes of the histogram plot.
+            - pp_plot: A tuple containing the figure and axes of the P-P plot.
+            Only returned when 'return_details' is set to True.
         """
         if self._NO_CENSOR:
             method = "Uncensored"
 
-        return one_calibration(
+        p_value, hl_stats, obs, exp = one_calibration(
             preds=1 - self._pred_probs,
             event_time=self.event_times,
             event_indicator=self.event_indicators,
@@ -1624,13 +1716,51 @@ class SingleTimeEvaluator:
             binning_strategy=binning_strategy,
             method=method
         )
+        if return_details:
+            # Fit least squares line
+            slope, intercept = fit_least_squares(np.array(exp), np.array(obs), left_anchor=True, right_anchor=True)
+            
+            # Maximum local deviation, x is expected, y is observed
+            local_devs = np.diff(obs) / np.diff(exp)
+            max_local_dev = np.max(np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs))
+
+            # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
+            fig1, ax1 = plt.subplots()
+            bar_width = 0.35
+            indices = np.arange(len(obs))
+            ax1.bar(indices, obs, width=bar_width, label='Observed', alpha=0.7)
+            ax1.bar(indices + bar_width, exp, width=bar_width, label='Expected', alpha=0.7)
+            ax1.set_xlabel('Bins')
+            ax1.set_xticks(indices + bar_width / 2)
+            ax1.set_ylabel('Probabilities')
+            ax1.legend()
+            fig1.tight_layout()
+
+            # P-P plot
+            fig2, ax2 = pp_plot(exp, obs, xlim=(-0.05, 1.05), ylim=(-0.05, 1.05), color='blue')
+
+            details = {
+                "p_value": p_value,
+                "statistics": hl_stats,
+                "observed_probabilities": obs,
+                "expected_probabilities": exp,
+                "slope": slope,
+                "intercept": intercept,
+                "max_local_deviation": max_local_dev,
+                "histogram_plot": (fig1, ax1),
+                "pp_plot": (fig2, ax2)
+            }
+            return p_value, details
+
+        return p_value, obs, exp
+
 
     def integrated_calibration_index(
             self,
             knots: int = 3,
             draw_figure: Optional[bool] = True,
             figure_range: Optional[tuple] = None
-    ) -> (dict, plt.figure):
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
@@ -1648,8 +1778,8 @@ class SingleTimeEvaluator:
         summary: dict
             A dictionary containing the summary of ICI for the target time point, including the ICI value,
             the E50, E90, and the E_max values.
-        fig: plt.figure
-            A figure showing the graphical calibration curve.
+        fig: tuple[plt.Figure, plt.Axes]
+            The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure is True.
         """
         return integrated_calibration_index(
             preds=1 - self._pred_probs,

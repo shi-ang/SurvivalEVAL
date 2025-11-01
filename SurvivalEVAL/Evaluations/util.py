@@ -150,11 +150,15 @@ def make_monotonic(
     return survival_curves
 
 
-def interpolated_survival_curve(times_coordinate, survival_curve, interpolation):
+def interpolated_curve(
+        times_coordinate: np.ndarray,
+        curve: np.ndarray,
+        interpolation: str = 'Linear'
+) -> Union[interp1d, PchipInterpolator]:
     if interpolation == "Linear":
-        spline = interp1d(times_coordinate, survival_curve, kind='linear', fill_value='extrapolate')
+        spline = interp1d(times_coordinate, curve, kind='linear', fill_value='extrapolate')
     elif interpolation == "Pchip":
-        spline = PchipInterpolator(times_coordinate, survival_curve)
+        spline = PchipInterpolator(times_coordinate, curve)
     else:
         raise ValueError("interpolation must be one of ['Linear', 'Pchip']")
     return spline
@@ -190,7 +194,7 @@ def predict_prob_from_curve(
     predict_probability: float
         Predicted probability of survival at the target time point.
     """
-    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
+    spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
     max_time = float(max(times_coordinate))
@@ -240,7 +244,7 @@ def predict_multi_probs_from_curve(
     """
     target_times = check_and_convert(target_times).astype(float).tolist()
 
-    spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
+    spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
     max_time = float(max(times_coordinate))
@@ -499,7 +503,7 @@ def predict_median_st_ind(
                 median_st = (t1 + (0.5 - p1) * (t2 - t1) / (p2 - p1))
             elif interpolation == "Pchip":
                 # reverse the array because the PchipInterpolator requires the x to be strictly increasing
-                spline = interpolated_survival_curve(times_coordinate, survival_curve, interpolation)
+                spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
                 time_range = np.linspace(t1, t2, num=discretize_num)
                 prob_range = spline(time_range)
                 inverse_spline = PchipInterpolator(prob_range[::-1], time_range[::-1])
@@ -520,7 +524,7 @@ def quantile_to_survival(quantile_levels, quantile_predictions, time_coordinates
     surv_pred = np.empty((quantile_predictions.shape[0], time_coordinates.shape[0]))
     for i in range(quantile_predictions.shape[0]):
         # fit an interpolation function to the cdf
-        spline = interpolated_survival_curve(quantile_predictions[i, :], survival_level, interpolate)
+        spline = interpolated_curve(quantile_predictions[i, :], survival_level, interpolate)
 
         # if the quantile level is beyond last cdf, we extrapolate the
         beyond_prob_idx = np.where(time_coordinates > quantile_predictions[i, -1])[0]
@@ -635,3 +639,45 @@ def zero_padding(pred_survs, time_coordinates):
         raise TypeError(error)
 
     return _pred_survs, _time_coordinates
+
+def fit_least_squares(x, y, left_anchor=True, right_anchor=True) -> tuple[float, float]:
+    """
+    Fit a least squares line to the given data.
+    Parameters
+    ----------
+    x: np.ndarray, shape = (n_bins, )
+        The x-coordinates of the data points.
+    y: np.ndarray, shape = (n_bins, )
+        The y-coordinates of the data points.
+    left_anchor: bool
+        Whether to anchor the leftmost point. Default: True.
+    right_anchor: bool
+        Whether to anchor the rightmost point. Default: True.
+
+    Returns
+    -------
+    slope: float
+        The slope of the fitted line.
+    intercept: float
+        The intercept of the fitted line.
+    """
+    n_bins = len(y) - 1
+    if left_anchor and right_anchor:
+        X = np.column_stack([x, np.ones(n_bins + 1)])
+        slope, intercept = np.linalg.lstsq(X, y, rcond=None)[0]
+        return slope, intercept
+    elif left_anchor and not right_anchor:
+        # exclude anchor n_bins
+        X = np.column_stack([x[:-1], np.ones(n_bins)])
+        slope, intercept = np.linalg.lstsq(X, y[:-1], rcond=None)[0]
+        return slope, intercept
+    elif not left_anchor and right_anchor:
+        # exclude anchor 0
+        X = np.column_stack([x[1:], np.ones(n_bins)])
+        slope, intercept = np.linalg.lstsq(X, y[1:], rcond=None)[0]
+        return slope, intercept
+    else:
+        # exclude anchors 0 and n_bins
+        X = np.column_stack([x[1:-1], np.ones(n_bins - 1)])
+        slope, intercept = np.linalg.lstsq(X, y[1:-1], rcond=None)[0]
+    return slope, intercept

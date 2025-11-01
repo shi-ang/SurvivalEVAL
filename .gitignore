@@ -1,0 +1,40 @@
+# data
+/data
+
+# build
+/build
+
+# dist
+/dist
+
+# vscode
+/.vscode
+
+# pycharms
+/.idea
+
+# python cache
+/__pycache__
+*.py[cod]
+*$py.class
+
+# distributions
+*.egg-info/
+.eggs/
+*.egg   
+
+# pytest cache
+.pytest_cache/
+
+# plots for survey
+/examples/plots_for_survey/
+
+# ipython notebooks
+*.ipynb_checkpoints
+
+# private test files
+/tests/private/
+
+# instruction for pypi
+update_pypi.text
+
