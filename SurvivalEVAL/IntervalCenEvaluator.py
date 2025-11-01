@@ -5,7 +5,7 @@ from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic
-from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic
+from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, ibs_hinge_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
 from SurvivalEVAL.Evaluations.IntervalCensor import survival_auprc_interval, calibration_slope_interval_censor, cov_from_cdf_grid, median_in_interval_from_point
@@ -351,3 +351,45 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             An array of distances from each predicted median survival time to the nearest interval boundary.
         """
         return median_in_interval_from_point(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)
+
+    def ibs_hinge(
+            self,
+            x: Optional[np.ndarray] = None,
+            x_train: Optional[np.ndarray] = None,
+            integration_method: str = "trapz"
+    ) -> float:
+        """
+        Calculate the Integrated Brier Score (IBS) with hinge loss for interval-censored data.
+
+        This implements the IBS with hinge approach that ignores uncertain areas,
+        as described in https://arxiv.org/pdf/1806.08324.
+
+        Parameters
+        ----------
+        x: Optional[np.ndarray], default: None
+            Covariates for the test set. Required if method is "Tsouprou-conditional".
+        x_train: Optional[np.ndarray], default: None
+            Covariates for the training set. Required if method is "Tsouprou-conditional".
+        integration_method: str, default: "trapz"
+            Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
+
+        Returns
+        -------
+        ibs: float
+            The Integrated Brier Score with hinge loss.
+        """
+        # hinge considers ignore the uncertain areas
+        method = "uncensored"
+
+        return ibs_hinge_ic(
+            pred_survs=self._pred_survs,
+            time_coordinates=self._time_coordinates,
+            left_limits=self.left_limits,
+            right_limits=self.right_limits,
+            train_left_limits=self.train_left_limits,
+            train_right_limits=self.train_right_limits,
+            x=x,
+            x_train=x_train,
+            method=method,
+            integration_method=integration_method
+        )
