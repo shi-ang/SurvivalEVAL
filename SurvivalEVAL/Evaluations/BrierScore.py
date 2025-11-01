@@ -316,3 +316,116 @@ def brier_multiple_points(
     ipcw_square_error_mat = np.square(pred_mat) * weight_cat1 + np.square(1 - pred_mat) * weight_cat2
     brier_scores = np.mean(ipcw_square_error_mat, axis=0)
     return brier_scores
+
+def ibs_hinge_ic(
+        pred_survs: np.ndarray,
+        time_coordinates: np.ndarray,
+        left_limits: np.ndarray,
+        right_limits: np.ndarray,
+        train_left_limits: Optional[np.ndarray] = None,
+        train_right_limits: Optional[np.ndarray] = None,
+        x: Optional[np.ndarray] = None,
+        x_train: Optional[np.ndarray] = None,
+        method: str = "uncensored",
+        integration_method: str = "trapz"
+) -> float:
+    """
+    Calculate the Integrated Brier Score (IBS) with hinge loss for interval-censored data.
+
+    This implements the IBS with hinge approach that ignores uncertain areas,
+    as described in https://arxiv.org/pdf/1806.08324.
+
+    Parameters
+    ----------
+    pred_survs: np.ndarray, shape = (n_samples, n_time_points)
+        Predicted survival probabilities for each sample at each time point.
+    time_coordinates: np.ndarray, shape = (n_time_points,)
+        Time coordinates for the predicted survival probabilities.
+    left_limits: np.ndarray, shape = (n_samples,)
+        Left limits of the interval-censored testing data.
+    right_limits: np.ndarray, shape = (n_samples,)
+        Right limits of the interval-censored testing data.
+    train_left_limits: Optional[np.ndarray], shape = (n_train_samples,), default: None
+        Left limits of the interval-censored data for the training set.
+    train_right_limits: Optional[np.ndarray], shape = (n_train_samples,), default: None
+        Right limits of the interval-censored data for the training set.
+    x: Optional[np.ndarray], shape = (n_samples, n_features), default: None
+        Features for the testing samples. Required for 'Tsouprou-conditional' method.
+    x_train: Optional[np.ndarray], shape = (n_train_samples, n_features), default: None
+        Features for the training samples. Required for 'Tsouprou-conditional' method.
+    method: str, default: "Tsouprou-marginal"
+        Method to use for handling censoring. Options: "uncensored", "Tsouprou-marginal", "Tsouprou-conditional".
+    integration_method: str, default: "trapz"
+        Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
+
+    Returns
+    -------
+    ibs: float
+        The Integrated Brier Score with hinge loss.
+
+    Notes
+    -----
+    The IBS with hinge is calculated as:
+    IBS = ∫[0,τ] BS(t) dt
+    where BS(t) is the Brier score at time t, and τ is the maximum observation time.
+    For interval-censored data, the uncertain areas (where left < t ≤ right) are ignored
+    in the integration using hinge loss approach.
+    """
+    if pred_survs.ndim != 2:
+        raise ValueError("pred_survs must be a 2D array with shape (n_samples, n_time_points)")
+
+    if time_coordinates.ndim != 1:
+        raise ValueError("time_coordinates must be a 1D array")
+
+    if pred_survs.shape[1] != len(time_coordinates):
+        raise ValueError("Number of time points in pred_survs and time_coordinates must match")
+
+    n_samples, n_times = pred_survs.shape
+
+    # Calculate Brier scores at each time point
+    brier_scores = []
+    valid_times = []
+
+    for i, target_time in enumerate(time_coordinates):
+        # Extract predicted probabilities at this time point
+        preds_at_time = pred_survs[:, i]
+
+        try:
+            # Calculate Brier score at this time point
+            bs = brier_score_ic(
+                preds=preds_at_time,
+                left_limits=left_limits,
+                right_limits=right_limits,
+                train_left_limits=train_left_limits,
+                train_right_limits=train_right_limits,
+                x=x,
+                x_train=x_train,
+                target_time=target_time,
+                method=method
+            )
+            brier_scores.append(bs)
+            valid_times.append(target_time)
+        except (ValueError, ZeroDivisionError):
+            # Skip time points where Brier score cannot be calculated
+            continue
+
+    if len(brier_scores) == 0:
+        raise ValueError("No valid Brier scores could be calculated")
+
+    brier_scores = np.array(brier_scores)
+    valid_times = np.array(valid_times)
+
+    # Perform numerical integration
+    if integration_method == "trapz":
+        ibs = np.trapz(brier_scores, valid_times)
+    elif integration_method == "simpson":
+        from scipy.integrate import simpson
+        if len(brier_scores) < 3:
+            # Fall back to trapezoidal rule if not enough points for Simpson's rule
+            ibs = np.trapz(brier_scores, valid_times)
+        else:
+            ibs = simpson(brier_scores, valid_times)
+    else:
+        raise ValueError(f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'.")
+
+    return ibs

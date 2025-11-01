@@ -7,7 +7,7 @@ from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
-from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic
+from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, ibs_hinge_ic
 from SurvivalEVAL.Evaluations.MeanError import cover_and_dist_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
@@ -435,3 +435,56 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The average distance from the predicted median survival times to the nearest interval boundary.
         """
         return cover_and_dist_ic(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)
+
+    def ibs_hinge(
+            self,
+            method: str = "uncensored",
+            x: Optional[np.ndarray] = None,
+            x_train: Optional[np.ndarray] = None,
+            integration_method: str = "trapz"
+    ) -> float:
+        """
+        Calculate the Integrated Brier Score (IBS) with hinge loss for interval-censored data.
+
+        This implements the IBS with hinge approach that ignores uncertain areas,
+        as described in https://arxiv.org/pdf/1806.08324.
+
+        Parameters
+        ----------
+        method: str, default: "uncensored"
+            The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
+            Note: "uncensored" method automatically ignores uncertain areas (hinge loss).
+        x: Optional[np.ndarray], default: None
+            Covariates for the test set. Required if method is "Tsouprou-conditional".
+        x_train: Optional[np.ndarray], default: None
+            Covariates for the training set. Required if method is "Tsouprou-conditional".
+        integration_method: str, default: "trapz"
+            Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
+
+        Returns
+        -------
+        ibs: float
+            The Integrated Brier Score with hinge loss.
+        """
+        # Check if there is no censored instance, if so, naive method is applied
+        if self._NO_CENSOR:
+            method = "uncensored"
+
+        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+            self._error_trainset("Tsouprou IBS hinge")
+            if method == "Tsouprou-conditional":
+                if x is None or x_train is None:
+                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
+
+        return ibs_hinge_ic(
+            pred_survs=self._pred_survs,
+            time_coordinates=self._time_coordinates,
+            left_limits=self.left_limits,
+            right_limits=self.right_limits,
+            train_left_limits=self.train_left_limits,
+            train_right_limits=self.train_right_limits,
+            x=x,
+            x_train=x_train,
+            method=method,
+            integration_method=integration_method
+        )
