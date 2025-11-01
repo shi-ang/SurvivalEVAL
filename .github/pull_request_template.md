@@ -9,7 +9,7 @@ _This is a lightweight pull request template to ensure that the workflow does no
 
 ## Fixes
 
-List the issue fixes that are covered in this pull request. Please ensure to also select them in the `development` section.
+List the issue fixes that are covered in this pull request.
 
 1. Fix # ...
 2. Fix # ...
