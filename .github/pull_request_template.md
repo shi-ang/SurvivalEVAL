@@ -16,11 +16,15 @@ List the issue fixes that are covered in this pull request.
 
 ## Mandatory Checklist
 
+- [ ] All new or modified features have corresponding test cases.
+
 - [ ] I have run all the tests, using `pytest --all`, and this is the log I get:
 
 ```
 paste the results you get from running pytest tests here.
 ```
+
+- [ ] All new functions, classes, and modules contain clear docstrings and inline comments.
 
 - [ ] All jupyter notebooks are runnable with expected results.
 
