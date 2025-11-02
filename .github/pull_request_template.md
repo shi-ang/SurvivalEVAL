@@ -4,12 +4,14 @@ _This is a lightweight pull request template to ensure that the workflow does no
 
 ## Updates
 
+If this PR adds a new feature, what is the use case, and how to use it?
+
 1. Update 1
 2. Update 2
 
 ## Fixes
 
-List the issue fixes that are covered in this pull request.
+List the issue fixes that are covered in this pull request. If this PR fixes an issue, how to reproduce, expected vs. Incorrect results.
 
 1. Fix # ...
 2. Fix # ...
@@ -21,7 +23,7 @@ List the issue fixes that are covered in this pull request.
 - [ ] I have run all the tests, using `pytest --all`, and this is the log I get:
 
 ```
-paste the results you get from running pytest tests here.
+Paste the results you get from running pytest tests here.
 ```
 
 - [ ] All new functions, classes, and modules contain clear docstrings and inline comments.
