@@ -18,7 +18,7 @@ def pp_plot(
     obs: NumericArrayLike
         Observed probabilities.
     exp: NumericArrayLike
-        Expected probabilities.
+        Expected probabilities. Generally, you would want the expected probabilities to be sorted in ascending order.
     xlim: tuple, optional
         Limits for the x-axis.
     ylim: tuple, optional
@@ -38,8 +38,8 @@ def pp_plot(
     assert len(obs) == len(exp), "Observed and expected probabilities must have the same length."
     
     fig, axe = plt.subplots()
-    axe.plot([0, 1], [0, 1], '--', label='Ideal', color='grey')
-    axe.plot(np.asarray(exp), np.asarray(obs), '-', label='Prediction', color=color)
+    axe.plot([0, 1], [0, 1], '--', label='Ideal', color='grey', linewidth=2)
+    axe.plot(np.asarray(exp), np.asarray(obs), 'o-', markersize=8, label='Prediction', color=color, linewidth=2)
     if xlim is not None:
         axe.set_xlim(xlim)
     if ylim is not None:

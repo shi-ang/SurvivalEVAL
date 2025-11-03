@@ -541,12 +541,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
             # Histogram plot
             fig1, ax1 = plt.subplots()
-            bar_width = 0.35
-            indices = np.arange(len(obs))
-            ax1.bar(indices, obs, width=bar_width, label='Observed', alpha=0.7)
-            ax1.bar(indices + bar_width, exp, width=bar_width, label='Expected', alpha=0.7)
-            ax1.set_xlabel('Bins')
-            ax1.set_xticks(indices + bar_width / 2)
+            bar_width = 0.4
+            indices = np.arange(len(obs)) + 1
+            ax1.bar([x - 0.2 for x in indices], obs[::-1], width=bar_width, align='center', label='Observed', alpha=0.7)
+            ax1.bar([x + 0.2 for x in indices], exp[::-1], width=bar_width, align='center', label='Expected', alpha=0.7)
+            ax1.set_xlabel('Groups (from lowest to highest predicted probability)')
+            ax1.set_xticks(indices)
             ax1.set_ylabel('Probabilities')
             ax1.legend()
             fig1.tight_layout()
