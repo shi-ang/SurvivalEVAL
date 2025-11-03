@@ -11,9 +11,66 @@ import os
 # Insert at the beginning to prioritize local version over installed package
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from SurvivalEVAL.Evaluations.BrierScore import ibs_hinge_ic
+from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
 
+
+def ibs_hinge_ic(
+    pred_survs: np.ndarray,                # (N, T): predicted survival probabilities
+    time_coordinates: np.ndarray,          # (T,): time points corresponding to survival probabilities
+    left_limits: np.ndarray,               # (N,): left limits of interval censoring
+    right_limits: np.ndarray,              # (N,): right limits of interval censoring
+    train_left_limits: np.ndarray = None,  # (N_train,): left limits
+    train_right_limits: np.ndarray = None, # (N_train,): right limits
+    method: str = "uncensored",            # "uncensored" | "Tsouprou-marginal"
+    integration_method: str = "trapezoidal" # "trapezoidal" | "simpson"
+) -> float:
+    """
+    Compute the Integrated Brier Score (IBS) using the hinge loss for interval-censored data.
+
+    Parameters
+    ----------
+    pred_survs: np.ndarray
+        Predicted survival probabilities of shape (N, T).
+    time_coordinates: np.ndarray
+        Time points corresponding to the survival probabilities of shape (T,).
+    left_limits: np.ndarray
+        Left limits of interval censoring of shape (N,).
+    right_limits: np.ndarray
+        Right limits of interval censoring of shape (N,).
+    train_left_limits: np.ndarray, optional
+        Left limits for training data of shape (N_train,).
+    train_right_limits: np.ndarray, optional
+        Right limits for training data of shape (N_train,).
+    method: str, default: "uncensored"
+        Method to handle uncertain areas. Options are "uncensored" or "Tsouprou-marginal".
+    integration_method: str, default: "trapezoidal"
+        Numerical integration method. Options are "trapezoidal" or "simpson".
+
+    Returns
+    -------
+    float
+        The computed IBS hinge loss.
+    """
+    brier_scores = brier_multiple_points_ic(
+        pred_mat=pred_survs,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        time_coordinates=time_coordinates,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+        method=method,
+    )
+
+    if integration_method == "trapezoidal":
+        ibs = np.trapz(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
+    elif integration_method == "simpson":
+        from scipy.integrate import simps
+        ibs = simps(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
+    else:
+        raise ValueError(f"Unknown integration method: {integration_method}")
+
+    return ibs
 
 def test_case_1_simple_interval_censoring():
     """
