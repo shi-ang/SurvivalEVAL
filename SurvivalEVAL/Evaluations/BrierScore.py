@@ -317,115 +317,235 @@ def brier_multiple_points(
     brier_scores = np.mean(ipcw_square_error_mat, axis=0)
     return brier_scores
 
-def ibs_hinge_ic(
-        pred_survs: np.ndarray,
-        time_coordinates: np.ndarray,
+
+def brier_multiple_points_ic(
+        pred_mat: np.ndarray,
         left_limits: np.ndarray,
         right_limits: np.ndarray,
+        target_times: np.ndarray,
         train_left_limits: Optional[np.ndarray] = None,
         train_right_limits: Optional[np.ndarray] = None,
         x: Optional[np.ndarray] = None,
         x_train: Optional[np.ndarray] = None,
-        method: str = "uncensored",
-        integration_method: str = "trapz"
-) -> float:
+        method: str = "Tsouprou-marginal",
+) -> np.ndarray:
     """
-    Calculate the Integrated Brier Score (IBS) with hinge loss for interval-censored data.
-
-    This implements the IBS with hinge approach that ignores uncertain areas,
-    as described in https://arxiv.org/pdf/1806.08324.
+    Compute Brier scores at multiple target times for interval-censored data.
 
     Parameters
     ----------
-    pred_survs: np.ndarray, shape = (n_samples, n_time_points)
-        Predicted survival probabilities for each sample at each time point.
-    time_coordinates: np.ndarray, shape = (n_time_points,)
-        Time coordinates for the predicted survival probabilities.
+    pred_mat: np.ndarray, shape = (n_samples, n_time_points)
+        Predicted survival probabilities for each sample at each target time.
+        pred_mat[i, j] ~= S_hat_i(target_times[j])
     left_limits: np.ndarray, shape = (n_samples,)
-        Left limits of the interval-censored testing data.
+        Left interval bounds L_i.
     right_limits: np.ndarray, shape = (n_samples,)
-        Right limits of the interval-censored testing data.
-    train_left_limits: Optional[np.ndarray], shape = (n_train_samples,), default: None
-        Left limits of the interval-censored data for the training set.
-    train_right_limits: Optional[np.ndarray], shape = (n_train_samples,), default: None
-        Right limits of the interval-censored data for the training set.
-    x: Optional[np.ndarray], shape = (n_samples, n_features), default: None
-        Features for the testing samples. Required for 'Tsouprou-conditional' method.
-    x_train: Optional[np.ndarray], shape = (n_train_samples, n_features), default: None
-        Features for the training samples. Required for 'Tsouprou-conditional' method.
-    method: str, default: "Tsouprou-marginal"
-        Method to use for handling censoring. Options: "uncensored", "Tsouprou-marginal", "Tsouprou-conditional".
-    integration_method: str, default: "trapz"
-        Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
+        Right interval bounds R_i. Use np.inf for right-censoring (no observed event yet).
+    target_times: np.ndarray, shape = (n_time_points,)
+        Time points t_j at which to evaluate the Brier score.
+    train_left_limits, train_right_limits:
+        Training interval bounds, required for Tsouprou-based weighting.
+    x, x_train:
+        Feature arrays for conditional model ('Tsouprou-conditional').
+        May be 1-D (n_samples,) or 2-D (n_samples, n_features).
+    method: str
+        One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
 
     Returns
     -------
-    ibs: float
-        The Integrated Brier Score with hinge loss.
-
-    Notes
-    -----
-    The IBS with hinge is calculated as:
-    IBS = ∫[0,τ] BS(t) dt
-    where BS(t) is the Brier score at time t, and τ is the maximum observation time.
-    For interval-censored data, the uncertain areas (where left < t ≤ right) are ignored
-    in the integration using hinge loss approach.
+    brier_scores: np.ndarray, shape = (n_time_points,)
+        One Brier score per target time.
     """
-    if pred_survs.ndim != 2:
-        raise ValueError("pred_survs must be a 2D array with shape (n_samples, n_time_points)")
 
-    if time_coordinates.ndim != 1:
-        raise ValueError("time_coordinates must be a 1D array")
+    # -------------------------
+    # Basic shape checks
+    # -------------------------
+    if target_times.ndim != 1:
+        raise TypeError("'target_times' must be one-dimensional.")
 
-    if pred_survs.shape[1] != len(time_coordinates):
-        raise ValueError("Number of time points in pred_survs and time_coordinates must match")
+    n_samples = left_limits.shape[0]
+    n_times = target_times.shape[0]
 
-    n_samples, n_times = pred_survs.shape
+    if pred_mat.shape != (n_samples, n_times):
+        raise ValueError(
+            f"pred_mat must have shape (n_samples, n_time_points) = "
+            f"({n_samples}, {n_times}), got {pred_mat.shape}"
+        )
 
-    # Calculate Brier scores at each time point
-    brier_scores = []
-    valid_times = []
+    # Broadcast helpers
+    left_mat  = np.repeat(left_limits.reshape(-1, 1), n_times, axis=1)   # (n_samples, n_times)
+    right_mat = np.repeat(right_limits.reshape(-1, 1), n_times, axis=1)  # (n_samples, n_times)
+    time_mat  = np.repeat(target_times.reshape(1, -1), n_samples, axis=0)  # (n_samples, n_times)
 
-    for i, target_time in enumerate(time_coordinates):
-        # Extract predicted probabilities at this time point
-        preds_at_time = pred_survs[:, i]
+    # ============================================================
+    # Case 1: 'uncensored' (naive treating intervals like exact-ish)
+    # ============================================================
+    if method == "uncensored":
+        # For each (i,j), define survival_status_ij in {0,1}:
+        #   if t_j < L_i  -> alive -> 1
+        #   if t_j >= R_i -> dead  -> 0
+        #   if L_i <= t_j < R_i -> ambiguous -> exclude from averaging at that t_j
+        #
+        # Note: if R_i == inf (right-censored), then t_j >= R_i is False for finite t_j,
+        # so status will be 1 unless t_j is in [L_i, inf) which becomes ambiguous/excluded.
+        # This matches "skip samples where event time is not pinned down yet".
 
-        try:
-            # Calculate Brier score at this time point
-            bs = brier_score_ic(
-                preds=preds_at_time,
-                left_limits=left_limits,
-                right_limits=right_limits,
-                train_left_limits=train_left_limits,
-                train_right_limits=train_right_limits,
-                x=x,
-                x_train=x_train,
-                target_time=target_time,
-                method=method
+        ambiguous_mask = (time_mat >= left_mat) & (time_mat < right_mat)
+        usable_mask = ~ambiguous_mask  # (n_samples, n_times)
+
+        # survival_status default to 0 then overwrite alive cases:
+        survival_status_mat = np.zeros_like(pred_mat, dtype=float)
+        # alive if t_j < L_i
+        alive_mask = (time_mat < left_mat)
+        survival_status_mat[alive_mask] = 1.0
+        # dead if t_j >= R_i and not inf
+        # (already 0 there, so nothing to set)
+
+        # squared error
+        sqerr = np.square(pred_mat - survival_status_mat)
+
+        # masked mean per time j
+        # denominator per column j = number of usable samples
+        usable_counts = usable_mask.sum(axis=0).astype(float)  # (n_times,)
+
+        # avoid divide-by-zero: if no usable samples at a time point, set Brier to np.nan
+        brier_scores = np.full(n_times, np.nan, dtype=float)
+        for j in range(n_times):
+            if usable_counts[j] > 0:
+                brier_scores[j] = (sqerr[usable_mask[:, j], j]).mean()
+
+        return brier_scores
+
+    # ============================================================
+    # Case 2/3: Tsouprou-based, which creates fractional "status"
+    # ============================================================
+    if "Tsouprou" in method:
+        if train_left_limits is None or train_right_limits is None:
+            raise ValueError("Training data must be provided for Tsouprou methods.")
+
+        # --------------------------------------------------------
+        # 2A. Fit marginal or conditional model on training data
+        # --------------------------------------------------------
+        if method == "Tsouprou-marginal":
+            marginal_estimator = TurnbullEstimator().fit(
+                left=train_left_limits,
+                right=train_right_limits,
             )
-            brier_scores.append(bs)
-            valid_times.append(target_time)
-        except (ValueError, ZeroDivisionError):
-            # Skip time points where Brier score cannot be calculated
-            continue
 
-    if len(brier_scores) == 0:
-        raise ValueError("No valid Brier scores could be calculated")
+            # Per-sample probs at L_i and R_i
+            left_probs  = marginal_estimator.predict(left_limits)    # (n_samples,)
+            right_probs = marginal_estimator.predict(right_limits)   # (n_samples,)
 
-    brier_scores = np.array(brier_scores)
-    valid_times = np.array(valid_times)
+            # Per-time probs S(t_j). Same for every sample.
+            target_probs_vec = marginal_estimator.predict(target_times)  # (n_times,)
 
-    # Perform numerical integration
-    if integration_method == "trapz":
-        ibs = np.trapz(brier_scores, valid_times)
-    elif integration_method == "simpson":
-        from scipy.integrate import simpson
-        if len(brier_scores) < 3:
-            # Fall back to trapezoidal rule if not enough points for Simpson's rule
-            ibs = np.trapz(brier_scores, valid_times)
+            # Broadcast:
+            left_probs_mat  = np.repeat(left_probs.reshape(-1, 1), n_times, axis=1)
+            right_probs_mat = np.repeat(right_probs.reshape(-1, 1), n_times, axis=1)
+            target_probs_mat = np.repeat(target_probs_vec.reshape(1, -1), n_samples, axis=0)
+
+        elif method == "Tsouprou-conditional":
+            if x is None or x_train is None:
+                raise ValueError("x and x_train must be provided for Tsouprou-conditional.")
+
+            # build train_df
+            train_data = {
+                'left': train_left_limits,
+                'right': train_right_limits
+            }
+            if x_train.ndim == 1:
+                train_data['feature'] = x_train
+            elif x_train.ndim == 2:
+                for k in range(x_train.shape[1]):
+                    train_data[f'feature_{k}'] = x_train[:, k]
+            else:
+                raise ValueError("x_train must be a 1-D or 2-D array.")
+            train_df = pd.DataFrame(train_data)
+
+            # build x_df for test
+            x_data = {}
+            if x.ndim == 1:
+                x_data['feature'] = x
+            elif x.ndim == 2:
+                for k in range(x.shape[1]):
+                    x_data[f'feature_{k}'] = x[:, k]
+            else:
+                raise ValueError("x must be a 1-D or 2-D array.")
+            x_df = pd.DataFrame(x_data)
+
+            aft_model = WeibullAFTFitter()
+            aft_model.fit_interval_censoring(train_df, 'left', 'right')
+
+            # left_probs[i]   = S_i(L_i)
+            # right_probs[i]  = S_i(R_i)
+            # We'll grab these by diagonal extraction, same as single-time code:
+            left_sf_df  = aft_model.predict_survival_function(x_df, times=left_limits)    # rows=times, cols=samples
+            right_sf_df = aft_model.predict_survival_function(x_df, times=right_limits)
+            left_probs  = left_sf_df.values.diagonal()   # (n_samples,)
+            right_probs = right_sf_df.values.diagonal()  # (n_samples,)
+
+            # target_probs_mat[i,j] = S_i(t_j)
+            full_sf_df = aft_model.predict_survival_function(x_df, times=target_times)
+            # full_sf_df: rows are t_j, cols are samples i
+            target_probs_mat = full_sf_df.T.values  # shape (n_samples, n_times)
+
+            # broadcast left/right
+            left_probs_mat  = np.repeat(left_probs.reshape(-1,1), n_times, axis=1)
+            right_probs_mat = np.repeat(right_probs.reshape(-1,1), n_times, axis=1)
+
         else:
-            ibs = simpson(brier_scores, valid_times)
-    else:
-        raise ValueError(f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'.")
+            raise ValueError(f"Method {method} is not supported.")
 
-    return ibs
+        # --------------------------------------------------------
+        # 2B. Build Y_mat (fractional survival status) for every (i,j)
+        # --------------------------------------------------------
+        # We'll follow your single-time logic:
+        # survival_status = (S(t) - S(R)) / (S(L) - S(R))
+        # Then override based on position of t relative to [L,R].
+        #
+        # Edge cases:
+        # - If denominator is 0 *and* t is strictly inside (L,R], we can't define status. We'll drop those cells.
+        # - After override:
+        #       if t_j > R_i  -> 0
+        #       if t_j <= L_i -> 1
+        # This guarantees values in [0,1].
+
+        denom = (left_probs_mat - right_probs_mat)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            survival_status_mat = (target_probs_mat - right_probs_mat) / denom
+
+        # Apply boundary overrides
+        after_right_mask = (time_mat > right_mat)
+        before_left_mask = (time_mat <= left_mat)
+        survival_status_mat[after_right_mask] = 0.0
+        survival_status_mat[before_left_mask] = 1.0
+
+        # Identify "bad" cells:
+        # bad if denom == 0 AND t_j is within (L_i, R_i] (i.e. genuinely ambiguous)
+        inside_mask = (time_mat > left_mat) & (time_mat <= right_mat)
+        bad_mask = (denom == 0.0) & inside_mask
+
+        # sanity check: any out-of-range due to numerical issues?
+        oob_mask = (survival_status_mat < 0.0) | (survival_status_mat > 1.0)
+        if np.any(oob_mask & ~bad_mask):
+            raise ValueError("Calculated survival status contains values outside [0,1] for some non-bad entries.")
+
+        # We'll exclude bad_mask entries from the averaging for their column.
+        usable_mask = ~bad_mask
+
+        # --------------------------------------------------------
+        # 2C. Compute squared error and average per time
+        # --------------------------------------------------------
+        sqerr = np.square(pred_mat - survival_status_mat)
+
+        brier_scores = np.full(n_times, np.nan, dtype=float)
+        usable_counts = usable_mask.sum(axis=0).astype(float)
+
+        for j in range(n_times):
+            if usable_counts[j] > 0:
+                brier_scores[j] = (sqerr[usable_mask[:, j], j]).mean()
+
+        return brier_scores
+
+    raise ValueError(f"Method {method} is not supported.")

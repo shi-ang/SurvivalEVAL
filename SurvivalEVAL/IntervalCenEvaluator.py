@@ -2,12 +2,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 from typing import Optional
 from functools import cached_property
+from scipy.integrate import trapezoid, simpson
+import warnings
+
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
-from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, ibs_hinge_ic
+from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, brier_multiple_points_ic
 from SurvivalEVAL.Evaluations.MeanError import cover_and_dist_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
@@ -218,6 +221,254 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             x_train = x_train,
             target_time = target_time,
             method = method,
+        )
+
+    def brier_score_multiple_points(
+            self, 
+            target_times: np.ndarray, 
+            method: str = "Tsouprou-marginal",
+            x: Optional[np.ndarray] = None,
+            x_train: Optional[np.ndarray] = None,
+    ):
+        # Check if there is no censored instance, if so, naive Brier score is applied
+        if self._NO_CENSOR:
+            method = "uncensored"
+        
+        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+            self._error_trainset("Tsouprou Brier score")
+            if method == "Tsouprou-conditional":
+                if x is None or x_train is None:
+                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
+        
+        pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
+        
+        return brier_multiple_points_ic(
+            preds=pred_probs_mat,
+            left_limits=self.left_limits,
+            right_limits=self.right_limits,
+            train_left_limits=self.train_left_limits,
+            train_right_limits=self.train_right_limits,
+            x=x,
+            x_train=x_train,
+            target_times=target_times,
+            method=method
+        )
+    
+    def integrated_brier_score(
+            self,
+            num_points: int | None = None,
+            target_times: np.ndarray | None = None,
+            method: str = "uncensored",
+            x: Optional[np.ndarray] = None,
+            x_train: Optional[np.ndarray] = None,
+            integration_method: str = "trapz",
+            draw_figure: bool = False
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """
+        Calculate the Integrated Brier Score (IBS) from the predicted survival curve.
+
+        Parameters
+        ----------
+        num_points : int, optional (default=None)
+            Number of evaluation time points to generate automatically.
+            If provided, `target_times` must be None.
+            We generate `num_points` linearly spaced times between 0 and max_target_time,
+            where max_target_time is the maximum observed (event or censoring) time
+            across train + test.
+
+            If both `num_points` and `target_times` are None:
+            - We try to infer `target_times` from the unique censoring times in the *test* set.
+            (This matches your old behavior.)
+
+        target_times : np.ndarray, shape = (m,), optional (default=None)
+            Explicit time grid at which to evaluate the Brier score.
+            If provided, `num_points` must be None. We'll integrate over exactly these times.
+
+            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+
+        method: str, default: "uncensored"
+            The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
+            Note: "uncensored" method automatically ignores uncertain areas.
+        
+        x: Optional[np.ndarray], default: None
+            Covariates for the test set. Required if method is "Tsouprou-conditional".
+        
+        x_train: Optional[np.ndarray], default: None
+            Covariates for the training set. Required if method is "Tsouprou-conditional".
+        
+        integration_method: str, default: "trapz"
+            Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
+        
+        draw_figure: bool, default: False
+            Whether to draw the Brier score curve.  
+
+        Returns
+        -------
+        ibs: float
+            The Integrated Brier Score.
+        figure: plt.Figure
+            The figure object containing the Brier score curve.
+        axes: plt.Axes
+            The axes object containing the Brier score curve.
+        """
+        # Check if there is no censored instance, if so, naive method is applied
+        if self._NO_CENSOR:
+            method = "uncensored"
+
+        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+            self._error_trainset("Tsouprou IBS")
+            if method == "Tsouprou-conditional":
+                if x is None or x_train is None:
+                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
+
+                # Sanity check: cannot pass both num_points and target_times
+        if (num_points is not None) and (target_times is not None):
+            raise ValueError(
+                "Please provide either `num_points` OR `target_times`, not both."
+            )
+
+        # Compute max_target_time from test set (and train set if available)
+        if self.train_event_times is not None:
+            max_target_time = np.max(
+                np.concatenate((self.event_times, self.train_event_times))
+            )
+        else:
+            max_target_time = np.max(self.event_times)
+
+        # Case 1: user provided explicit target_times
+        if target_times is not None:
+            # ensure numpy array
+            target_times = np.asarray(target_times, dtype=float)
+
+            if target_times.ndim != 1:
+                raise ValueError("`target_times` must be a 1D array of times.")
+
+            if len(target_times) < 2:
+                raise ValueError("`target_times` must contain at least 2 time values "
+                                "to perform numerical integration.")
+
+            # We assume caller gave sorted points. If not, sort them.
+            if not np.all(np.diff(target_times) >= 0):
+                warnings.warn("`target_times` is not sorted; sorting it now.")
+                target_times = np.sort(target_times)
+
+            # time_range is the range on which we integrate
+            time_range = target_times[-1] - target_times[0]
+            if time_range <= 0:
+                raise ValueError(
+                    "target_times must span a positive range for IBS integration."
+                )
+
+        # Case 2: user provided num_points
+        elif num_points is not None:
+            if num_points < 2:
+                raise ValueError("`num_points` must be >= 2 to perform integration.")
+
+            # Uniform grid from 0 to max_target_time
+            target_times = np.linspace(0.0, max_target_time, num_points)
+            time_range = max_target_time  # because we started at 0
+
+        # Case 3: neither provided → infer from censored times in test set
+        else:
+            censored_times = self.event_times[self.event_indicators == 0]
+            target_times = np.unique(censored_times)
+
+            if target_times.size < 2:
+                # (old behavior raised if no censor data at all)
+                raise ValueError(
+                    "Could not infer `target_times` from censored samples "
+                    "(e.g., no/too-few censored test points). "
+                    "Please provide `num_points` or `target_times`."
+                )
+
+            # Sort just in case (np.unique already sorts but let's be explicit)
+            target_times = np.sort(target_times)
+
+            time_range = target_times[-1] - target_times[0]
+
+        b_scores = self.brier_score_multiple_points(
+            target_times=target_times,
+            method=method,
+            x=x,
+            x_train=x_train
+        )
+        if np.isnan(b_scores).any():
+            warnings.warn("Time-dependent Brier Score contains nan")
+            bs_dict = {}
+            for time_point, b_score in zip(target_times, b_scores):
+                bs_dict[time_point] = b_score
+            print("Brier scores for multiple time points are:\n", bs_dict)
+
+        if integration_method == "trapz":
+            integral_value = trapezoid(b_scores, target_times)
+        elif integration_method == "simpson":
+            if len(b_scores) < 3:
+                # Fall back to trapezoidal rule if not enough points for Simpson's rule
+                integral_value = trapezoid(b_scores, target_times)
+            else:
+                integral_value = simpson(b_scores, target_times)
+        else:
+            raise ValueError(f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'.")
+
+        ibs_score = integral_value / time_range
+
+        if draw_figure:
+            fig, ax = plt.subplots()
+            ax.plot(target_times, b_scores, marker='o')
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Brier Score")
+            ax.set_title("Time-dependent Brier Score Curve")
+            plt.grid()
+            return ibs_score, (fig, ax)
+        return ibs_score
+
+    def crps(
+            self,
+            num_points: int | None = None,
+            target_times: np.ndarray | None = None,
+    ) -> float:
+        """
+        Calculate the Continuous Ranked Probability Score (CRPS) from the predicted survival curve.
+        It is equivalent to the Integrated Brier Score (IBS) with uncensored method.
+        It is named as CRPS following the terminology in meteorology and probabilistic forecasting field.
+        The description of Survival CRPS can be found in [1].
+
+        Parameters
+        ----------
+        num_points : int, optional (default=None)
+            Number of evaluation time points to generate automatically.
+            If provided, `target_times` must be None.
+            We generate `num_points` linearly spaced times between 0 and max_target_time,
+            where max_target_time is the maximum observed (event or censoring) time
+            across train + test.
+
+            If both `num_points` and `target_times` are None:
+            - We try to infer `target_times` from the unique censoring times in the *test* set.
+            (This matches your old behavior.)
+
+        target_times : np.ndarray, shape = (m,), optional (default=None)
+            Explicit time grid at which to evaluate the Brier score.
+            If provided, `num_points` must be None. We'll integrate over exactly these times.
+
+            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+        
+        Returns    
+        -------
+        crps: float
+            The Continuous Ranked Probability Score (CRPS) for the predicted survival curve.
+
+        References
+        ----------
+        [1] Avati et al., "Countdown Regression: Sharp and Calibrated Survival Predictions", UAI, 2020.
+        """
+        return self.integrated_brier_score(
+            num_points=num_points,
+            target_times=target_times,
+            method="uncensored",
+            x=None,
+            x_train=None,
+            integration_method="trapz",
+            draw_figure=False
         )
 
     def one_calibration(
@@ -435,56 +686,3 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The average distance from the predicted median survival times to the nearest interval boundary.
         """
         return cover_and_dist_ic(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)
-
-    def ibs_hinge(
-            self,
-            method: str = "uncensored",
-            x: Optional[np.ndarray] = None,
-            x_train: Optional[np.ndarray] = None,
-            integration_method: str = "trapz"
-    ) -> float:
-        """
-        Calculate the Integrated Brier Score (IBS) with hinge loss for interval-censored data.
-
-        This implements the IBS with hinge approach that ignores uncertain areas,
-        as described in https://arxiv.org/pdf/1806.08324.
-
-        Parameters
-        ----------
-        method: str, default: "uncensored"
-            The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
-            Note: "uncensored" method automatically ignores uncertain areas (hinge loss).
-        x: Optional[np.ndarray], default: None
-            Covariates for the test set. Required if method is "Tsouprou-conditional".
-        x_train: Optional[np.ndarray], default: None
-            Covariates for the training set. Required if method is "Tsouprou-conditional".
-        integration_method: str, default: "trapz"
-            Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
-
-        Returns
-        -------
-        ibs: float
-            The Integrated Brier Score with hinge loss.
-        """
-        # Check if there is no censored instance, if so, naive method is applied
-        if self._NO_CENSOR:
-            method = "uncensored"
-
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
-            self._error_trainset("Tsouprou IBS hinge")
-            if method == "Tsouprou-conditional":
-                if x is None or x_train is None:
-                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
-
-        return ibs_hinge_ic(
-            pred_survs=self._pred_survs,
-            time_coordinates=self._time_coordinates,
-            left_limits=self.left_limits,
-            right_limits=self.right_limits,
-            train_left_limits=self.train_left_limits,
-            train_right_limits=self.train_right_limits,
-            x=x,
-            x_train=x_train,
-            method=method,
-            integration_method=integration_method
-        )
