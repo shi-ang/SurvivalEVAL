@@ -11,7 +11,7 @@ from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predi
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, brier_multiple_points_ic
-from SurvivalEVAL.Evaluations.MeanError import cover_and_dist_ic
+from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
@@ -673,16 +673,55 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                         left=self.left_limits, right=self.right_limits, n_quad=n_quad,
                         return_details=False)
 
-    def coverage_and_distance(self) -> tuple[float, float]:
+    def inclusion_rate(self) -> float:
         """
-        Calculate the proportion of predicted median survival times that fall outside the interval
-        and the average distance from the predicted median survival times to the nearest interval boundary.
+        Calculate the inclusion rate of the predicted median survival times within the interval.
 
         Returns
         -------
-        p_out: float
-            The proportion of predicted median survival times that fall outside the interval.
-        d_out: float
-            The average distance from the predicted median survival times to the nearest interval boundary.
+        inclusion_rate: float
+            The inclusion rate of the predicted median survival times within the interval.
         """
-        return cover_and_dist_ic(self.left_limits, self.right_limits, self.predicted_event_times, return_details=False)
+        return inclusion_rate(self.left_limits, self.right_limits, self.predicted_event_times)
+    
+    def mae(
+            self,
+            log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate the Mean Absolute Error (MAE) from the predicted median survival times.
+
+        Returns
+        -------
+        mae: float
+            The Mean Absolute Error (MAE) from the predicted median survival times.
+        """
+        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="absolute", log_scale=log_scale)
+    
+    def mse(
+            self,
+            log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate the Mean Squared Error (MSE) from the predicted median survival times.
+
+        Returns
+        -------
+        mse: float
+            The Mean Squared Error (MSE) from the predicted median survival times.
+        """
+        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="squared", log_scale=log_scale)
+    
+    def rmse(
+            self,
+            log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate the Root Mean Squared Error (RMSE) from the predicted median survival times.
+
+        Returns
+        -------
+        rmse: float
+            The Root Mean Squared Error (RMSE) from the predicted median survival times.
+        """
+        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="root_squared", log_scale=log_scale)

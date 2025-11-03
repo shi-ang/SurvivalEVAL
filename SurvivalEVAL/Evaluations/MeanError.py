@@ -279,18 +279,64 @@ def insert_km(
     return survival_times, survival_probabilities
 
 
-def cover_and_dist_ic(
+def _prepare_interval_arrays(
         left_bounds: np.ndarray,
         right_bounds: np.ndarray,
         predicted_times: np.ndarray,
-        *,
-        return_details: bool = False
-) -> tuple[float, float] | tuple[float, float, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    L = np.asarray(left_bounds, float)
+    R = np.asarray(right_bounds, float)
+    t_hat = np.asarray(predicted_times, float)
+
+    assert L.shape == R.shape == t_hat.shape, "shape mismatch"
+    return L, R, t_hat
+
+
+def _compute_inside_mask(
+        left: np.ndarray,
+        right: np.ndarray,
+        predicted: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Coverage and distance for interval-censored data.
-    Compute:
-      p_out = mean( 1{ t_hat \not\int (L, R] } ),
-      d_out = mean( 1{outside} * min( |t_hat - L|, |t_hat - R| ) ).
+    Compute mask for predictions inside their intervals. Also return mask for right-censored intervals.
+    Parameters
+
+    Inside test:
+    - general finite-interval: (L, R]  -> (t_hat > L) & (t_hat <= R)
+    - right-censored:          (L, +inf) -> t_hat > L
+    - exact-interval (L==R): treat as {R}: |t_hat - R| <= atol
+    ----------
+    left: np.ndarray, (n_samples,)
+        Left limits of the interval-censored data.
+    right: np.ndarray, (n_samples,)
+        Right limits of the interval-censored data (use np.inf for right-censor).
+    predicted: np.ndarray, (n_samples,)
+        Your point predictions (e.g., median predicted times, mean predicted times, etc).
+
+    Returns
+    -------
+    inside: np.ndarray, (n_samples,)
+        Boolean mask for predictions inside their intervals.
+    is_right_cens: np.ndarray, (n_samples,)
+        Boolean mask for right-censored intervals.
+    """
+    is_right_cens = np.isinf(right)
+    inside_finite = (~is_right_cens) & (predicted > left) & (predicted <= right)
+    inside_right = is_right_cens & (predicted > left)
+    inside = (inside_finite | inside_right)
+    return inside, is_right_cens
+
+
+def inclusion_rate(
+        left_bounds: np.ndarray,
+        right_bounds: np.ndarray,
+        predicted_times: np.ndarray,
+) -> float:
+    """
+    Inclusion rate for interval-censored data: proportion of predictions inside their intervals.
+
+    This is similar to p_out but reports the complement (1 - p_out).
+    p_out is proposed in [1].
 
     Parameters
     ----------
@@ -299,47 +345,81 @@ def cover_and_dist_ic(
     right_bounds: np.ndarray, (n_samples,)
         Right limits of the interval-censored data (use np.inf for right-censor).
     predicted_times: np.ndarray, (n_samples,)
-        Your point predictions (e.g., median predicted times, mean predictd times, etc).
-    return_details: bool, default False
-        If True, also return per-sample outside indicators and distances.
+        Your point predictions (e.g., median predicted times, mean predicted times, etc).
+    
+    Returns
+    ------- 
+    inclusion_rate: float
+        Proportion of samples with predicted times inside their intervals.
+    References
+    ----------
+    [1] Avati et al., "Countdown regression: sharp and calibrated survival predictions", UAI 2020.
+    """
+    L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
+    inside, _ = _compute_inside_mask(L, R, t_hat)
+    return float(np.mean(inside))
+
+
+def mean_error_ic(
+        left_bounds: np.ndarray,
+        right_bounds: np.ndarray,
+        predicted_times: np.ndarray,
+        error_type: str = "absolute",
+        log_scale: bool = False,
+) -> float:
+    """
+    Mean error for interval-censored data. It is a one-sided mean error that only penalizes predictions
+    outside the interval-censored data.
+    This is proposed in [1] as the hinge loss for interval-censored data.
+    This is later reporposed by [2] as the `d_out` metric.
+
+    Parameters
+    ----------
+    left_bounds: np.ndarray, (n_samples,)
+        Left limits of the interval-censored data.
+    right_bounds: np.ndarray, (n_samples,)
+        Right limits of the interval-censored data (use np.inf for right-censor).
+    predicted_times: np.ndarray, (n_samples,)
+        Your point predictions (e.g., median predicted times, mean predicted times, etc).
+    error_type: string, default: "absolute"
+        Type of mean error to use. Options are "absolute" and "squared".
+    log_scale: boolean, default: False
+        Whether to use log scale for the loss function.
+    
     Returns
     -------
-    p_out: float
-        Proportion of samples with predicted times outside their intervals.
-    d_out: float
-        Average distance of outside predictions to the nearest interval boundary.
+    mean_error: float
+        Mean error value.
+    
+    References
+    ----------
+    [1] Shivaswamy et al., "A support vector approach to censored targets", ICDM 2007.
+    [2] Avati et al., "Countdown regression: sharp and calibrated survival predictions", UAI 2020.
+
     """
-    L = np.asarray(left_bounds, float)
-    R = np.asarray(right_bounds, float)
-    t_hat = np.asarray(predicted_times, float)
+    L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
 
-    assert L.shape == R.shape == t_hat.shape, "shape mismatch"
+        # set the error function
+    if error_type == "absolute":
+        error_func = np.abs
+    elif error_type == "squared":
+        error_func = np.square
+    else:
+        raise TypeError("Please enter one of 'absolute' or 'squared' for calculating error.")
 
-    # Masks for special cases
-    is_right_cens = np.isinf(R)
+    # TODO: We need to move the logarithm transformation later after we calculate a best-guess.
+    if log_scale:
+        t_hat = np.log(t_hat)
+        L = np.log(L)
+        R = np.log(R)
 
-    # Inside test:
-    #   - general finite-interval: (L, R]  -> (t_hat > L) & (t_hat <= R)
-    #   - right-censored:          (L, +inf) -> t_hat > L
-    #   - exact-interval (L==R): treat as {R}: |t_hat - R| <= atol
-    inside_finite = (~is_right_cens) & (t_hat > L) & (t_hat <= R)
-    inside_right = is_right_cens & (t_hat > L)
-
-    inside = inside_finite | inside_right
+    inside, is_right_cens = _compute_inside_mask(L, R, t_hat)
     outside = ~inside
+    error_to_L = error_func(t_hat - L)
+    error_to_R = np.where(is_right_cens, np.inf, error_func(t_hat - R))
+    d_i = np.where(outside, np.minimum(error_to_L, error_to_R), 0.0)
 
-    # Distance to closest boundary (0 if inside).
-    # For right-censored (R=inf), distance to R is +inf, so min reduces to |t_hat - L|.
-    dist_to_L = np.abs(t_hat - L)
-    dist_to_R = np.where(is_right_cens, np.inf, np.abs(t_hat - R))
-    d_i = np.where(outside, np.minimum(dist_to_L, dist_to_R), 0.0)
-
-    p_out = float(np.mean(outside))
-    d_out = float(np.mean(d_i))
-
-    if return_details:
-        return p_out, d_out, outside, d_i
-    return p_out, d_out
+    return float(np.mean(d_i))
 
 
 if __name__ == "__main__":
