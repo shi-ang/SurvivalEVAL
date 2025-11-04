@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Tuple, Literal, Optional, Dict
 
-def convert_right_censor_to_interval_censor(
+def right_censor_to_interval(
     event_indicators: np.ndarray,   # (N,) bool: True=event, False=right-censor
     observed_times: np.ndarray,     # (N,) float: event or censor time
     max_t = np.inf # max time

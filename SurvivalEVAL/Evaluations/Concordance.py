@@ -382,7 +382,7 @@ def concordance_ic(
         left_train: np.ndarray,
         right_train: np.ndarray,
         method: str = "probability",
-        tie_strategy: str = "skip",
+        ties: str = "skip",
         eps: float = 1e-12,
 ) -> tuple[float, np.ndarray, np.ndarray]:
     """
@@ -404,7 +404,7 @@ def concordance_ic(
         Method for forming pair weights:
           - "probability": use closed-form pair weights based on Turnbull estimator.
           - "midpoint": use standard right-censored C-index on midpoint imputed times.
-    tie_strategy : {"skip", "half"}, default="skip"
+    ties : {"skip", "half"}, default="skip"
         How to handle ties in eta:
           - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
           - "half":  ties contribute 0.5 * w_{i<j} to the numerator.
@@ -450,13 +450,13 @@ def concordance_ic(
 
     # Concordant matrix based on eta
     gt = (eta[:, None] > eta[None, :]).astype(float)
-    if tie_strategy == "half":
+    if ties == "half":
         gt += 0.5 * (eta[:, None] == eta[None, :]).astype(float)
         # still zero on diagonal because w_ii is 0
-    elif tie_strategy == "skip":
+    elif ties == "skip":
         pass
     else:
-        raise ValueError("tie_strategy must be 'skip' or 'half'.")
+        raise ValueError("'ties' must be 'skip' or 'half'.")
 
     # Numerator and denominator (sum over ordered pairs i != j)
     num = np.sum(gt * w)

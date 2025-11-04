@@ -538,6 +538,120 @@ def quantile_to_survival(quantile_levels, quantile_predictions, time_coordinates
     return surv_pred
 
 
+def survival_to_quantile(
+    surv_prob: NumericArrayLike,
+    time_coordinates: NumericArrayLike,
+    quantile_levels: NumericArrayLike,
+    interpolate: str = "Pchip",
+) -> np.ndarray:
+    """
+    Convert survival curves S(t) to quantile estimates t_q where F(t_q)=q and F=1-S.
+
+    Parameters
+    ----------
+    surv_prob : (n_samples, n_times) array-like
+        Survival probabilities S(t) on a grid of times.
+    time_coordinates : (n_samples, n_times) array-like
+        Time grid corresponding to `surv_prob` for each sample. Must be strictly increasing per row.
+    quantile_levels : (n_quantiles,) array-like
+        Values in [0, 1), in increasing order. Each q is mapped to t_q such that F(t_q)=q.
+    interpolate : {"Linear", "Pchip"}, default "Pchip"
+        Interpolator for the CDF-to-time mapping.
+
+    Returns
+    -------
+    quantile_predictions : (n_samples, n_quantiles) np.ndarray
+        Estimated quantile times for each sample.
+
+    Notes
+    -----
+    - For q beyond the maximum observed CDF value in a row, extrapolates with a
+      constant hazard tail: t ≈ q / slope, where slope = F(T_max)/T_max.
+    - Rows with duplicated CDF x-values are de-duplicated (keep first occurrence).
+    """
+    # Convert to arrays
+    surv_prob, time_coordinates = check_and_convert(surv_prob, time_coordinates)
+    quantile_levels = check_and_convert(quantile_levels)
+
+    if surv_prob.shape != time_coordinates.shape:
+        raise ValueError("`surv_prob` and `time_coordinates` must have identical shapes (n_samples, n_times).")
+    if surv_prob.ndim != 2:
+        raise ValueError("`surv_prob` and `time_coordinates` must be 2D (n_samples, n_times).")
+    if quantile_levels.ndim != 1:
+        raise ValueError("`quantile_levels` must be 1D.")
+    
+    if not check_monotonicity(surv_prob):
+        raise ValueError("Each row of `surv_prob` must be nonincreasing.")
+
+    if not check_monotonicity(time_coordinates):
+        raise ValueError("Each row of `time_coordinates` must be strictly increasing.")
+
+    if not check_monotonicity(quantile_levels):
+        raise ValueError("`quantile_levels` must be in increasing order.")
+
+    if np.any(quantile_levels < 0) or np.any(quantile_levels >= 1):
+        raise ValueError("`quantile_levels` must be in [0, 1).")
+
+    if interpolate == "Linear":
+        Interpolator = interp1d
+    elif interpolate == "Pchip":
+        Interpolator = PchipInterpolator
+    else:
+        raise ValueError(f"Unknown interpolation method: {interpolate}")
+
+    # CDF and tail slope (assume linear tail beyond last time point)
+    cdf = 1.0 - surv_prob
+    # guard against zero last time to avoid divide-by-zero
+    if np.any(time_coordinates[:, -1] <= 0):
+        raise ValueError("The last time in each `time_coordinates` row must be > 0.")
+    slope = cdf[:, -1] / time_coordinates[:, -1]
+
+    n_samples, _ = cdf.shape
+    qpred = np.empty((n_samples, quantile_levels.shape[0]), dtype=float)
+
+    for i in range(n_samples):
+        cdf_i = cdf[i, :]
+        t_i = time_coordinates[i, :]
+
+        # Build monotone x for interpolator: unique CDF values (keep first)
+        cdf_i_unique, keep_idx = np.unique(cdf_i, return_index=True)
+        t_i_unique = t_i[keep_idx]
+
+        # If the first CDF value is >0, prepend (0, 0) to allow interpolation near q≈0
+        if cdf_i_unique[0] > 0.0:
+            cdf_i_unique = np.concatenate(([0.0], cdf_i_unique))
+            t_i_unique = np.concatenate(([0.0], t_i_unique[:1]))
+
+        # Create CDF^{-1}(q) interpolator (monotone methods preferred)
+        if Interpolator is interp1d:
+            interp = Interpolator(
+                cdf_i_unique, t_i_unique, kind="linear", bounds_error=False, fill_value="extrapolate", assume_sorted=True
+            )
+        else:
+            # Pchip is shape-preserving; x must be strictly increasing
+            interp = Interpolator(cdf_i_unique, t_i_unique, extrapolate=True)
+
+        # Interpolate for all qs, then handle tail beyond observed max CDF
+        qpred[i, :] = interp(quantile_levels)
+
+        max_cdf = cdf_i_unique[-1]
+        if max_cdf <= 0:
+            # degenerate case: no events observed; fall back to linear tail from origin
+            qpred[i, :] = quantile_levels / slope[i]
+        else:
+            beyond = np.where(quantile_levels > max_cdf)[0]
+            if beyond.size > 0:
+                qpred[i, beyond] = quantile_levels[beyond] / slope[i]
+
+    # Sanity checks
+    if np.any(qpred < 0):
+        raise RuntimeError("Quantile predictions contain negative values.")
+    if not check_monotonicity(qpred):
+        raise RuntimeError("Quantile predictions are not nondecreasing across quantile levels per row.")
+
+    return qpred
+
+
 def stratified_folds_survival(
         dataset: pd.DataFrame,
         event_times: np.ndarray,

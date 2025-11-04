@@ -7,13 +7,14 @@ import warnings
 
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares
+from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares, 
+                                           survival_to_quantile)
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, brier_multiple_points_ic
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
-from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic
+from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic, coverage_ic
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
 
 
@@ -64,6 +65,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         self.ndim_time = time_coordinates.ndim
         self.ndim_surv = pred_survs.ndim
+        if self.ndim_time == 1 and self.ndim_surv == 1:
+            raise TypeError("At least one of 'pred_survs' or 'time_coordinates' must be a 2D array.")
+        
         self._pred_survs, self._time_coordinates = zero_padding(pred_survs, time_coordinates)
 
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
@@ -144,10 +148,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             imp_times, imp_indicators = impute_times_midpoint(self.left_limits, self.right_limits)
             ties = "None" if ties == "skip" else "Risk"
             c_index, num, den = concordance(
-                eta=-pred_times,
+                predicted_times=pred_times,
                 event_times=imp_times,
                 event_indicators=imp_indicators,
-                tie_strategy=ties
+                ties=ties
             )
             return c_index, num, den
         elif method == "probabilistic":
@@ -157,7 +161,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 right=self.right_limits,
                 left_train=self.train_left_limits,
                 right_train=self.train_right_limits,
-                tie_strategy=ties
+                ties=ties
             )
             return c_index, np.sum(num), np.sum(den)
         else:
@@ -487,7 +491,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             binning_strategy: str = "C",
             method: str = "Turnbull",
             return_details: bool = False
-    ) -> tuple[float, list, list]:
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -581,7 +585,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self,
             num_bins: int = 10,
             return_details: bool = False
-    ) -> tuple[float, np.ndarray]:
+    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
@@ -733,4 +737,93 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         rmse: float
             The Root Mean Squared Error (RMSE) from the predicted median survival times.
         """
-        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="root_squared", log_scale=log_scale)
+        return self.mse(log_scale=log_scale) ** 0.5
+
+    def predict_interval(
+            self,
+            quantile_range: tuple[float, float] = None,
+            cov_level: float = None,
+    ) -> np.ndarray:
+        """
+        Predict the survival interval from the predicted survival curve.
+        The interval means that the event time will fall between the lower and upper bounds
+        with a certain probability (coverage level).
+
+        Parameters
+        ----------
+        quantile_range: tuple[float, float]
+            The lower and upper quantiles to define the prediction interval.
+            If provided, `cov_level` must be None.
+        cov_level: float, default: None
+            The coverage level to define the prediction interval.
+            If provided, `quantile_range` must be None.
+        Returns
+        -------
+        intervals: np.ndarray, shape = (n_samples, 2)
+            The predicted survival intervals for each sample.
+        """
+        if (quantile_range is not None) and (cov_level is not None):
+            quantile_diff = quantile_range[1] - quantile_range[0]
+            assert quantile_diff == cov_level, "The difference between upper and lower quantiles must be equal to the coverage level."
+            assert 0 < quantile_range[0] < quantile_range[1] < 1, "Quantiles must be between 0 and 1 and lower < upper."
+        elif (quantile_range is not None) and (cov_level is None):
+            lower_quantile, upper_quantile = quantile_range
+            assert 0 < lower_quantile < upper_quantile < 1, "Quantiles must be between 0 and 1 and lower < upper."
+        elif (quantile_range is None) and (cov_level is not None):
+            assert 0 < cov_level < 1, "Coverage level must be between 0 and 1."
+            lower_quantile = (1 - cov_level) / 2
+            upper_quantile = 1 - lower_quantile
+        else:
+            raise ValueError("Please provide either 'quantile_range' or 'cov_level'.")
+
+        # if pred_survs is 1D, repeat it along the time dimension so it matches the time coordinates
+        # if time_coordinates is 1D, repeat it along the sample dimension so it matches the predictions
+        # if both are 1D, raise error
+        if self.ndim_time == 1:
+            time_coordinates = np.tile(self._time_coordinates, (self._pred_survs.shape[0], 1))
+        else:
+            time_coordinates = self._time_coordinates
+
+        if self.ndim_surv == 1:
+            pred_survs = np.tile(self._pred_survs[:, np.newaxis], (1, self._time_coordinates.shape[1]))
+        else:
+            pred_survs = self._pred_survs
+
+        interval_pred = survival_to_quantile(pred_survs, time_coordinates,
+                                             quantile_levels=[lower_quantile, upper_quantile],
+                                             interpolate=self.interpolation)
+        return interval_pred
+
+    def coverage(
+            self,
+            quantile_range: tuple[float, float] = None,
+            cov_level: float = None,
+            method: str = "Turnbull",
+    ) -> tuple[float, float, float]:
+        """
+        Calculate the coverage of the predicted survival intervals.
+
+        Parameters
+        ----------
+        quantile_range: tuple[float, float], default: None
+            The lower and upper quantiles to define the prediction interval.
+            If provided, `cov_level` must be None.
+        cov_level: float, default: None
+            The coverage level to define the prediction interval.
+            If provided, `quantile_range` must be None.
+        method: str, default: "Turnbull"
+            The method to handle censored patients. Options are "Turnbull" and "linear".
+        Returns
+        -------
+        observed_coverage : float
+            The observed coverage of the prediction intervals.
+        cov_gap : float
+            Difference between observed coverage and the target level (observed_cov - cov_level).
+        avg_width : float
+            The average width of the prediction intervals.
+        """        
+        interval_pred = self.predict_interval(quantile_range=quantile_range, cov_level=cov_level)
+
+        return coverage_ic(interval_pred[:, 0], interval_pred[:, 1], self.left_limits, self.right_limits,
+                           self.train_left_limits, self.train_right_limits, cov_level=cov_level,
+                           method=method)

@@ -1,8 +1,12 @@
 import numpy as np
 import pandas as pd
-from IntervalCensorDGP import convert_right_censor_to_interval_censor 
+from matplotlib import pyplot as plt
+from IntervalCensorDGP import right_censor_to_interval
+from SurvivalEVAL.Evaluations.util import check_monotonicity
 
-print ('Test convert_right_censor_to_interval_censor df.head()')
+from SurvivalEVAL import IntervalCenEvaluator
+
+print ('Test convert_right_censor_to_interval_censor')
 
 np.random.seed(42)
 # get some synthetic data
@@ -21,9 +25,11 @@ predictions = np.random.rand(n_data, n_times)
 # normalize the predictions to sum to 1, meaning the probability mass function
 pmf = predictions / predictions.sum(axis=1)[:, None]
 survival_curves = 1 - np.cumsum(pmf, axis=1)
-predictions_cdf = np.cumsum(pmf, axis=1)
+# clip the survival curves to be between 0 and 1
+survival_curves = np.clip(survival_curves, 0.0, 1.0)
+print("Monotonicity of survival curves:", check_monotonicity(survival_curves))
 
-left, right = convert_right_censor_to_interval_censor(
+left, right = right_censor_to_interval(
     event_indicators=event_indicators,
     observed_times=observed_times,
 )
@@ -37,7 +43,6 @@ df = pd.DataFrame({
 
 print (df.head())
 
-from SurvivalEVAL import IntervalCenEvaluator
 
 evaluator = IntervalCenEvaluator(pred_survs = survival_curves, 
                                  time_coordinates = time_grid, 
@@ -53,16 +58,23 @@ print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
 
 print ('Test calibration_slope_interval_censor')
 
-p_arr, o_arr, slope = evaluator.calibration_slope_interval_censor(ps = (0.1, 0.3, 0.5, 0.7, 0.9))
-print ("interval_censor slope:", slope)
+# p_value, details = evaluator.d_calibration(return_details=True)
+# print ("interval_censor d_calibration p-value:", p_value)
+# print ("Details:", details)
+# plt.show()
 
-print ('Test cov_from_cdf_grid')
+# p_value, details = evaluator.one_calibration(target_time=2.5, return_details=True)
+# print ("interval_censor one_calibration p-value at time 2.5:", p_value)
+# print ("Details:", details)
+# plt.show()
 
-cov_list = evaluator.cov_from_cdf_grid()
-print("Mean coverage from evaluator:", np.mean(cov_list))
+i_r = evaluator.inclusion_rate()
+print ("Inclusion Rate in interval censoring:", i_r)
 
-print ('Median survival time in interval consistency')
+mae = evaluator.mae()
+print ("Mean Absolute Error in interval censoring:", mae)
 
-p_out, d_out = evaluator.coverage_and_distance()
-print ("p_out:", p_out)
-print ("d_out:", d_out)
+coverage, cov_gap, avg_width = evaluator.coverage(cov_level=0.8, method="linear")
+print ("Coverage at 80% level in interval censoring:", coverage)
+print ("Coverage gap at 80% level in interval censoring:", cov_gap)
+print ("Average width of prediction intervals at 80% level in interval censoring:", avg_width)

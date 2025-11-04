@@ -65,6 +65,9 @@ class SurvivalEvaluator:
 
         self.ndim_time = time_coordinates.ndim
         self.ndim_surv = pred_survs.ndim
+        if self.ndim_time == 1 and self.ndim_surv == 1:
+            raise TypeError("At least one of 'pred_survs' or 'time_coordinates' must be a 2D array.")
+        
         self._pred_survs, self._time_coordinates = zero_padding(pred_survs, time_coordinates)
 
         event_times, event_indicators = check_and_convert(event_times, event_indicators)
