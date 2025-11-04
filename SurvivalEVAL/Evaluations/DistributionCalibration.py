@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional
 from matplotlib import pyplot as plt
-from scipy.stats import chisquare
+from scipy.stats import chisquare, kstwobign
 from scipy.integrate import trapezoid
 
 from SurvivalEVAL.Evaluations.util import interpolated_curve
@@ -105,9 +105,9 @@ def d_cal_ic(
     Parameters
     ----------
     pred_probs_left: np.ndarray
-        The predicted survival probabilities at individual's left event/censor time.
+        The predicted survival probabilities at individual's left censor time.
     pred_probs_right: np.ndarray
-        The predicted survival probabilities at individual's right event/censor time.
+        The predicted survival probabilities at individual's right censor time.
         For right-censored instances, the right event/censor time is infinity, so the predicted probability is 0.
     num_bins: int
         The number of bins to use for the D-Calibration score.
@@ -139,6 +139,135 @@ def d_cal_ic(
 
     statistic, pvalue = chisquare(binning)
     return statistic, pvalue, binning
+
+def ksd_calibration(
+       pred_probs: np.ndarray,
+       event_indicators: np.ndarray,
+       return_details: bool = False,
+) -> tuple[float, float] | tuple[float, dict]:
+    """
+    Calculate the K-S D-Calibration score.
+    
+    Parameters
+    ----------
+    pred_probs: np.ndarray
+        The predicted survival probabilities at individual's event/censor time.
+    event_indicators: np.ndarray
+        The event indicators.
+    return_details: bool
+        Whether to return the detailed information including the empirical distribution and the figure.
+
+    Returns
+    -------
+    pvalue: float
+        The p-value of the K-S D-Calibration test.
+    statistic: float
+        The test statistic of the K-S D-Calibration test.
+    details: dict
+        The detailed information including the empirical distribution and the figure.
+        - statistics: float
+        - p_value: float
+        - empirical_distribution: tuple (x_support, cdf_values)
+        - figure: tuple (fig, ax)
+    """
+    assert len(pred_probs) == len(event_indicators), \
+        "The length of pred_probs and event_indicators should have same length."
+    
+    n = len(pred_probs)
+    km = KaplanMeier(pred_probs, event_indicators)
+    x_support = km.survival_times
+    cdf_values = km.cumulative_dens
+
+    D_n = discrepancy_to_uniform(x_support, cdf_values)
+
+    p_value = ks_pvalue(D_n, n)
+
+    if return_details:
+        fig, ax = plt.subplots()
+        # plot the empirical CDF
+        ax.step(x_support, cdf_values, where='post', label='Prediction', color='blue', linewidth=2)
+        # plot the ideal CDF
+        ax.plot([0, 1], [0, 1], label='Ideal', linestyle='--', color='grey', linewidth=2)
+        ax.legend()
+        ax.set_xlabel(r'Survival Probability $S(t_i \mid x)$')
+        ax.set_ylabel('Cumulative Distribution Function')
+        fig.tight_layout()
+
+        details = {
+            "statistics": D_n,
+            "p_value": p_value,
+            "empirical_distribution": (x_support, cdf_values),
+            "figure": (fig, ax)
+        }
+        return p_value, details
+    return p_value, D_n
+
+def ksd_cal_ic(
+        pred_probs_left: np.ndarray,
+        pred_probs_right: np.ndarray,
+        return_details: bool = False,
+):
+    """
+    Calculate the K-S D-Calibration score for interval censored data.
+    
+    Parameters
+    ----------
+    pred_probs_left: np.ndarray
+        The predicted survival probabilities at individual's left censor time.
+    pred_probs_right: np.ndarray
+        The predicted survival probabilities at individual's right censor time.
+    return_details: bool
+        Whether to return the detailed information including the empirical distribution and the figure.
+
+    Returns
+    -------
+    pvalue: float
+        The p-value of the K-S D-Calibration test.
+    statistic: float
+        The test statistic of the K-S D-Calibration test.
+    details: dict
+        The detailed information including the empirical distribution and the figure.
+        - statistics: float
+        - p_value: float
+        - empirical_distribution: tuple (x_support, cdf_values)
+        - figure: tuple (fig, ax)
+    """
+    assert len(pred_probs_left) == len(pred_probs_right), \
+        "The length of pred_probs_left and pred_probs_right should have same length."
+    
+    assert np.all(pred_probs_left >= pred_probs_right), \
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+
+    # Fit a Turnbull estimator on the predicted probabilities
+    n = len(pred_probs_left)
+    tb = TurnbullEstimatorLifelines(pred_probs_left, pred_probs_right)
+    x_support = tb.survival_times
+    cdf_values = tb.cumulative_dens
+
+    D_n = discrepancy_to_uniform(x_support, cdf_values)
+
+    p_value = ks_pvalue(D_n, n)
+
+    if return_details:
+        fig, ax = plt.subplots()
+        # plot the empirical CDF
+        ax.step(x_support, cdf_values, where='post', label='Prediction', color='blue', linewidth=2)
+        # plot the ideal CDF
+        ax.plot([0, 1], [0, 1], label='Ideal', linestyle='--', color='grey', linewidth=2)
+        ax.legend()
+        ax.set_xlabel(r'Survival Probability $S(t_i \mid x)$')
+        ax.set_ylabel('Cumulative Distribution Function')
+        fig.tight_layout()
+
+        details = {
+            "statistics": D_n,
+            "p_value": p_value,
+            "empirical_distribution": (x_support, cdf_values),
+            "figure": (fig, ax)
+        }
+        return p_value, details
+
+    return p_value, D_n
 
 
 def create_interval_c_hist(
@@ -493,6 +622,67 @@ def coverage_ic(
     avg_length = float(np.mean(pred_r - pred_l))
 
     return observed_cov, cov_gap, avg_length
+
+def discrepancy_to_uniform(
+        x: np.ndarray,
+        cdf: np.ndarray,
+        x_support: Optional[tuple[float, float]] = None
+) -> float:
+    """
+    Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
+    The KS statistic is defined as:
+        D_n = max|F_n(x) - F(x)|,
+    where F_n(x) is the empirical CDF and F(x) is the CDF of the uniform distribution.
+    Parameters
+    ----------
+    x: np.ndarray
+        The support points of the empirical CDF.
+    cdf: np.ndarray
+        The values of the empirical CDF at the support points.
+    x_support: Optional[tuple[float, float]]
+        The support points of the uniform distribution. If None, it is assumed to be [0, 1].
+    Returns
+    -------
+    D_n: float
+        The KS statistic.
+    """
+    # sanity check
+    if x.ndim != 1 or cdf.ndim != 1 or x.size != cdf.size:
+        raise ValueError("x and cdf must be 1D arrays of the same length.")
+
+    assert np.all(cdf >= 0) and np.all(cdf <= 1), "The cdf values must be in the range [0, 1]."
+
+    if not (np.all(np.diff(x) >= 0) and np.all(np.diff(cdf) >= 0)):
+        raise ValueError("x and cdf must be nondecreasing.")
+
+    # empirical CDF values at the support points
+    F_n = cdf
+    # CDF of the uniform distribution at the support points
+    if x_support is None:
+        F = x
+    else:
+        F = (x - x_support[0]) / (x_support[1] - x_support[0])
+
+    D_plus = np.max(F_n - F)
+    D_minus = np.max(F - np.concatenate(([0], F_n[:-1])))
+    D_n = float(max(D_plus, D_minus))
+    return D_n
+
+def ks_pvalue(D_n: float, n: int) -> float:
+    """
+    Compute asymptotic KS one-sample p-value using SciPy's Kolmogorov distribution.
+    This function has the same behavior as the last half part of
+    scipy.stats.kstest(method='asymp') for one-sample KS test.
+
+    But this function directly takes D_n and n as input, which is more convenient for our use case.
+
+    The reason we do not use 'exact' method from scipy.stats.kstest is that it assumes continuous distribution,
+    while in our case, the distribution estimated by empirical estimator is discrete.
+    """
+    lambda_n = np.sqrt(n) * D_n
+    # Survival function (1 - CDF) gives the p-value directly
+    return float(kstwobign.sf(lambda_n))
+
 
 if __name__ == '__main__':
     ### test the KM calibration

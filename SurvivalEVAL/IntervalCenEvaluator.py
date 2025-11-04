@@ -7,14 +7,13 @@ import warnings
 
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.util import (check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares, 
-                                           survival_to_quantile)
+from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares                             
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
 from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, brier_multiple_points_ic
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
-from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic, coverage_ic
+from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic, coverage_ic, ksd_cal_ic
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
 
 
@@ -670,6 +669,40 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         return p_value, hist
 
+    def ksd_calibration(
+            self,
+            return_details: bool = False
+    ) -> tuple[float, float] | tuple[float, dict]:
+        """
+        Calculate the K-S-D calibration score from the predicted survival curve.
+
+        Parameters
+        ----------
+        return_details: bool, default: False
+            Whether to return detailed calibration information.
+
+        Returns
+        -------
+        ks_statistic: float
+            The K-S statistic of the calibration test.
+        d_statistic: float
+            The D statistic of the calibration test.
+        details: dict, optional
+            A dictionary containing detailed calibration information, including:
+            - ks_statistic: The K-S statistic of the calibration test.
+            - d_statistic: The D statistic of the calibration test.
+            - ks_p_value: The p-value of the K-S test.
+            - d_p_value: The p-value of the D test.
+
+        """
+        pred_probs_left = self.predict_probability_from_curve(self.left_limits)
+        pred_probs_right = self.predict_probability_from_curve(self.right_limits)
+
+        return ksd_cal_ic(
+            pred_probs_left=pred_probs_left,
+            pred_probs_right=pred_probs_right,
+            return_details=return_details
+        )
 
     def auprc(self, n_quad: int = 256) -> float:
         """
@@ -738,61 +771,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The Root Mean Squared Error (RMSE) from the predicted median survival times.
         """
         return self.mse(log_scale=log_scale) ** 0.5
-
-    def predict_interval(
-            self,
-            quantile_range: tuple[float, float] = None,
-            cov_level: float = None,
-    ) -> np.ndarray:
-        """
-        Predict the survival interval from the predicted survival curve.
-        The interval means that the event time will fall between the lower and upper bounds
-        with a certain probability (coverage level).
-
-        Parameters
-        ----------
-        quantile_range: tuple[float, float]
-            The lower and upper quantiles to define the prediction interval.
-            If provided, `cov_level` must be None.
-        cov_level: float, default: None
-            The coverage level to define the prediction interval.
-            If provided, `quantile_range` must be None.
-        Returns
-        -------
-        intervals: np.ndarray, shape = (n_samples, 2)
-            The predicted survival intervals for each sample.
-        """
-        if (quantile_range is not None) and (cov_level is not None):
-            quantile_diff = quantile_range[1] - quantile_range[0]
-            assert quantile_diff == cov_level, "The difference between upper and lower quantiles must be equal to the coverage level."
-            assert 0 < quantile_range[0] < quantile_range[1] < 1, "Quantiles must be between 0 and 1 and lower < upper."
-        elif (quantile_range is not None) and (cov_level is None):
-            lower_quantile, upper_quantile = quantile_range
-            assert 0 < lower_quantile < upper_quantile < 1, "Quantiles must be between 0 and 1 and lower < upper."
-        elif (quantile_range is None) and (cov_level is not None):
-            assert 0 < cov_level < 1, "Coverage level must be between 0 and 1."
-            lower_quantile = (1 - cov_level) / 2
-            upper_quantile = 1 - lower_quantile
-        else:
-            raise ValueError("Please provide either 'quantile_range' or 'cov_level'.")
-
-        # if pred_survs is 1D, repeat it along the time dimension so it matches the time coordinates
-        # if time_coordinates is 1D, repeat it along the sample dimension so it matches the predictions
-        # if both are 1D, raise error
-        if self.ndim_time == 1:
-            time_coordinates = np.tile(self._time_coordinates, (self._pred_survs.shape[0], 1))
-        else:
-            time_coordinates = self._time_coordinates
-
-        if self.ndim_surv == 1:
-            pred_survs = np.tile(self._pred_survs[:, np.newaxis], (1, self._time_coordinates.shape[1]))
-        else:
-            pred_survs = self._pred_survs
-
-        interval_pred = survival_to_quantile(pred_survs, time_coordinates,
-                                             quantile_levels=[lower_quantile, upper_quantile],
-                                             interpolate=self.interpolation)
-        return interval_pred
 
     def coverage(
             self,
