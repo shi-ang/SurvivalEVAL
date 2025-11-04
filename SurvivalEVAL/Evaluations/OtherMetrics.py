@@ -1,7 +1,7 @@
 """
 File: OtherMetrics.py
 
-Author: Weijie Sun
+Author: Weijie Sun, Shi-ang Qi
 
 Description:
     Various other evaluation metrics for survival analysis models. Not integrated into the main Evaluator classes.
@@ -11,11 +11,15 @@ import numpy as np
 from typing import Sequence, Tuple
 
 from SurvivalEVAL.Evaluations.util import interpolated_curve
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimatorLifelines
 from scipy.optimize import brentq
 
 # reuse interpolated_survival_curve
-def _invert_from_survival_with_interpolator(S_grid: np.ndarray, t_grid: np.ndarray,
-                                            ps: Sequence[float], method: str) -> np.ndarray:
+def _invert_from_survival_with_interpolator(
+        S_grid: np.ndarray, 
+        t_grid: np.ndarray,
+        ps: Sequence[float], method: str
+) -> np.ndarray:
     '''
     S_grid: Survival Prediction curve matrix
     t_grid: time grid
@@ -38,14 +42,14 @@ def _invert_from_survival_with_interpolator(S_grid: np.ndarray, t_grid: np.ndarr
     return out
 
 def calibration_slope_right_censor(
-    event_indicators: np.ndarray,           # bool: 
-    observed_times: np.ndarray,             # float: 
-    predictions: np.ndarray,                # (N, T): CDF 
-    time_grid: np.ndarray,                  # (T,) 
-    ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9),
-    *,
-    quantile_method: str = "Linear",        # "Linear"|"Pchip"
-    through_origin: bool = True             
+        event_indicators: np.ndarray,           # bool: 
+        observed_times: np.ndarray,             # float: 
+        predictions: np.ndarray,                # (N, T): CDF 
+        time_grid: np.ndarray,                  # (T,) 
+        ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9),
+        *,
+        quantile_method: str = "Linear",        # "Linear"|"Pchip"
+        through_origin: bool = True             
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     right uncensor (p, obs(p))：
@@ -108,15 +112,15 @@ def calibration_slope_right_censor(
 
 # --- Interval-censor calibration slope ---
 def calibration_slope_interval_censor(
-    left_bounds: np.ndarray,                 # (N,) float  L_i
-    right_bounds: np.ndarray,                # (N,) float  U_i (use np.inf for right-censor)
-    pred_cdf: np.ndarray,             # (N, T)     per-patient CDF on time_grid
-    time_grid: np.ndarray,                   # (T,)       increasing
-    ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9),
-    *,
-    quantile_method: str = "Linear",          # "Linear" | "Pchip"  (for survival interpolator)
-    through_origin: bool = True,             # fit slope through origin (default in paper)
-    clip_p: float = 1e-6
+        left_bounds: np.ndarray,                 # (N,) float  L_i
+        right_bounds: np.ndarray,                # (N,) float  U_i (use np.inf for right-censor)
+        pred_cdf: np.ndarray,             # (N, T)     per-patient CDF on time_grid
+        time_grid: np.ndarray,                   # (T,)       increasing
+        ps: Sequence[float] = (0.1, 0.3, 0.5, 0.7, 0.9),
+        *,
+        quantile_method: str = "Linear",          # "Linear" | "Pchip"  (for survival interpolator)
+        through_origin: bool = True,             # fit slope through origin (default in paper)
+        clip_p: float = 1e-6
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Compute calibration points (p, obs(p)) and slope under INTERVAL censoring:
@@ -177,9 +181,9 @@ def calibration_slope_interval_censor(
     return p_arr, o_arr, slope
 
 def cov(
-    cdf: np.ndarray,
-    t_grid: np.ndarray,
-    return_details: bool = False
+        cdf: np.ndarray,
+        t_grid: np.ndarray,
+        return_details: bool = False
 ) -> float | Tuple[float, np.ndarray]:
     """
     Compute CoV = SD[F]/E[F] from a discretized CDF
@@ -220,3 +224,102 @@ def cov(
         return mean_cov, cov
     else:
         return mean_cov
+
+def coverage_ic(
+        pred_l: np.ndarray,
+        pred_r: np.ndarray,
+        obs_l: np.ndarray,
+        obs_r: np.ndarray,
+        obs_l_train: np.ndarray,
+        obs_r_train: np.ndarray,
+        cov_level: float = 0.95
+) -> tuple[float, float, float]:
+    """
+    Compute the Interval-Censor Coverage (IC) metric.
+    The coverage is the proportion of instances where the predicted interval [t_li, t_ui]
+    contains the true event time.
+    Since the true event time is interval-censored between [L_i, U_i], we consider the event time to be contained
+    - 100% if the predicted interval fully covers the censoring interval [L_i, U_i]
+    - 0% if there is no overlap between the predicted interval and the censoring interval [L_i, U_i]
+    - partial coverage if there is a partial overlap between the predicted interval and the censoring interval [L_i, U_i]
+
+    The partial coverage is estimated using the empirical distribution of censoring intervals from the training data.
+    Like what we did for the partial weights for concordance_ic().
+    That means we estimate the empirical CDF of censoring intervals [L_j, U_j] from the training data using Turnbull estimator,
+    and use it to compute S(L_i), S(U_i), S(t_li), S(t_ui) for each test instance. 
+    The partial coverage is then calculated as:
+        partial_coverage = (S(max(L_i, t_li)) - S(min(U_i, t_ui))) / (S(L_i) - S(U_i))
+
+    Parameters
+    ----------
+    pred_l : np.ndarray, shape (n_samples,)
+        The lower bounds of the predicted intervals.
+    pred_r : np.ndarray, shape (n_samples,)
+        The upper bounds of the predicted intervals.
+    obs_l : np.ndarray, shape (n_samples,)
+        The lower bounds of the observed censoring intervals.
+    obs_r : np.ndarray, shape (n_samples,)
+        The upper bounds of the observed censoring intervals.
+    obs_l_train : np.ndarray, shape (n_train_samples,)
+        The lower bounds of the observed censoring intervals in the training data.
+    obs_r_train : np.ndarray, shape (n_train_samples,)
+        The upper bounds of the observed censoring intervals in the training data.
+    cov_level : float, default 0.95
+        Target coverage level for calibration reference.
+
+    Returns
+    -------
+    observed_cov : float
+        Average (partial) coverage across samples.
+    cov_gap : float
+        Difference between observed coverage and the target level (observed_cov - cov_level).
+    avg_length : float
+        Average length of the predicted intervals.
+    """
+    if pred_l.ndim != 1 or pred_r.ndim != 1:
+        raise ValueError("pred_l and pred_r must be 1-dimensional arrays.")
+    if obs_l.ndim != 1 or obs_r.ndim != 1:
+        raise ValueError("obs_l and obs_r must be 1-dimensional arrays.")
+    if not (pred_l.shape == pred_r.shape == obs_l.shape == obs_r.shape):
+        raise ValueError("pred_l, pred_r, obs_l, and obs_r must contain the same number of samples.")
+    if obs_l_train.ndim != 1 or obs_r_train.ndim != 1:
+        raise ValueError("obs_l_train and obs_r_train must be 1-dimensional arrays.")
+
+    if np.any(obs_l_train > obs_r_train):
+        raise ValueError("Found training intervals with left > right.")
+
+    tb = TurnbullEstimatorLifelines(obs_l_train, obs_r_train)
+
+    def S(x: np.ndarray) -> np.ndarray:
+        return np.asarray(tb.predict(x), dtype=float)
+
+    S_L = S(obs_l)
+    S_R = S(obs_r)
+
+    overlap_left = np.maximum(obs_l, pred_l)
+    overlap_right = np.minimum(obs_r, pred_r)
+
+    S_overlap_left = S(overlap_left)
+    S_overlap_right = S(overlap_right)
+
+    denom = S_L - S_R
+    numer = S_overlap_left - S_overlap_right
+
+    coverage = np.zeros_like(denom)
+    eps = 1e-12
+    valid = denom > eps
+
+    if np.any(valid):
+        ratio = numer[valid] / denom[valid]
+        coverage[valid] = np.clip(ratio, 0.0, 1.0)
+
+    # Handle degenerate censoring intervals where S(L) ~= S(U)
+    if np.any(~valid):
+        intersects = (pred_r >= obs_l) & (pred_l <= obs_r)
+        coverage[~valid] = intersects[~valid].astype(float)
+
+    observed_cov = float(np.mean(coverage))
+    cov_gap = observed_cov - float(cov_level)
+    avg_length = float(np.mean(pred_r - pred_l))
+
+    return observed_cov, cov_gap, avg_length
