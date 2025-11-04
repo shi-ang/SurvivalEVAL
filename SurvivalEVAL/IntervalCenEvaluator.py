@@ -243,7 +243,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
         
         return brier_multiple_points_ic(
-            preds=pred_probs_mat,
+            pred_mat=pred_probs_mat,
             left_limits=self.left_limits,
             right_limits=self.right_limits,
             train_left_limits=self.train_left_limits,
@@ -328,12 +328,19 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
         # Compute max_target_time from test set (and train set if available)
-        if self.train_event_times is not None:
-            max_target_time = np.max(
-                np.concatenate((self.event_times, self.train_event_times))
-            )
+        if (self.train_left_limits is not None) and (self.train_right_limits is not None):
+            # max over the lefts and rights of both test and train, ignoring infs
+            max_target_time = np.max(np.concatenate([
+                self.left_limits,
+                self.right_limits[np.isfinite(self.right_limits)],
+                self.train_left_limits,
+                self.train_right_limits[np.isfinite(self.train_right_limits)]
+            ]))
         else:
-            max_target_time = np.max(self.event_times)
+            max_target_time = np.max(np.concatenate([
+                self.left_limits,
+                self.right_limits[np.isfinite(self.right_limits)],
+            ]))
 
         # Case 1: user provided explicit target_times
         if target_times is not None:
@@ -368,16 +375,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             target_times = np.linspace(0.0, max_target_time, num_points)
             time_range = max_target_time  # because we started at 0
 
-        # Case 3: neither provided → infer from censored times in test set
+        # Case 3: neither provided → infer from the left/right limits of censored test samples, excluding infs
         else:
-            censored_times = self.event_times[self.event_indicators == 0]
-            target_times = np.unique(censored_times)
+            target_times = np.unique(np.concatenate([
+                self.left_limits,
+                self.right_limits[np.isfinite(self.right_limits)]
+            ]))
 
             if target_times.size < 2:
                 # (old behavior raised if no censor data at all)
                 raise ValueError(
-                    "Could not infer `target_times` from censored samples "
-                    "(e.g., no/too-few censored test points). "
+                    "Could not infer `target_times` from testing samples "
+                    "(e.g., no/too-few test points). "
                     "Please provide `num_points` or `target_times`."
                 )
 
@@ -406,7 +415,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 # Fall back to trapezoidal rule if not enough points for Simpson's rule
                 integral_value = trapezoid(b_scores, target_times)
             else:
-                integral_value = simpson(b_scores, target_times)
+                integral_value = simpson(y=b_scores, x=target_times)
         else:
             raise ValueError(f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'.")
 

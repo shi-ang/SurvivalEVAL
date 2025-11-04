@@ -45,8 +45,8 @@ frank_estimator = CopulaGraphic(times, events, alpha=18, type="Frank")
 
 
 #%% Test the Turnbull estimator
-os.chdir("../..")
-data = pd.read_csv("data/breast.csv")
+# os.chdir("../..")
+data = pd.read_csv("/home/shiang/Documents/GithubRepository/SurvivalEVAL/data/breast.csv")
 data.right = data.right.fillna(np.inf)
 
 # group1
@@ -69,6 +69,14 @@ plt.legend()
 plt.title("Turnbull Interval-Censored Survival")
 plt.tight_layout()
 plt.show()
+
+# using lifelines Turnbull implementation for comparison
+from lifelines import KaplanMeierFitter
+tb0_ll = KaplanMeierFitter()
+tb0_ll.fit_interval_censoring(data1["left"], data1["right"])
+tb1_ll = KaplanMeierFitter()
+tb1_ll.fit_interval_censoring(data2["left"], data2["right"])
+
 
 # compare midpoint-based KM with Turnbull
 # Midpoints:

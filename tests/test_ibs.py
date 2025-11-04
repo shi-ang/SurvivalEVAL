@@ -6,6 +6,7 @@ Test cases for IBS hinge loss implementation for interval-censored survival data
 import numpy as np
 import sys
 import os
+from scipy.integrate import simpson, trapezoid
 
 # Add the parent directory to sys.path to import SurvivalEVAL
 # Insert at the beginning to prioritize local version over installed package
@@ -13,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
-
 
 def ibs_hinge_ic(
     pred_survs: np.ndarray,                # (N, T): predicted survival probabilities
@@ -56,17 +56,16 @@ def ibs_hinge_ic(
         pred_mat=pred_survs,
         left_limits=left_limits,
         right_limits=right_limits,
-        time_coordinates=time_coordinates,
+        target_times=time_coordinates,
         train_left_limits=train_left_limits,
         train_right_limits=train_right_limits,
         method=method,
     )
 
     if integration_method == "trapezoidal":
-        ibs = np.trapz(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
+        ibs = trapezoid(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
     elif integration_method == "simpson":
-        from scipy.integrate import simps
-        ibs = simps(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
+        ibs = simpson(brier_scores, time_coordinates) / (time_coordinates[-1] - time_coordinates[0])
     else:
         raise ValueError(f"Unknown integration method: {integration_method}")
 
@@ -195,11 +194,11 @@ def test_case_2_evaluator_integration():
         )
         
         # Test IBS hinge method
-        ibs_result = evaluator.ibs_hinge(method="Tsouprou-marginal")
+        ibs_result = evaluator.integrated_brier_score(method="Tsouprou-marginal")
         print(f"IBS Hinge via evaluator: {ibs_result:.4f}")
         
         # Test with different integration method
-        ibs_simpson = evaluator.ibs_hinge(
+        ibs_simpson = evaluator.integrated_brier_score(
             method="Tsouprou-marginal", 
             integration_method="simpson"
         )
@@ -257,7 +256,7 @@ def test_case_3_edge_cases():
         )
         
         # Should automatically use uncensored method
-        ibs_point = evaluator.ibs_hinge()
+        ibs_point = evaluator.integrated_brier_score()
         print(f"IBS for point observations: {ibs_point:.4f}")
         
         print("✓ Point observations test passed")
@@ -372,8 +371,8 @@ def test_case_4_comparison_with_paper():
             train_left_limits=train_left_limits,
             train_right_limits=train_right_limits
         )
-        
-        ibs_evaluator = evaluator.ibs_hinge(method="Tsouprou-marginal")
+
+        ibs_evaluator = evaluator.integrated_brier_score(method="Tsouprou-marginal")
         print(f"IBS Hinge (via evaluator): {ibs_evaluator:.4f}")
         
         # Calculate some reference Brier scores at specific times

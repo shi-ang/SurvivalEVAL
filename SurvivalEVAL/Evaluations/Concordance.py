@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Tuple
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, TurnbullEstimator
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, TurnbullEstimatorLifelines
 
 
 def concordance(
@@ -299,11 +299,9 @@ def pairwise_w(S_Li, S_Ri, eps=1e-12):
     Compute pair weights w_{i<j} for interval-censored pairs.
 
     Parameters
-    ----
+    ----------
     S_Li, S_Ri : (n,) arrays
         Survival probabilities at left and right endpoints of intervals.
-    tb : object
-        Has a vectorized .predict(x) -> S(x) that broadcasts over x's shape.
     eps : float
         Numerical tolerance for zero denominators.
 
@@ -378,29 +376,29 @@ def pairwise_w(S_Li, S_Ri, eps=1e-12):
 
 
 def concordance_ic(
-    eta,
-    left,
-    right,
-    left_train,
-    right_train,
-    method: str = "probability",
-    tie_strategy: str = "skip",
-    eps: float = 1e-12,
+        eta: np.ndarray,
+        left: np.ndarray,
+        right: np.ndarray,
+        left_train: np.ndarray,
+        right_train: np.ndarray,
+        method: str = "probability",
+        tie_strategy: str = "skip",
+        eps: float = 1e-12,
 ) -> tuple[float, np.ndarray, np.ndarray]:
     """
     Concordance index for interval-censored outcomes using closed-form pair weights.
 
     Parameters
     ----------
-    eta : array-like of shape (n_sample,)
+    eta : np.ndarray of shape (n_sample,)
         Predicted risk scores  (higher = riskier).
-    left : array-like of shape (n_sample,)
+    left : np.ndarray of shape (n_sample,)
         Left endpoints l_i (can be -inf).
-    right : array-like of shape (n_sample,)
+    right : np.ndarray of shape (n_sample,)
         Right endpoints r_i (can be +inf to represent right censoring).
-    left_train : array-like of shape (n_train_sample,)
+    left_train : np.ndarray of shape (n_train_sample,)
         Left endpoints of training data for Turnbull estimator.
-    right_train : array-like of shape (n_train_sample,)
+    right_train : np.ndarray of shape (n_train_sample,)
         Right endpoints of training data for Turnbull estimator.
     method : {"probability", "midpoint"}, default="probability"
         Method for forming pair weights:
@@ -439,7 +437,7 @@ def concordance_ic(
         raise ValueError("Found an interval with left > right in training data.")
 
     # train Turnbull estimator on training data
-    tb = TurnbullEstimator().fit(l_train, r_train)
+    tb = TurnbullEstimatorLifelines(l_train, r_train)
 
     S_l = tb.predict(l)
     S_r = tb.predict(r)

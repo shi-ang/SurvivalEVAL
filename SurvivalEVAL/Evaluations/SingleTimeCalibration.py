@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt  # For plotting
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimator
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimatorLifelines
 
 
 def one_calibration(
@@ -218,7 +218,7 @@ def one_cal_ic(
             km_model = KaplanMeier(event_times, event_indicators)
             event_probability = 1 - km_model.predict(target_time)
         elif method == "Turnbull":
-            tb = TurnbullEstimator().fit(left_limits, right_limits)
+            tb = TurnbullEstimatorLifelines(left_limits, right_limits)
             event_probability = 1 - tb.predict(target_time)
         else:
             error = "Please enter one of 'MidPoint','Turnbull' for method."

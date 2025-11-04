@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from lifelines import WeibullAFTFitter
 from SurvivalEVAL.Evaluations.custom_types import Numeric
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimator
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimatorLifelines
 
 
 def single_brier_score(
@@ -164,7 +164,7 @@ def brier_score_ic(
             raise ValueError("Training data must be provided for Tsouprou methods.")
 
         if method == "Tsouprou-marginal":
-            marginal_estimator = TurnbullEstimator().fit(
+            marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
             )
@@ -427,7 +427,7 @@ def brier_multiple_points_ic(
         # 2A. Fit marginal or conditional model on training data
         # --------------------------------------------------------
         if method == "Tsouprou-marginal":
-            marginal_estimator = TurnbullEstimator().fit(
+            marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
             )
