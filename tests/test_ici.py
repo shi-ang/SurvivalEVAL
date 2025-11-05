@@ -22,7 +22,7 @@ cph.fit(df_train, duration_col='time', event_col='event')
 
 year = 1
 survs_cox = cph.predict_survival_function(x_test, times=[365 * year]).T.values.flatten()
-p, obs_probs, exp_probs = one_calibration(
+p, hl_statistics, obs_probs, exp_probs = one_calibration(
     preds=1-survs_cox,
     event_time=df_test['time'].values,
     event_indicator=df_test['event'].values,

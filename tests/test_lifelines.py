@@ -38,3 +38,5 @@ l1 = eval.mae(method="Margin")
 one_cal = eval.one_calibration(target_time=25)
 
 d_cal = eval.d_calibration()
+
+ksd_cal, _ = eval.ksd_calibration(return_details=False)

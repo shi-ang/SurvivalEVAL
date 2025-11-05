@@ -314,7 +314,7 @@ class SurvivalEvaluator:
             time_coordinates = self._time_coordinates
 
         if self.ndim_surv == 1:
-            pred_survs = np.tile(self._pred_survs[:, np.newaxis], (1, self._time_coordinates.shape[1]))
+            pred_survs = np.tile(self._pred_survs[np.newaxis, :], (self._time_coordinates.shape[0], 1))
         else:
             pred_survs = self._pred_survs
 

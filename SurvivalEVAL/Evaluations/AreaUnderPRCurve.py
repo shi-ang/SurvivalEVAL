@@ -118,6 +118,12 @@ def auprc_right_censor(
     scores: np.ndarray, (n_samples,)
         Per-patient AUPRC scores.
     """
+    assert check_monotonicity(pred_cdf), "predictions_cdf must be non-decreasing over time"
+    assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
+    
+    event_times = np.asarray(event_times, float)
+    event_indicators = np.asarray(event_indicators, bool)
+    
     # Split rows
     idx_event, idx_cens = np.where(event_indicators)[0], np.where(~event_indicators)[0]
 
