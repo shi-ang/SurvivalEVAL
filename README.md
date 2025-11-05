@@ -100,9 +100,9 @@ mae_score = evl.mae(method="Pseudo_obs")
 mse_score = evl.mse(method="Hinge")
 
 # The largest event time is 52. So we use 53 time points (0, 1, ..., 52) to calculate the IBS
-ibs = evl.integrated_brier_score(num_points=53, draw_figure=True)
+ibs, (fig, ax) = evl.integrated_brier_score(num_points=53, draw_figure=True)
 
-d_cal = evl.d_calibration()
+d_cal, details = evl.d_calibration(return_details=True)
 
 # The target time for the single time probability prediction is set to 25
 auc_score = evl.auc(target_time=25)
@@ -150,8 +150,12 @@ We also have root mean squared error (RMSE) for each of the different ways.
 
 
 ### Reliability
-Metrics to be implemented. Including (weighted) log-rank test, etc.
-
+Ideally, a reliable model should produce similar predictions (in this context, similar point prediction) to the true labels.
+Here we use the log-rank test, to test whether the predicted survival times are statistically different than the observed labels (subject to censoring).
+| Metric Name    | Description                                                                                                                                                                                                                                                                                                                                                                                      | Code                           | Paper Link                                                         |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|--------------------------------------------------------------------|
+| Log-rank Test  | Use log-rank test to check whether the predicted survival times are statistically different than the observed labels (subject to censoring). A model with p-value higher than 0.05 can be considered as reliable.                                                                                                                                                                              | `evl.log_rank()`    | [Mantel](https://pubmed.ncbi.nlm.nih.gov/5910392/)                     |
+|Weighted Log-rank Test| Weighted log-rank test is a generalization of the log-rank test that accounts for different weights for different time regions. This can be useful when the proportional hazard assumption is violated, or you care about specific region of the data.                                                                                                                                                                              | `evl.log_rank(weighting=["wilcoxon"/"tarone-ware"/"peto"/"fleming-harrington"])`    | [Fleming&Harrington](https://www.jstor.org/stable/2335991)                     |
 
 ## Single Time Probability Prediction
 ### Discrimination for single time probability prediction
@@ -208,7 +212,7 @@ Please also note that IBS is also similar to the [Continuous Ranked Probability 
 | Metric Name | Description                                                                           | Code                                              | Paper Link                                               |
 |-------------|---------------------------------------------------------------------------------------|---------------------------------------------------|----------------------------------------------------------|
 | Plain IBS   | Calculate IBS for up to the censoring time, for uncensored instances.                 | `evl.integrated_brier_score(IPCW_weighted=False)` | N/A                                                      |
-| CRPS        | Calculate integrated absolute error between survival function and heaviside function. | To be implemented                                 | [Avati et al.](https://arxiv.org/abs/1806.08324)         |
+| CRPS        | Calculate integrated absolute error between survival function and heaviside function. | `evl.crps()`                                     | [Avati et al.](https://arxiv.org/abs/1806.08324)         |
 | IPCW IBS    | Adding a IPCW weighting to uncensored instances after the target time point.          | `evl.integrated_brier_score(IPCW_weighted=True)`  | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
 
 
@@ -242,7 +246,7 @@ The non-parametric methods are included in the `SurvivalEVAL.NonparametricEstima
 | Kaplan Meier   | The well known Kaplan Meier (KM) estimator that directly estimate the survival function.                                                            | `SingleEvent.KaplanMeier()`      | [Kaplan&Meier](https://www.jstor.org/stable/2281868)                   |
 | Nelson Aalan   | Nelson Aalan (NA) estimate the cumulative hazard function directly, then transform to survival function.                                            | `SingleEvent.NelsonAalen()`      | [Aalan](https://www.jstor.org/stable/2958850)                          |
 | Copula Graphic | The Copula Graphic (CG) estimator estimate the survival function under the dependent censoring assumption, with known type of copula and parameter. | `SingleEvent.CopulaGraphic()`    | [Emura&Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
-| Turnbull       | The Turnbull estimater estimate the survival function for interval censoring dataset.                                                               | To be implemented                | [Turnbull](https://www.jstor.org/stable/2285518)                       |
+| Turnbull       | The Turnbull estimater estimate the survival function for interval censoring dataset.                                                               | `SingleEvent.TurnbullEstimatorLifelines()`               | [Turnbull](https://www.jstor.org/stable/2285518)                       |
 | Aalan Johansen | The Aalan Johansen (AJ) estimator the cumulative incidence function (CIF) for competing risk dataset.                                               | To be implemented                | [Aalan&Johansen](https://www.jstor.org/stable/4615704)                                                     |
 
 

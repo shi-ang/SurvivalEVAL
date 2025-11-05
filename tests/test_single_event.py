@@ -1,15 +1,19 @@
-#%% Load libraries
-from lifelines import NelsonAalenFitter
-import numpy as np
+# %% Load libraries
 import os
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from lifelines import NelsonAalenFitter
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import (KaplanMeier, NelsonAalen,
-                                                             CopulaGraphic, TurnbullEstimator)
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    CopulaGraphic,
+    KaplanMeier,
+    NelsonAalen,
+    TurnbullEstimator,
+)
 
-
-#%% Test the Nelson-Aalen estimator and compare with lifelines implementation
+# %% Test the Nelson-Aalen estimator and compare with lifelines implementation
 np.random.seed(42)
 n_samples = 1000
 event_times = np.random.exponential(scale=10, size=n_samples)
@@ -34,19 +38,23 @@ lifelines_predictions = na_fitter.predict(random_times)
 
 mse = np.mean((na_cumulative_hazard - lifelines_cumulative_hazard) ** 2)
 
-#%% Test the Copula Graphical estimator
+# %% Test the Copula Graphical estimator
 times = np.array([1, 3, 5, 4, 4, 7, 8, 10, 13, 15])
 events = np.array([1, 0, 0, 1, 1, 1, 0, 1, 0, 1])
-clayton_estimator = CopulaGraphic(event_times, event_indicators, alpha=18, type="Clayton")
+clayton_estimator = CopulaGraphic(
+    event_times, event_indicators, alpha=18, type="Clayton"
+)
 
 gumbel_estimator = CopulaGraphic(times, events, alpha=18, type="Gumbel")
 
 frank_estimator = CopulaGraphic(times, events, alpha=18, type="Frank")
 
 
-#%% Test the Turnbull estimator
-os.chdir("../..")
-data = pd.read_csv("data/breast.csv")
+# %% Test the Turnbull estimator
+# os.chdir("../..")
+data = pd.read_csv(
+    "/home/shiang/Documents/GithubRepository/SurvivalEVAL/data/breast.csv"
+)
 data.right = data.right.fillna(np.inf)
 
 # group1
@@ -59,10 +67,20 @@ tb2 = TurnbullEstimator().fit(data2.left.values, data2.right.values)
 
 # plotting
 plt.figure(figsize=(7, 5))
-plt.step(tb1.survival_times_, tb1.survival_probabilities_, where="post", linestyle="-",
-         label="Radiotherapy (intervals)")
-plt.step(tb2.survival_times_, tb2.survival_probabilities_, where="post", linestyle="-",
-         label="Radio + Chemo (intervals)")
+plt.step(
+    tb1.survival_times_,
+    tb1.survival_probabilities_,
+    where="post",
+    linestyle="-",
+    label="Radiotherapy (intervals)",
+)
+plt.step(
+    tb2.survival_times_,
+    tb2.survival_probabilities_,
+    where="post",
+    linestyle="-",
+    label="Radio + Chemo (intervals)",
+)
 plt.xlabel("Time")
 plt.ylabel("S(t)")
 plt.legend()
@@ -70,9 +88,21 @@ plt.title("Turnbull Interval-Censored Survival")
 plt.tight_layout()
 plt.show()
 
+# using lifelines Turnbull implementation for comparison
+from lifelines import KaplanMeierFitter
+
+tb0_ll = KaplanMeierFitter()
+tb0_ll.fit_interval_censoring(data1["left"], data1["right"])
+tb1_ll = KaplanMeierFitter()
+tb1_ll.fit_interval_censoring(data2["left"], data2["right"])
+
+
 # compare midpoint-based KM with Turnbull
 # Midpoints:
-p_mid = data["left"].to_numpy(float) + (data["right"].to_numpy(float) - data["left"].to_numpy(float)) / 2.0
+p_mid = (
+    data["left"].to_numpy(float)
+    + (data["right"].to_numpy(float) - data["left"].to_numpy(float)) / 2.0
+)
 finite_mid = np.isfinite(p_mid)
 pm = np.where(finite_mid, p_mid, data["left"].to_numpy(float))
 cens = finite_mid.astype(int)  # 1 == event, 0 == right-censored
@@ -85,15 +115,29 @@ times0, surv0 = km0.survival_times, km0.survival_probabilities
 
 plt.figure(figsize=(7, 5))
 # Interval-censored (solid)
-plt.step(tb1.survival_times_, tb1.survival_probabilities_, where="post", linestyle="-",
-         label="Radiotherapy (intervals)")
-plt.step(tb2.survival_times_, tb2.survival_probabilities_, where="post", linestyle="-",
-         label="Radio + Chemo (intervals)")
+plt.step(
+    tb1.survival_times_,
+    tb1.survival_probabilities_,
+    where="post",
+    linestyle="-",
+    label="Radiotherapy (intervals)",
+)
+plt.step(
+    tb2.survival_times_,
+    tb2.survival_probabilities_,
+    where="post",
+    linestyle="-",
+    label="Radio + Chemo (intervals)",
+)
 # Midpoint-based KM (dashed)
 if times1.size:
-    plt.step(times1, surv1, where="post", linestyle="--", label="Radiotherapy (midpoints)")
+    plt.step(
+        times1, surv1, where="post", linestyle="--", label="Radiotherapy (midpoints)"
+    )
 if times0.size:
-    plt.step(times0, surv0, where="post", linestyle="--", label="Radio + Chemo (midpoints)")
+    plt.step(
+        times0, surv0, where="post", linestyle="--", label="Radio + Chemo (midpoints)"
+    )
 
 plt.xlabel("Time")
 plt.ylabel("S(t)")

@@ -62,5 +62,6 @@ where = ["."]
 dev = [
     "pycox>=0.2.3",
     "scikit-survival>=0.20.2",
+    "pytest>=7.4.0",
 ]
 

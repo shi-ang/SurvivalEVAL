@@ -1,16 +1,15 @@
 import warnings
-from dataclasses import dataclass, InitVar, field
-from scipy.integrate import trapezoid
+from dataclasses import InitVar, dataclass, field
+from typing import Optional
+
 import numpy as np
-from typing import Optional, Union
+from lifelines import KaplanMeierFitter
+from scipy.integrate import trapezoid
 
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
 
 
-def km_mean(
-        times: np.ndarray,
-        survival_probabilities: np.ndarray
-) -> float:
+def km_mean(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
     """
     Calculate the mean of the Kaplan-Meier curve.
 
@@ -47,21 +46,42 @@ def km_mean(
     return area[0] / surv_prob
 
 
+def infer_survival_probabilities(
+    prediction_times, survival_times, survival_probabilities
+):
+    indices = np.searchsorted(survival_times, prediction_times, side="right") - 1
+    indices = np.clip(indices, 0, survival_times.size - 1)
+    probs = survival_probabilities[indices].astype(float, copy=True)
+
+    # Extrapolate linearly for times beyond the last observed time point
+    # using the line connecting (t_last, S(t_last)) and (t0, S(t0))
+    beyond_last = prediction_times > survival_times[-1]
+    if np.any(beyond_last):
+        t0, s0 = survival_times[0], survival_probabilities[0]
+        t_last, s_last = survival_times[-1], survival_probabilities[-1]
+        denom = t_last - t0
+        slope = 0.0 if denom == 0 else (s_last - s0) / denom
+        extrapolated = s_last + slope * (prediction_times[beyond_last] - t_last)
+        probs[beyond_last] = np.maximum(extrapolated, 0.0)
+    return probs
+
+
 @dataclass
 class KaplanMeier:
     """
     This class is borrowed from survival_evaluation package.
     """
-    event_times: InitVar[np.array]
-    event_indicators: InitVar[np.array]
+
+    event_times: InitVar[np.ndarray]
+    event_indicators: InitVar[np.ndarray]
 
     # learned / derived attributes
-    survival_times: np.array = field(init=False)
-    population_count: np.array = field(init=False)
-    events: np.array = field(init=False)
-    survival_probabilities: np.array = field(init=False)
-    cumulative_dens: np.array = field(init=False)
-    probability_dens: np.array = field(init=False)
+    survival_times: np.ndarray = field(init=False)
+    population_count: np.ndarray = field(init=False)
+    events: np.ndarray = field(init=False)
+    survival_probabilities: np.ndarray = field(init=False)
+    cumulative_dens: np.ndarray = field(init=False)
+    probability_dens: np.ndarray = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
         index = np.lexsort((event_indicators, event_times))
@@ -76,41 +96,51 @@ class KaplanMeier:
             event_ind.append(event_counter[i + 1])
         event_ind.append(event_counter[-1])
         event_ind.append(len(event_indicators))
-        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[::2]
+        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[
+            ::2
+        ]
 
         event_ratios = 1 - self.events / self.population_count
         self.survival_probabilities = np.cumprod(event_ratios)
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(self, prediction_times: Union[int, float, np.ndarray]) -> np.array:
+    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: np.Union[int, float, np.ndarray]
+        prediction_times: int | float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------
-        np.array
-            The predicted survival probabilities at the given times.
+        probabilities: float | np.ndarray
+            Predicted survival probabilities at the given time(s).
         """
-        probability_index = np.digitize(prediction_times, self.survival_times)
-        probability_index = np.where(
-            probability_index == self.survival_times.size + 1,
-            probability_index - 1,
-            probability_index,
+        prediction_times = np.asarray(prediction_times, dtype=float)
+        original_shape = prediction_times.shape
+        prediction_times = prediction_times.reshape(-1)
+
+        # ensure the prediction times are all non-negative
+        if np.any(prediction_times < 0):
+            raise ValueError("Prediction times must be non-negative.")
+
+        probs = infer_survival_probabilities(
+            prediction_times, self.survival_times, self.survival_probabilities
         )
-        probabilities = np.append(1, self.survival_probabilities)[probability_index]
+
+        probabilities = probs.reshape(original_shape)
+        if probabilities.ndim == 0:
+            return float(probabilities)
 
         return probabilities
 
 
 @dataclass
 class KaplanMeierArea(KaplanMeier):
-    area_times: np.array = field(init=False)
-    area_probabilities: np.array = field(init=False)
-    area: np.array = field(init=False)
+    area_times: np.ndarray = field(init=False)
+    area_probabilities: np.ndarray = field(init=False)
+    area: np.ndarray = field(init=False)
     km_linear_zero: float = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
@@ -122,8 +152,8 @@ class KaplanMeierArea(KaplanMeier):
             area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
 
-        # we are facing the choice of using the trapzoidal rule or directly using the area under the step function
-        # we choose to use trapz because it is more accurate
+        # we are facing the choice of using the trapezoidal rule or directly using the area under the step function
+        # we choose to use trapezoid because it is more accurate
         area_diff = np.diff(area_times, 1)
         average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
         area = np.flip(np.flip(area_diff * average_probabilities).cumsum())
@@ -137,7 +167,7 @@ class KaplanMeierArea(KaplanMeier):
     def mean(self):
         return self.best_guess(np.array([0])).item()
 
-    def best_guess(self, censor_times: np.array):
+    def best_guess(self, censor_times: np.ndarray):
         # calculate the slope using the [0, 1] - [max_time, S(t|x)]
         slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
         # if after the last time point, then the best guess is the linear function
@@ -160,10 +190,15 @@ class KaplanMeierArea(KaplanMeier):
         # for those beyond the end point, censor_area = 0
         beyond_idx = censor_indexes > len(self.area_times) - 2
         censor_area = np.zeros_like(censor_times).astype(float)
-        # trapzoidal rule:  (x1 - x0) * (f(x0) + f(x1)) * 0.5
-        censor_area[~beyond_idx] = ((self.area_times[censor_indexes[~beyond_idx]] - censor_times[~beyond_idx]) *
-                                    (self.area_probabilities[censor_indexes[~beyond_idx]] + surv_prob[~beyond_idx])
-                                    * 0.5)
+        # trapezoidal rule:  (x1 - x0) * (f(x0) + f(x1)) * 0.5
+        censor_area[~beyond_idx] = (
+            (self.area_times[censor_indexes[~beyond_idx]] - censor_times[~beyond_idx])
+            * (
+                self.area_probabilities[censor_indexes[~beyond_idx]]
+                + surv_prob[~beyond_idx]
+            )
+            * 0.5
+        )
         censor_area[~beyond_idx] += self.area[censor_indexes[~beyond_idx]]
         return censor_times + censor_area / surv_prob
 
@@ -174,7 +209,9 @@ class KaplanMeierArea(KaplanMeier):
         before_last_time_idx = times <= max(self.survival_times)
         after_last_time_idx = times > max(self.survival_times)
         predict_prob[before_last_time_idx] = self.predict(times[before_last_time_idx])
-        predict_prob[after_last_time_idx] = np.clip(1 + times[after_last_time_idx] * slope, a_min=0, a_max=None)
+        predict_prob[after_last_time_idx] = np.clip(
+            1 + times[after_last_time_idx] * slope, a_min=0, a_max=None
+        )
         # if time <= max(self.survival_times):
         #     predict_prob = self.predict(time)
         # else:
@@ -189,7 +226,9 @@ class KaplanMeierArea(KaplanMeier):
         """
         # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
         # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
-        warnings.warn("This method is deprecated. Use best_guess instead.", DeprecationWarning)
+        warnings.warn(
+            "This method is deprecated. Use best_guess instead.", DeprecationWarning
+        )
         if restricted:
             last_time = max(self.survival_times)
         else:
@@ -198,15 +237,21 @@ class KaplanMeierArea(KaplanMeier):
         if self.predict(time) == 0:
             best_guess = time
         else:
-            best_guess = time + trapezoid(self._km_linear_predict(time_range), time_range) / self.predict(time)
+            best_guess = time + trapezoid(
+                self._km_linear_predict(time_range), time_range
+            ) / self.predict(time)
 
         return best_guess
 
-    def best_guess_revise(self, censor_times: np.array, restricted: bool = False):
-        warnings.warn("This method is deprecated. Use best_guess instead.", DeprecationWarning)
+    def best_guess_revise(self, censor_times: np.ndarray, restricted: bool = False):
+        warnings.warn(
+            "This method is deprecated. Use best_guess instead.", DeprecationWarning
+        )
         bg_times = np.zeros_like(censor_times)
         for i in range(len(censor_times)):
-            bg_times[i] = self._compute_best_guess(censor_times[i], restricted=restricted)
+            bg_times[i] = self._compute_best_guess(
+                censor_times[i], restricted=restricted
+            )
         return bg_times
 
 
@@ -215,14 +260,15 @@ class NelsonAalen:
     """
     Implementation of the Nelson-Aalen estimator for cumulative hazard function.
     """
-    event_times: InitVar[np.array]
-    event_indicators: InitVar[np.array]
-    survival_times: np.array = field(init=False)
-    population_count: np.array = field(init=False)
-    events: np.array = field(init=False)
-    hazard: np.array = field(init=False)
-    cumulative_hazard: np.array = field(init=False)
-    survival_probabilities: np.array = field(init=False)
+
+    event_times: InitVar[np.ndarray]
+    event_indicators: InitVar[np.ndarray]
+    survival_times: np.ndarray = field(init=False)
+    population_count: np.ndarray = field(init=False)
+    events: np.ndarray = field(init=False)
+    hazard: np.ndarray = field(init=False)
+    cumulative_hazard: np.ndarray = field(init=False)
+    survival_probabilities: np.ndarray = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
         index = np.lexsort((event_indicators, event_times))
@@ -237,43 +283,46 @@ class NelsonAalen:
             event_ind.append(event_counter[i + 1])
         event_ind.append(event_counter[-1])
         event_ind.append(len(event_indicators))
-        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[::2]
+        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[
+            ::2
+        ]
 
         self.hazard = self.events / self.population_count
         self.cumulative_hazard = np.cumsum(self.hazard)
         self.survival_probabilities = np.exp(-self.cumulative_hazard)
 
-    def predict(self, prediction_times: Union[int, float, np.ndarray]) -> np.array:
+    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
         Predict the cumulative hazard based on the survival times.
         Parameters
         ----------
-        prediction_times: Union[int, float, np.ndarray]
+        prediction_times: int | float | np.ndarray
             Time(s) at which to predict the cumulative hazard.
         Returns
         -------
-        np.array
+        cumulative_hazard: float | np.ndarray
             The predicted cumulative hazard at the given times.
         """
-        hazard_index = np.digitize(prediction_times, self.survival_times)
-        hazard_index = np.where(
-            hazard_index == self.survival_times.size + 1,
-            hazard_index - 1,
-            hazard_index,
+        indices = (
+            np.searchsorted(self.survival_times, prediction_times, side="right") - 1
         )
-        hazards = np.append(0, self.cumulative_hazard)[hazard_index]
-        return hazards
+        indices = np.clip(indices, 0, self.survival_times.size - 1)
+        cumulative_hazard = self.cumulative_hazard[indices].astype(float, copy=True)
 
-    def predict_survival(self, prediction_times: Union[int, float, np.ndarray]) -> np.array:
+        return cumulative_hazard
+
+    def predict_survival(
+        self, prediction_times: int | float | np.ndarray
+    ) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: Union[int, float, np.ndarray]
+        prediction_times: int | float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------
-        np.array
+        survival_probabilities: float | np.ndarray
             The predicted survival probabilities at the given times.
         """
         cum_hazards = self.predict(prediction_times)
@@ -301,15 +350,16 @@ class CopulaGraphic:
     This implementation correctly handling ties.
     based on the derivation in paper: https://arxiv.org/abs/2502.19460
     """
-    event_times: InitVar[np.array]
-    event_indicators: InitVar[np.array]
+
+    event_times: InitVar[np.ndarray]
+    event_indicators: InitVar[np.ndarray]
     alpha: InitVar[float]
     type: InitVar[str] = "Clayton"
     n_samples: int = field(init=False)
-    survival_times: np.array = field(init=False)
-    population_count: np.array = field(init=False)
-    events: np.array = field(init=False)
-    survival_probabilities: np.array = field(init=False)
+    survival_times: np.ndarray = field(init=False)
+    population_count: np.ndarray = field(init=False)
+    events: np.ndarray = field(init=False)
+    survival_probabilities: np.ndarray = field(init=False)
 
     def __post_init__(self, event_times, event_indicators, alpha, type):
         alpha = max(alpha, 1e-9)
@@ -326,7 +376,9 @@ class CopulaGraphic:
             event_ind.append(event_counter[i + 1])
         event_ind.append(event_counter[-1])
         event_ind.append(len(event_indicators))
-        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[::2]
+        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[
+            ::2
+        ]
 
         event_diff = self.population_count - self.events
 
@@ -335,43 +387,65 @@ class CopulaGraphic:
             # such warnings are expected when the last time point has an event so the event_diff is 0.
             # but we will set the last point to 0 anyway.
             if type == "Clayton":
-                diff_ = (event_diff / self.n_samples) ** (- alpha) - (self.population_count / self.n_samples) ** (- alpha)
+                diff_ = (event_diff / self.n_samples) ** (-alpha) - (
+                    self.population_count / self.n_samples
+                ) ** (-alpha)
                 diff_[-1] = 0
-                self.survival_probabilities = (1.0 + np.cumsum(diff_)) ** ( - 1.0 / alpha)
+                self.survival_probabilities = (1.0 + np.cumsum(diff_)) ** (-1.0 / alpha)
             elif type == "Gumbel":
-                diff_ = ((- np.log(event_diff / self.n_samples)) ** (alpha + 1) -
-                         (-np.log(self.population_count / self.n_samples)) ** (alpha + 1))
+                diff_ = (-np.log(event_diff / self.n_samples)) ** (alpha + 1) - (
+                    -np.log(self.population_count / self.n_samples)
+                ) ** (alpha + 1)
                 diff_[-1] = 0
-                self.survival_probabilities = np.exp(  -np.cumsum(diff_) ** (1 / (1 + alpha))  )
+                self.survival_probabilities = np.exp(
+                    -np.cumsum(diff_) ** (1 / (1 + alpha))
+                )
             elif type == "Frank":
-                log_diff_ = np.log(  (np.exp(-alpha * event_diff / self.n_samples) - 1) / (np.exp(-alpha * self.population_count / self.n_samples) - 1)  )
+                log_diff_ = np.log(
+                    (np.exp(-alpha * event_diff / self.n_samples) - 1)
+                    / (np.exp(-alpha * self.population_count / self.n_samples) - 1)
+                )
                 log_diff_[-1] = 0
-                self.survival_probabilities = -1 / alpha * np.log(  1 + (np.exp(-alpha) - 1) * np.exp(np.cumsum(log_diff_))  )
+                self.survival_probabilities = (
+                    -1
+                    / alpha
+                    * np.log(1 + (np.exp(-alpha) - 1) * np.exp(np.cumsum(log_diff_)))
+                )
             else:
-                raise ValueError(f"Unknown copula type: {type}. Supported types are 'Clayton', 'Gumbel', and 'Frank'.")
+                raise ValueError(
+                    f"Unknown copula type: {type}. Supported types are 'Clayton', 'Gumbel', and 'Frank'."
+                )
 
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(self, prediction_times: Union[int, float, np.ndarray]) -> np.array:
+    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: Union[int, float, np.ndarray]
+        prediction_times: int | float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------
-        np.array
-            The predicted survival probabilities at the given times.
+        probabilities: float | np.ndarray
+            Predicted survival probabilities at the given time(s).
         """
-        probability_index = np.digitize(prediction_times, self.survival_times)
-        probability_index = np.where(
-            probability_index == self.survival_times.size + 1,
-            probability_index - 1,
-            probability_index,
+        prediction_times = np.asarray(prediction_times, dtype=float)
+        original_shape = prediction_times.shape
+        prediction_times = prediction_times.reshape(-1)
+
+        # ensure the prediction times are all non-negative
+        if np.any(prediction_times < 0):
+            raise ValueError("Prediction times must be non-negative.")
+
+        probs = infer_survival_probabilities(
+            prediction_times, self.survival_times, self.survival_probabilities
         )
-        probabilities = np.append(1, self.survival_probabilities)[probability_index]
+
+        probabilities = probs.reshape(original_shape)
+        if probabilities.ndim == 0:
+            return float(probabilities)
 
         return probabilities
 
@@ -391,9 +465,7 @@ class CopulaGraphic:
         return self.survival_times[median_index[0]]
 
 
-def initialise_p(
-        tau: np.ndarray
-) -> np.ndarray:
+def initialise_p(tau: np.ndarray) -> np.ndarray:
     """
     Initialize the interval masses p uniformly for every interval (tau[j], tau[j+1]].
     """
@@ -403,11 +475,7 @@ def initialise_p(
     return np.full(m - 1, 1.0 / (m - 1), dtype=float)
 
 
-def build_alphas(
-        left: np.ndarray,
-        right: np.ndarray,
-        tau: np.ndarray
-) -> np.ndarray:
+def build_alphas(left: np.ndarray, right: np.ndarray, tau: np.ndarray) -> np.ndarray:
     """
     For i-th sample, and j-th unique time (tau):
     alpha[i, j] = 1 if (tau[j], tau[j+1]] lies within [left_i, right_i].
@@ -417,7 +485,7 @@ def build_alphas(
     right = right[:, None]  # shape (n, 1)
 
     tau_lo = tau[:-1][None, :]  # shape (1, m-1)
-    tau_hi = tau[1:][None, :]   # shape (1, m-1)
+    tau_hi = tau[1:][None, :]  # shape (1, m-1)
 
     A = ((tau_lo >= left) & (tau_hi <= right)).astype(float)  # (n, m-1)
 
@@ -434,15 +502,22 @@ class TurnbullEstimator:
 
     https://www.ms.uky.edu/~mai/splus/icensem.pdf
     """
+
     eps: float = 1e-8
     iter_max: int = 1000
     verbose: bool = False
 
     # learned / derived attributes
     tau_: Optional[np.ndarray] = field(init=False, default=None)
-    probability_dens_: Optional[np.ndarray] = field(init=False, default=None)        # interval masses, length m-1
-    survival_times_: Optional[np.ndarray] = field(init=False, default=None)     # plotting x (tau possibly truncated)
-    survival_probabilities_: Optional[np.ndarray] = field(init=False, default=None)     # step survival, length len(time_)
+    probability_dens_: Optional[np.ndarray] = field(
+        init=False, default=None
+    )  # interval masses, length m-1
+    survival_times_: Optional[np.ndarray] = field(
+        init=False, default=None
+    )  # plotting x (tau possibly truncated)
+    survival_probabilities_: Optional[np.ndarray] = field(
+        init=False, default=None
+    )  # step survival, length len(time_)
     n_iter_: int = field(init=False, default=0)
     max_diff_: float = field(init=False, default=np.nan)
 
@@ -451,7 +526,7 @@ class TurnbullEstimator:
         left: np.ndarray,
         right: np.ndarray,
         tau: Optional[np.ndarray] = None,
-        p_init: Optional[np.ndarray] = None
+        p_init: Optional[np.ndarray] = None,
     ) -> "TurnbullEstimator":
         """
         Fit the Turnbull estimator to interval-censored data.
@@ -469,7 +544,7 @@ class TurnbullEstimator:
             If None, it is initialized uniformly across intervals.
         """
         if tau is None:
-            tau_vals = np.concatenate([left, right[np.isfinite(right)]])
+            tau_vals = np.concatenate([left, right])
             tau = np.unique(np.sort(tau_vals))
         else:
             tau = np.asarray(tau, dtype=float).copy()
@@ -519,15 +594,19 @@ class TurnbullEstimator:
 
         # Compute survival step function: surv = [1] + 1 - cumsum(p)
         surv_full = np.concatenate([[1.0], 1.0 - np.cumsum(p)])
-        # Possibly truncate at the max finite right time
-        if np.any(~np.isfinite(right)):
-            t_max_finite = np.max(right[np.isfinite(right)])
-            mask = tau < t_max_finite
-            time_out = tau[mask]
-            surv_out = surv_full[mask]
+        # Possibly truncate at the max finite time
+        finite_mask = np.isfinite(tau)
+        if finite_mask.sum() < len(tau):
+            time_out = tau[finite_mask]
+            surv_out = surv_full[finite_mask]
         else:
             time_out = tau
             surv_out = surv_full
+
+        # Add a point at time 0 if not present
+        if time_out[0] > 0:
+            time_out = np.insert(time_out, 0, 0.0)
+            surv_out = np.insert(surv_out, 0, 1.0)
 
         self.tau_ = tau
         self.probability_dens_ = p
@@ -543,27 +622,101 @@ class TurnbullEstimator:
 
         return self
 
-    def predict(self, prediction_times: Union[int, float, np.ndarray]) -> np.ndarray:
+    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
         Predict survival probabilities at given times using the fitted Turnbull estimator.
         Parameters
         ----------
-        prediction_times: Union[int, float, np.ndarray]
+        prediction_times: int | float | np.ndarray
             Time(s) at which to predict survival probabilities.
         Returns
         -------
-        np.ndarray
+        probabilities: float | np.ndarray
             Predicted survival probabilities at the given times.
         """
         if self.survival_times_ is None or self.survival_probabilities_ is None:
             raise RuntimeError("The estimator must be fitted before prediction.")
 
-        probability_index = np.digitize(prediction_times, self.survival_times_)
-        probability_index = np.where(
-            probability_index == self.survival_times_.size + 1,
-            probability_index - 1,
-            probability_index,
+        prediction_times = np.asarray(prediction_times, dtype=float)
+        original_shape = prediction_times.shape
+        prediction_times = prediction_times.reshape(-1)
+
+        # ensure the prediction times are all non-negative
+        if np.any(prediction_times < 0):
+            raise ValueError("Prediction times must be non-negative.")
+
+        probs = infer_survival_probabilities(
+            prediction_times, self.survival_times_, self.survival_probabilities_
         )
-        probabilities = np.append(1, self.survival_probabilities_)[probability_index]
+
+        probabilities = probs.reshape(original_shape)
+        if probabilities.ndim == 0:
+            return float(probabilities)
+
+        return probabilities
+
+
+@dataclass
+class TurnbullEstimatorLifelines:
+    left: InitVar[np.ndarray]
+    right: InitVar[np.ndarray]
+    alpha: InitVar[float] = 0.05
+    tol: InitVar[float] = 1e-5
+    label: InitVar[str] = "Turnbull"
+
+    # learned / derived attributes
+    probability_dens: Optional[np.ndarray] = field(init=False, default=None)
+    cumulative_dens: Optional[np.ndarray] = field(init=False, default=None)
+    survival_times: Optional[np.ndarray] = field(init=False, default=None)
+    survival_probabilities: Optional[np.ndarray] = field(init=False, default=None)
+
+    def __post_init__(self, left, right, alpha, tol, label):
+        kmf = KaplanMeierFitter(alpha=alpha)
+        kmf.fit_interval_censoring(left, right, label=label, tol=tol)
+
+        self.survival_times = kmf.survival_function_.index.values
+        # We use the '_upper' column, as it has the same behavior as the Turnbull estimator in icensem package in R.
+        self.survival_probabilities = kmf.survival_function_[f"{label}_upper"].values
+
+        # If the last survival times is inf, we need to remove it
+        if np.isinf(self.survival_times[-1]):
+            self.survival_times = self.survival_times[:-1]
+            self.survival_probabilities = self.survival_probabilities[:-1]
+
+        # If the first survival time is not 0, we need to add it
+        if self.survival_times[0] != 0:
+            self.survival_times = np.insert(self.survival_times, 0, 0)
+            self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1)
+
+        self.cumulative_dens = 1 - self.survival_probabilities
+        self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
+
+    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
+        """
+        Predict the survival probabilities at the given prediction times.
+        Parameters
+        ----------
+        prediction_times: int | float | np.ndarray
+            Time(s) at which to predict the survival probabilities.
+        Returns
+        -------
+        probabilities: float | np.ndarray
+            Predicted survival probabilities at the given time(s).
+        """
+        prediction_times = np.asarray(prediction_times, dtype=float)
+        original_shape = prediction_times.shape
+        prediction_times = prediction_times.reshape(-1)
+
+        # ensure the prediction times are all non-negative
+        if np.any(prediction_times < 0):
+            raise ValueError("Prediction times must be non-negative.")
+
+        probs = infer_survival_probabilities(
+            prediction_times, self.survival_times, self.survival_probabilities
+        )
+
+        probabilities = probs.reshape(original_shape)
+        if probabilities.ndim == 0:
+            return float(probabilities)
 
         return probabilities
