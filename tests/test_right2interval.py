@@ -1,12 +1,12 @@
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 from IntervalCensorDGP import right_censor_to_interval
-from SurvivalEVAL.Evaluations.util import check_monotonicity
+from matplotlib import pyplot as plt
 
 from SurvivalEVAL import IntervalCenEvaluator
+from SurvivalEVAL.Evaluations.util import check_monotonicity
 
-print ('Test convert_right_censor_to_interval_censor')
+print("Test convert_right_censor_to_interval_censor")
 
 np.random.seed(42)
 # get some synthetic data
@@ -34,29 +34,28 @@ left, right = right_censor_to_interval(
     observed_times=observed_times,
 )
 
-df = pd.DataFrame({
-    "left": left,
-    "right": right,
-    "e": event_indicators,
-    "t": observed_times
-})
+df = pd.DataFrame(
+    {"left": left, "right": right, "e": event_indicators, "t": observed_times}
+)
 
-print (df.head())
+print(df.head())
 
 
-evaluator = IntervalCenEvaluator(pred_survs = survival_curves, 
-                                 time_coordinates = time_grid, 
-                                 left_limits = left,
-                                 right_limits = right)
+evaluator = IntervalCenEvaluator(
+    pred_survs=survival_curves,
+    time_coordinates=time_grid,
+    left_limits=left,
+    right_limits=right,
+)
 
 print("Successfully initialized the evaluator.")
 
-print ('Test  Survival AUPRC')
+print("Test  Survival AUPRC")
 
 Survival_AUPRC = evaluator.auprc(n_quad=256)
 print("Mean Survival-AUPRC (interval) from evaluator:", np.mean(Survival_AUPRC))
 
-print ('Test calibration_slope_interval_censor')
+print("Test calibration_slope_interval_censor")
 
 # p_value, details = evaluator.d_calibration(return_details=True)
 # print ("interval_censor d_calibration p-value:", p_value)
@@ -69,12 +68,15 @@ print ('Test calibration_slope_interval_censor')
 # plt.show()
 
 i_r = evaluator.inclusion_rate()
-print ("Inclusion Rate in interval censoring:", i_r)
+print("Inclusion Rate in interval censoring:", i_r)
 
 mae = evaluator.mae()
-print ("Mean Absolute Error in interval censoring:", mae)
+print("Mean Absolute Error in interval censoring:", mae)
 
 coverage, cov_gap, avg_width = evaluator.coverage(cov_level=0.8, method="linear")
-print ("Coverage at 80% level in interval censoring:", coverage)
-print ("Coverage gap at 80% level in interval censoring:", cov_gap)
-print ("Average width of prediction intervals at 80% level in interval censoring:", avg_width)
+print("Coverage at 80% level in interval censoring:", coverage)
+print("Coverage gap at 80% level in interval censoring:", cov_gap)
+print(
+    "Average width of prediction intervals at 80% level in interval censoring:",
+    avg_width,
+)

@@ -1,17 +1,21 @@
-import numpy as np
 from typing import Optional, Tuple
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, TurnbullEstimatorLifelines
+import numpy as np
+
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeierArea,
+    TurnbullEstimatorLifelines,
+)
 
 
 def concordance(
-        predicted_times: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray] = None,
-        train_event_indicators: Optional[np.ndarray] = None,
-        method: str = "Harrell",
-        ties: str = "Risk"
+    predicted_times: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: Optional[np.ndarray] = None,
+    train_event_indicators: Optional[np.ndarray] = None,
+    method: str = "Harrell",
+    ties: str = "Risk",
 ) -> tuple[float, float, float]:
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
@@ -62,8 +66,9 @@ def concordance(
 
     event_indicators = event_indicators.astype(bool)
 
-    assert len(predicted_times) == len(event_times) == len(event_indicators), \
-        "The lengths of the predicted times and labels must be the same."
+    assert (
+        len(predicted_times) == len(event_times) == len(event_indicators)
+    ), "The lengths of the predicted times and labels must be the same."
 
     if method == "Harrell":
         risks = -1 * predicted_times
@@ -77,7 +82,10 @@ def concordance(
         train_event_indicators = train_event_indicators.astype(bool)
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
-        km_linear_zero = -1 / ((1 - min(km_model.survival_probabilities))/(0 - max(km_model.survival_times)))
+        km_linear_zero = -1 / (
+            (1 - min(km_model.survival_probabilities))
+            / (0 - max(km_model.survival_times))
+        )
         if np.isinf(km_linear_zero):
             km_linear_zero = max(km_model.survival_times)
         predicted_times = np.clip(predicted_times, a_max=km_linear_zero, a_min=None)
@@ -88,7 +96,9 @@ def concordance(
         partial_weights[~event_indicators] = 1 - km_model.predict(censor_times)
 
         best_guesses = km_model.best_guess(censor_times)
-        best_guesses[censor_times > km_linear_zero] = censor_times[censor_times > km_linear_zero]
+        best_guesses[censor_times > km_linear_zero] = censor_times[
+            censor_times > km_linear_zero
+        ]
 
         bg_event_times = np.copy(event_times)
         bg_event_times[~event_indicators] = best_guesses
@@ -98,8 +108,15 @@ def concordance(
     # time_ties means true times are the same while predicted times are different.
     # c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
     #     event_indicators, event_times, estimate=risk)
-    c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = _estimate_concordance_index(
-        event_indicators, event_times, estimate=risks, bg_event_time=bg_event_times, partial_weights=partial_weights)
+    c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = (
+        _estimate_concordance_index(
+            event_indicators,
+            event_times,
+            estimate=risks,
+            bg_event_time=bg_event_times,
+            partial_weights=partial_weights,
+        )
+    )
     if ties == "None":
         total_pairs = concordant_pairs + discordant_pairs
         c_index = concordant_pairs / total_pairs
@@ -124,12 +141,12 @@ def concordance(
 
 
 def _estimate_concordance_index(
-        event_indicator: np.ndarray,
-        event_time: np.ndarray,
-        estimate: np.ndarray,
-        bg_event_time: np.ndarray = None,
-        partial_weights: np.ndarray = None,
-        tied_tol: float = 1e-8
+    event_indicator: np.ndarray,
+    event_time: np.ndarray,
+    estimate: np.ndarray,
+    bg_event_time: np.ndarray = None,
+    partial_weights: np.ndarray = None,
+    tied_tol: float = 1e-8,
 ) -> tuple[float, float, float, float, float]:
     """
     Estimate the concordance index.
@@ -176,13 +193,17 @@ def _estimate_concordance_index(
 
     if partial_weights is not None:
         event_indicator = np.ones_like(event_indicator)
-        comparable_2, tied_time, weight = _get_comparable(event_indicator, bg_event_time, order, partial_weights)
+        comparable_2, tied_time, weight = _get_comparable(
+            event_indicator, bg_event_time, order, partial_weights
+        )
         for ind, mask in comparable.items():
             weight[ind][mask] = 1
         comparable = comparable_2
 
     if len(comparable) == 0:
-        raise ValueError("Data has no comparable pairs, cannot estimate concordance index.")
+        raise ValueError(
+            "Data has no comparable pairs, cannot estimate concordance index."
+        )
 
     concordant = 0
     discordant = 0
@@ -198,7 +219,9 @@ def _estimate_concordance_index(
 
         est = estimate[order[mask]]
 
-        assert event_i, 'got censored sample at index %d, but expected uncensored' % order[ind]
+        assert event_i, (
+            "got censored sample at index %d, but expected uncensored" % order[ind]
+        )
 
         ties = np.absolute(est - est_i) <= tied_tol
         # n_ties = ties.sum()
@@ -224,10 +247,10 @@ def _estimate_concordance_index(
 
 
 def _get_comparable(
-        event_indicator: np.ndarray,
-        event_time: np.ndarray,
-        order: np.ndarray,
-        partial_weights: np.ndarray = None
+    event_indicator: np.ndarray,
+    event_time: np.ndarray,
+    order: np.ndarray,
+    partial_weights: np.ndarray = None,
 ) -> tuple[dict, int, dict]:
     """
     Given the labels of the survival outcomes, get the comparable pairs.
@@ -311,35 +334,35 @@ def pairwise_w(S_Li, S_Ri, eps=1e-12):
         Pairwise weights w_{i<j}.
     """
     # column/row views for broadcasting
-    S_Li = S_Li[:, None]          # (n,1)
-    S_Ri = S_Ri[:, None]          # (n,1)
+    S_Li = S_Li[:, None]  # (n,1)
+    S_Ri = S_Ri[:, None]  # (n,1)
 
-    S_Lj = S_Li.T            # (1,n)
-    S_Rj = S_Ri.T            # (1,n)
+    S_Lj = S_Li.T  # (1,n)
+    S_Rj = S_Ri.T  # (1,n)
 
     # Monotonicity shortcuts:
     # S(max(Lj, Ri)) = min(S(Lj), S(Ri)),  S(l_max) = min(S(Lj), S(Li)),  S(r_min) = max(S(Rj), S(Ri))
-    S_maxLj_ri = np.minimum(S_Lj, S_Ri)   # (n,n)
-    S_lmax     = np.minimum(S_Lj, S_Li)   # (n,n)
-    S_rmin     = np.maximum(S_Rj, S_Ri)   # (n,n)
+    S_maxLj_ri = np.minimum(S_Lj, S_Ri)  # (n,n)
+    S_lmax = np.minimum(S_Lj, S_Li)  # (n,n)
+    S_rmin = np.maximum(S_Rj, S_Ri)  # (n,n)
 
     pos = lambda x: np.clip(x, 0.0, None)
 
     # Base denominator and J terms
-    denom = (S_Li - S_Ri) * (S_Lj - S_Rj)                      # (n,n)
+    denom = (S_Li - S_Ri) * (S_Lj - S_Rj)  # (n,n)
     J1 = (S_Li - 0.5 * S_lmax - 0.5 * S_rmin) * pos(S_lmax - S_rmin)
     J2 = (S_Li - S_Ri) * pos(S_maxLj_ri - S_Rj)
-    J  = J1 + J2
+    J = J1 + J2
 
     # Masks for the three edge cases:
     # A: (S_Li - S_Ri) == 0  (row-wise condition broadcast over columns)
     # B: (S_Lj - S_Rj) == 0  (column-wise condition broadcast over rows)
-    A = np.isclose(S_Li - S_Ri, 0.0, atol=eps)   # (n,1)
-    B = np.isclose(S_Lj - S_Rj, 0.0, atol=eps)   # (1,n)
+    A = np.isclose(S_Li - S_Ri, 0.0, atol=eps)  # (n,1)
+    B = np.isclose(S_Lj - S_Rj, 0.0, atol=eps)  # (1,n)
 
-    only_i  = A & (~B)        # denominator zero due to i
-    only_j  = (~A) & B        # denominator zero due to j
-    both    = A & B           # both zero
+    only_i = A & (~B)  # denominator zero due to i
+    only_j = (~A) & B  # denominator zero due to j
+    both = A & B  # both zero
     neither = (~A) & (~B)
 
     w = np.zeros_like(denom, dtype=float)
@@ -352,15 +375,15 @@ def pairwise_w(S_Li, S_Ri, eps=1e-12):
     # Case 1: (S_Li - S_Ri) == 0, (S_Lj - S_Rj) != 0
     # w = ((S(max(l_j,l_i)) - S(r_j))_+) / (S(l_j) - S(r_j))
     if np.any(only_i):
-        num1 = pos(S_lmax - S_Rj)                   # (n,n)
-        den1 = (S_Lj - S_Rj)                        # (n,n)
+        num1 = pos(S_lmax - S_Rj)  # (n,n)
+        den1 = S_Lj - S_Rj  # (n,n)
         w[only_i] = (num1 / np.clip(den1, eps, None))[only_i]
 
     # Case 2: (S_Lj - S_Rj) == 0, (S_Li - S_Ri) != 0
     # w = ((S(l_i) - S(min(r_i,r_j)))_+) / (S(l_i) - S(r_i))
     if np.any(only_j):
-        num2 = pos(S_Li - S_rmin)                   # (n,n)
-        den2 = (S_Li - S_Ri)                        # (n,1) broadcast
+        num2 = pos(S_Li - S_rmin)  # (n,n)
+        den2 = S_Li - S_Ri  # (n,1) broadcast
         w[only_j] = (num2 / np.clip(den2, eps, None))[only_j]
 
     # Case 3: both zero -> compare S_Li vs S_Lj
@@ -376,14 +399,14 @@ def pairwise_w(S_Li, S_Ri, eps=1e-12):
 
 
 def concordance_ic(
-        eta: np.ndarray,
-        left: np.ndarray,
-        right: np.ndarray,
-        left_train: np.ndarray,
-        right_train: np.ndarray,
-        method: str = "probability",
-        ties: str = "skip",
-        eps: float = 1e-12,
+    eta: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    left_train: np.ndarray,
+    right_train: np.ndarray,
+    method: str = "probability",
+    ties: str = "skip",
+    eps: float = 1e-12,
 ) -> tuple[float, np.ndarray, np.ndarray]:
     """
     Concordance index for interval-censored outcomes using closed-form pair weights.
@@ -473,7 +496,7 @@ def impute_times_midpoint(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     according to (left, right] intervals, construct (t, delta) via "endpoint/midpoint imputation".
-    
+
     rules:
       - Interval censoring: both L and R finite => t = (L+R)/2, delta=1
       - Right censor: L finite, R non-finite => t = L, delta= 0

@@ -13,22 +13,31 @@ def _interp_cdf_row(F_i, t_grid, t_eval, left_fill=None):
     if left_fill is None:
         left_fill = F_i[0]
 
-    f = interp1d(t_grid, F_i, kind='linear', fill_value=(left_fill, 1.0), bounds_error=False, assume_sorted=True)
+    f = interp1d(
+        t_grid,
+        F_i,
+        kind="linear",
+        fill_value=(left_fill, 1.0),
+        bounds_error=False,
+        assume_sorted=True,
+    )
     return f(t_eval)
 
 
 def auprc_uncensored_grid(
-        pred_cdf: np.ndarray,
-        time_grid: np.ndarray,
-        event_times: np.ndarray,
-        n_quad: int = 256
+    pred_cdf: np.ndarray,
+    time_grid: np.ndarray,
+    event_times: np.ndarray,
+    n_quad: int = 256,
 ) -> np.ndarray:
     """
     Per-patient Survival-AUPRC for an uncensored samples:
         AUPRC(y; F) = ∫_0^1 [ F(y/t) - F(y*t) ] dt
     Returns: (N,) array of scores in [0, 1].
     """
-    assert check_monotonicity(pred_cdf), "predictions_cdf must be non-decreasing over time"
+    assert check_monotonicity(
+        pred_cdf
+    ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
 
     event_times = np.asarray(event_times, float)
@@ -36,27 +45,27 @@ def auprc_uncensored_grid(
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
-    ts_mid = 0.5 * (ts[1:] + ts[:-1])       # (Q,)
-    widths = ts[1:] - ts[:-1]               # (Q,)
+    ts_mid = 0.5 * (ts[1:] + ts[:-1])  # (Q,)
+    widths = ts[1:] - ts[:-1]  # (Q,)
 
     scores = np.empty(N, float)
     for i in range(N):
         yi = float(event_times[i])
         # Evaluate F at transformed times
-        t_right = yi / ts_mid               # y / t
-        t_left  = yi * ts_mid               # y * t
+        t_right = yi / ts_mid  # y / t
+        t_left = yi * ts_mid  # y * t
         Fi_right = _interp_cdf_row(pred_cdf[i], time_grid, t_right)
-        Fi_left  = _interp_cdf_row(pred_cdf[i], time_grid, t_left)
+        Fi_left = _interp_cdf_row(pred_cdf[i], time_grid, t_left)
         integrand = Fi_right - Fi_left
         scores[i] = float(np.sum(integrand * widths))
     return scores
 
 
 def auprc_right_censored_grid(
-        pred_cdf: np.ndarray,
-        time_grid: np.ndarray,
-        censor_times: np.ndarray,
-        n_quad: int = 256
+    pred_cdf: np.ndarray,
+    time_grid: np.ndarray,
+    censor_times: np.ndarray,
+    n_quad: int = 256,
 ) -> np.ndarray:
     """
     Per-patient Survival-AUPRC for RIGHT-censored samples:
@@ -64,7 +73,9 @@ def auprc_right_censored_grid(
         (F(t_k) - F(t_k+1))/(t_k+1 - t_k)
     Returns: (Nc,) array of scores in [0, 1].
     """
-    assert check_monotonicity(pred_cdf), "predictions_cdf must be non-decreasing over time"
+    assert check_monotonicity(
+        pred_cdf
+    ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
 
     Nc = censor_times.shape[0]
@@ -82,12 +93,12 @@ def auprc_right_censored_grid(
 
 
 def auprc_right_censor(
-        pred_cdf: np.ndarray,
-        time_grid: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        n_quad: int = 256,
-        return_details: bool = False
+    pred_cdf: np.ndarray,
+    time_grid: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    n_quad: int = 256,
+    return_details: bool = False,
 ) -> float | tuple[float, np.ndarray]:
     """
     AUPRC formula for uncensored and right-censored scenarios
@@ -118,20 +129,26 @@ def auprc_right_censor(
     scores: np.ndarray, (n_samples,)
         Per-patient AUPRC scores.
     """
-    assert check_monotonicity(pred_cdf), "predictions_cdf must be non-decreasing over time"
+    assert check_monotonicity(
+        pred_cdf
+    ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
-    
+
     event_times = np.asarray(event_times, float)
     event_indicators = np.asarray(event_indicators, bool)
-    
+
     # Split rows
     idx_event, idx_cens = np.where(event_indicators)[0], np.where(~event_indicators)[0]
 
     scores = np.empty(pred_cdf.shape[0], float)
-    if idx_event.size: # for uncensor
-        scores[idx_event] = auprc_uncensored_grid(pred_cdf[idx_event], time_grid, event_times[idx_event], n_quad=n_quad)
-    if idx_cens.size: # for right censor
-        scores[idx_cens] = auprc_right_censored_grid(pred_cdf[idx_cens], time_grid, event_times[idx_cens], n_quad=n_quad)
+    if idx_event.size:  # for uncensor
+        scores[idx_event] = auprc_uncensored_grid(
+            pred_cdf[idx_event], time_grid, event_times[idx_event], n_quad=n_quad
+        )
+    if idx_cens.size:  # for right censor
+        scores[idx_cens] = auprc_right_censored_grid(
+            pred_cdf[idx_cens], time_grid, event_times[idx_cens], n_quad=n_quad
+        )
 
     auprc = scores.mean()
     if return_details:
@@ -140,14 +157,14 @@ def auprc_right_censor(
 
 
 def auprc_ic(
-        pred_cdf: np.ndarray,
-        time_grid: np.ndarray,
-        left: np.ndarray,
-        right: np.ndarray,
-        *,
-        n_quad: int = 256,
-        left_extrapolation_value: float = None,
-        return_details: bool = False
+    pred_cdf: np.ndarray,
+    time_grid: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    n_quad: int = 256,
+    left_extrapolation_value: float = None,
+    return_details: bool = False,
 ) -> float | tuple[float, np.ndarray]:
     """
     Per-patient Survival-AUPRC for INTERVAL-censored samples:
@@ -186,15 +203,17 @@ def auprc_ic(
     scores: np.ndarray, (n_samples,), optional
         Per-patient AUPRC scores, returned if return_details=True.
     """
-    assert check_monotonicity(pred_cdf), "predictions_cdf must be non-decreasing over time"
+    assert check_monotonicity(
+        pred_cdf
+    ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
 
     N = left.shape[0]
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
-    ts_mid = 0.5 * (ts[1:] + ts[:-1])   # (Q,)
-    widths = ts[1:] - ts[:-1]           # (Q,)
+    ts_mid = 0.5 * (ts[1:] + ts[:-1])  # (Q,)
+    widths = ts[1:] - ts[:-1]  # (Q,)
 
     scores = np.empty(N, float)
     for i in range(N):
@@ -202,14 +221,20 @@ def auprc_ic(
 
         # Right term: F(right/t).
         if np.isinf(ri):
-            Fi_right = np.ones_like(ts_mid) #If ri is +inf, this term is identically 1.
+            Fi_right = np.ones_like(
+                ts_mid
+            )  # If ri is +inf, this term is identically 1.
         else:
-            t_right = ri / ts_mid          # can exceed grid → right=1.0
-            Fi_right = _interp_cdf_row(pred_cdf[i], time_grid, t_right, left_fill=left_extrapolation_value)
+            t_right = ri / ts_mid  # can exceed grid → right=1.0
+            Fi_right = _interp_cdf_row(
+                pred_cdf[i], time_grid, t_right, left_fill=left_extrapolation_value
+            )
 
         # Left term: F(L*t). If L=0 and you want F(0)=0, set left_extrapolation_value=0.0
-        t_left  = li * ts_mid              # can be < grid_min → left fill is used
-        Fi_left = _interp_cdf_row(pred_cdf[i], time_grid, t_left, left_fill=left_extrapolation_value)
+        t_left = li * ts_mid  # can be < grid_min → left fill is used
+        Fi_left = _interp_cdf_row(
+            pred_cdf[i], time_grid, t_left, left_fill=left_extrapolation_value
+        )
 
         integrand = Fi_right - Fi_left
         scores[i] = float(np.sum(integrand * widths))

@@ -1,7 +1,7 @@
+import numpy as np
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-import numpy as np
 from SurvivalEVAL.Evaluator import LifelinesEvaluator
 
 np.random.seed(42)
@@ -19,12 +19,18 @@ test_event_indicators = test.arrest.values
 
 # Fit the model
 cph = CoxPHFitter()
-cph.fit(train, duration_col='week', event_col='arrest')
+cph.fit(train, duration_col="week", event_col="arrest")
 
 survival_curves = cph.predict_survival_function(test)
 
-eval = LifelinesEvaluator(survival_curves, test_event_times, test_event_indicators,
-                          train_event_times, train_event_indicators, predict_time_method="Median")
+eval = LifelinesEvaluator(
+    survival_curves,
+    test_event_times,
+    test_event_indicators,
+    train_event_times,
+    train_event_indicators,
+    predict_time_method="Median",
+)
 
 # Make the evaluation
 cindex, _, _ = eval.concordance(method="Margin")

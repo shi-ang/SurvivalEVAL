@@ -1,23 +1,26 @@
+import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2
 from lifelines import CoxPHFitter
 from patsy import dmatrix  # For spline basis matrix
-import matplotlib.pyplot as plt  # For plotting
+from scipy.stats import chi2
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import check_and_convert
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimatorLifelines
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
+    TurnbullEstimatorLifelines,
+)
 
 
 def one_calibration(
-        preds: np.ndarray,
-        event_time: np.ndarray,
-        event_indicator: np.ndarray,
-        target_time: Numeric,
-        num_bins: int = 10,
-        binning_strategy: str = "C",
-        method: str = "DN"
+    preds: np.ndarray,
+    event_time: np.ndarray,
+    event_indicator: np.ndarray,
+    target_time: Numeric,
+    num_bins: int = 10,
+    binning_strategy: str = "C",
+    method: str = "DN",
 ) -> tuple[float, float, list, list]:
     """
     Compute the one calibration score for a given set of predictions and true event times.
@@ -97,17 +100,22 @@ def one_calibration(
         # For Uncensored method, we simply remove the censored patients,
         # for D'Agostina-Nam method, we will use 1-KM(t) as the observed probability.
         if method == "Uncensored":
-            filter_idx = ~((binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0))
+            filter_idx = ~(
+                (binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0)
+            )
             mean_prob = np.mean(binned_predictions[b][filter_idx])
             event_count = sum(binned_event_time[b][filter_idx] < target_time)
             event_probability = event_count / bin_size
             hl_statistics += (event_count - bin_size * mean_prob) ** 2 / (
-                    bin_size * mean_prob * (1 - mean_prob))
+                bin_size * mean_prob * (1 - mean_prob)
+            )
         elif method == "DN":
             mean_prob = np.mean(binned_predictions[b])
             km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
             event_probability = 1 - km_model.predict(target_time)
-            hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (bin_size * mean_prob * (1 - mean_prob))
+            hl_statistics += (
+                bin_size * event_probability - bin_size * mean_prob
+            ) ** 2 / (bin_size * mean_prob * (1 - mean_prob))
         else:
             error = "Please enter one of 'Uncensored','DN' for method."
             raise TypeError(error)
@@ -116,23 +124,27 @@ def one_calibration(
 
     # recalculate the number of bins as the number of bins with data
     num_bins = len(observed_probabilities)
-    degree_of_freedom = num_bins - 1 if (num_bins <= 15 and method == "DN") else num_bins - 2
+    degree_of_freedom = (
+        num_bins - 1 if (num_bins <= 15 and method == "DN") else num_bins - 2
+    )
     if degree_of_freedom <= 0:
-        raise ValueError("The number of bins is too small to calculate the p-value. "
-                         "Please increase the number of bins or check your data.")
+        raise ValueError(
+            "The number of bins is too small to calculate the p-value. "
+            "Please increase the number of bins or check your data."
+        )
     p_value = 1 - chi2.cdf(hl_statistics, degree_of_freedom)
 
     return p_value, hl_statistics, observed_probabilities, expected_probabilities
 
 
 def one_cal_ic(
-        preds: np.ndarray,
-        left_limits: np.ndarray,
-        right_limits: np.ndarray,
-        target_time: Numeric,
-        num_bins: int = 10,
-        binning_strategy: str = "C",
-        method: str = "Turnbull"
+    preds: np.ndarray,
+    left_limits: np.ndarray,
+    right_limits: np.ndarray,
+    target_time: Numeric,
+    num_bins: int = 10,
+    binning_strategy: str = "C",
+    method: str = "Turnbull",
 ) -> tuple[float, float, list, list]:
     """
     Compute the one calibration score for a given set of predictions and true event times.
@@ -224,7 +236,8 @@ def one_cal_ic(
             error = "Please enter one of 'MidPoint','Turnbull' for method."
             raise TypeError(error)
         hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (
-                    bin_size * mean_prob * (1 - mean_prob))
+            bin_size * mean_prob * (1 - mean_prob)
+        )
 
         observed_probabilities.append(event_probability)
         expected_probabilities.append(mean_prob)
@@ -233,21 +246,23 @@ def one_cal_ic(
     num_bins = len(observed_probabilities)
     degree_of_freedom = num_bins - 1 if num_bins <= 15 else num_bins - 2
     if degree_of_freedom <= 0:
-        raise ValueError("The number of bins is too small to calculate the p-value. "
-                         "Please increase the number of bins or check your data.")
+        raise ValueError(
+            "The number of bins is too small to calculate the p-value. "
+            "Please increase the number of bins or check your data."
+        )
     p_value = 1 - chi2.cdf(hl_statistics, degree_of_freedom)
 
     return p_value, hl_statistics, observed_probabilities, expected_probabilities
 
 
 def integrated_calibration_index(
-        preds: NumericArrayLike,
-        event_time: NumericArrayLike,
-        event_indicator: NumericArrayLike,
-        target_time: Numeric,
-        knots: int = 3,
-        draw_figure: bool = False,
-        figure_range: tuple = None,
+    preds: NumericArrayLike,
+    event_time: NumericArrayLike,
+    event_indicator: NumericArrayLike,
+    target_time: Numeric,
+    knots: int = 3,
+    draw_figure: bool = False,
+    figure_range: tuple = None,
 ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
@@ -289,35 +304,53 @@ def integrated_calibration_index(
     [1] Austin et al., Graphical calibration curves and the integrated calibration index (ICI) for survival models.
     Stat Med. 2020
     """
-    preds, event_time, event_indicator = check_and_convert(preds, event_time, event_indicator)
+    preds, event_time, event_indicator = check_and_convert(
+        preds, event_time, event_indicator
+    )
     # get cdfs and cumulative log-log (CLL) values
     pred_clls = np.log(-np.log(1 - preds))
 
-    spline = dmatrix(f"bs(x, df={knots}, include_intercept=False)", {"x": pred_clls}, return_type='dataframe')
+    spline = dmatrix(
+        f"bs(x, df={knots}, include_intercept=False)",
+        {"x": pred_clls},
+        return_type="dataframe",
+    )
     fit_info = spline.design_info
-    df = pd.concat([pd.Series(event_time, name='time'), pd.Series(event_indicator, name='event'), spline], axis=1)
+    df = pd.concat(
+        [
+            pd.Series(event_time, name="time"),
+            pd.Series(event_indicator, name="event"),
+            spline,
+        ],
+        axis=1,
+    )
     # these model-based estimates are used as the value of observed risks
-    cal_fitter = CoxPHFitter().fit(df, duration_col='time', event_col='event')
+    cal_fitter = CoxPHFitter().fit(df, duration_col="time", event_col="event")
 
     # these model-based estimates are used as the value of observed risks
-    cal_pred = 1 - cal_fitter.predict_survival_function(spline, times=[target_time]).T.values.flatten()
+    cal_pred = (
+        1
+        - cal_fitter.predict_survival_function(
+            spline, times=[target_time]
+        ).T.values.flatten()
+    )
     abs_err = np.abs(preds - cal_pred)
     ici = abs_err.mean()
     e50 = np.median(abs_err)
     e90 = np.quantile(abs_err, 0.9)
     e_max = np.max(abs_err)
-    summary = {
-        "ICI": ici,
-        "E50": e50,
-        "E90": e90,
-        "E_max": e_max
-    }
+    summary = {"ICI": ici, "E50": e50, "E90": e90, "E_max": e_max}
 
     grid = np.linspace(np.quantile(preds, 0.01), np.quantile(preds, 0.99), 100)
     grid_cll = np.log(-np.log(1 - grid))
 
-    spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type='dataframe')
-    cal_pred = 1 - cal_fitter.predict_survival_function(spline_grid, times=[target_time]).T.values.flatten()
+    spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type="dataframe")
+    cal_pred = (
+        1
+        - cal_fitter.predict_survival_function(
+            spline_grid, times=[target_time]
+        ).T.values.flatten()
+    )
 
     summary["curve"] = {
         "grid": grid,
@@ -327,11 +360,11 @@ def integrated_calibration_index(
     if draw_figure:
         fig, ax = plt.subplots(figsize=(8, 6))
 
-        ax.plot(grid, cal_pred, label='Calibration Curve', color='blue')
-        ax.plot(grid, grid, label='Perfect Calibration', linestyle='--', color='grey')
-        ax.set_xlabel('Predicted Survival Probability')
-        ax.set_ylabel('Observed Survival Probability')
-        ax.set_title('Graphical Calibration Curve')
+        ax.plot(grid, cal_pred, label="Calibration Curve", color="blue")
+        ax.plot(grid, grid, label="Perfect Calibration", linestyle="--", color="grey")
+        ax.set_xlabel("Predicted Survival Probability")
+        ax.set_ylabel("Observed Survival Probability")
+        ax.set_title("Graphical Calibration Curve")
         ax.legend()
         if figure_range is not None:
             ax.set_xlim(figure_range[0], figure_range[1])

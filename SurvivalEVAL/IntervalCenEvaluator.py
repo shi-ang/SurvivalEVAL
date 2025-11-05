@@ -1,20 +1,36 @@
+import warnings
+from functools import cached_property
+from typing import Optional
+
 import numpy as np
 from matplotlib import pyplot as plt
-from typing import Optional
-from functools import cached_property
-from scipy.integrate import trapezoid, simpson
-import warnings
+from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL import SurvivalEvaluator
+from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
+from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points_ic, brier_score_ic
+from SurvivalEVAL.Evaluations.Concordance import (
+    concordance,
+    concordance_ic,
+    impute_times_midpoint,
+)
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert, predict_rmst, predict_mean_st, predict_median_st, zero_padding, fit_least_squares                             
-from SurvivalEVAL.Evaluations.util_plots import pp_plot
-from SurvivalEVAL.Evaluations.Concordance import concordance_ic, concordance, impute_times_midpoint
-from SurvivalEVAL.Evaluations.BrierScore import brier_score_ic, brier_multiple_points_ic
+from SurvivalEVAL.Evaluations.DistributionCalibration import (
+    coverage_ic,
+    d_cal_ic,
+    ksd_cal_ic,
+)
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
-from SurvivalEVAL.Evaluations.DistributionCalibration import d_cal_ic, coverage_ic, ksd_cal_ic
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert,
+    fit_least_squares,
+    predict_mean_st,
+    predict_median_st,
+    predict_rmst,
+    zero_padding,
+)
+from SurvivalEVAL.Evaluations.util_plots import pp_plot
 
 
 class IntervalCenEvaluator(SurvivalEvaluator):
@@ -23,15 +39,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
     """
 
     def __init__(
-            self,
-            pred_survs: NumericArrayLike,
-            time_coordinates: NumericArrayLike,
-            left_limits: NumericArrayLike,
-            right_limits: NumericArrayLike,
-            train_left_limits: Optional[NumericArrayLike] = None,
-            train_right_limits: Optional[NumericArrayLike] = None,
-            predict_time_method: str = "Median",
-            interpolation: str = "Linear"
+        self,
+        pred_survs: NumericArrayLike,
+        time_coordinates: NumericArrayLike,
+        left_limits: NumericArrayLike,
+        right_limits: NumericArrayLike,
+        train_left_limits: Optional[NumericArrayLike] = None,
+        train_right_limits: Optional[NumericArrayLike] = None,
+        predict_time_method: str = "Median",
+        interpolation: str = "Linear",
     ):
         """
         Initialize the Evaluator
@@ -65,9 +81,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.ndim_time = time_coordinates.ndim
         self.ndim_surv = pred_survs.ndim
         if self.ndim_time == 1 and self.ndim_surv == 1:
-            raise TypeError("At least one of 'pred_survs' or 'time_coordinates' must be a 2D array.")
-        
-        self._pred_survs, self._time_coordinates = zero_padding(pred_survs, time_coordinates)
+            raise TypeError(
+                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
+            )
+
+        self._pred_survs, self._time_coordinates = zero_padding(
+            pred_survs, time_coordinates
+        )
 
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
         if np.any(left_limits > right_limits):
@@ -76,9 +96,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.right_limits = right_limits
 
         if (train_left_limits is not None) and (train_right_limits is not None):
-            train_left_limits, train_right_limits = check_and_convert(train_left_limits, train_right_limits)
+            train_left_limits, train_right_limits = check_and_convert(
+                train_left_limits, train_right_limits
+            )
             if np.any(train_left_limits > train_right_limits):
-                raise ValueError("Found an interval with left > right in the training data.")
+                raise ValueError(
+                    "Found an interval with left > right in the training data."
+                )
         self.train_left_limits = train_left_limits
         self.train_right_limits = train_right_limits
 
@@ -103,19 +127,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         # See how to clear cache in functools:
         # https://docs.python.org/3/library/functools.html#functools.cached_property
         # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
-        self.__dict__.pop('predicted_event_times', None)
+        self.__dict__.pop("predicted_event_times", None)
 
     def _error_trainset(self, method_name: str):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
-            raise TypeError("Train set information is missing. "
-                            "Evaluator cannot perform {} evaluation.".format(method_name))
+            raise TypeError(
+                "Train set information is missing. "
+                "Evaluator cannot perform {} evaluation.".format(method_name)
+            )
 
     def concordance(
-            self,
-            method: str = "probabilistic",
-            ties: str = "skip",
-            *args,
-            **kwargs
+        self, method: str = "probabilistic", ties: str = "skip", *args, **kwargs
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index from the predicted survival curve.
@@ -139,18 +161,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             per-pair weights (same as weights) in denominator.
         """
         pred_times = self.predict_time_method(
-            self._pred_survs,
-            self._time_coordinates,
-            interpolation=self.interpolation
+            self._pred_survs, self._time_coordinates, interpolation=self.interpolation
         )
         if method == "midpoint":
-            imp_times, imp_indicators = impute_times_midpoint(self.left_limits, self.right_limits)
+            imp_times, imp_indicators = impute_times_midpoint(
+                self.left_limits, self.right_limits
+            )
             ties = "None" if ties == "skip" else "Risk"
             c_index, num, den = concordance(
                 predicted_times=pred_times,
                 event_times=imp_times,
                 event_indicators=imp_indicators,
-                ties=ties
+                ties=ties,
             )
             return c_index, num, den
         elif method == "probabilistic":
@@ -160,18 +182,20 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 right=self.right_limits,
                 left_train=self.train_left_limits,
                 right_train=self.train_right_limits,
-                ties=ties
+                ties=ties,
             )
             return c_index, np.sum(num), np.sum(den)
         else:
-            raise ValueError("Please enter one of 'probabilistic' or 'midpoint' for concordance method.")
+            raise ValueError(
+                "Please enter one of 'probabilistic' or 'midpoint' for concordance method."
+            )
 
     def brier_score(
-            self,
-            target_time: Optional[Numeric] = None,
-            method: str = "Tsouprou-marginal",
-            x: Optional[np.ndarray] = None,
-            x_train: Optional[np.ndarray] = None,
+        self,
+        target_time: Optional[Numeric] = None,
+        method: str = "Tsouprou-marginal",
+        x: Optional[np.ndarray] = None,
+        x_train: Optional[np.ndarray] = None,
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
@@ -200,15 +224,19 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self._error_trainset("Tsouprou Brier score")
             if method == "Tsouprou-conditional":
                 if x is None or x_train is None:
-                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
+                    raise TypeError(
+                        "x and x_train must be provided for Tsouprou-conditional method."
+                    )
 
         if target_time is None:
-            tau_vals = np.concatenate([
-                self.left_limits,
-                self.right_limits[np.isfinite(self.right_limits)],
-                self.train_left_limits,
-                self.train_right_limits[np.isfinite(self.train_right_limits)],
-            ])
+            tau_vals = np.concatenate(
+                [
+                    self.left_limits,
+                    self.right_limits[np.isfinite(self.right_limits)],
+                    self.train_left_limits,
+                    self.train_right_limits[np.isfinite(self.train_right_limits)],
+                ]
+            )
             tau = np.unique(np.sort(tau_vals))
             target_time = np.quantile(tau, 0.5)
 
@@ -220,31 +248,33 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             right_limits=self.right_limits,
             train_left_limits=self.train_left_limits,
             train_right_limits=self.train_right_limits,
-            x = x,
-            x_train = x_train,
-            target_time = target_time,
-            method = method,
+            x=x,
+            x_train=x_train,
+            target_time=target_time,
+            method=method,
         )
 
     def brier_score_multiple_points(
-            self, 
-            target_times: np.ndarray, 
-            method: str = "Tsouprou-marginal",
-            x: Optional[np.ndarray] = None,
-            x_train: Optional[np.ndarray] = None,
+        self,
+        target_times: np.ndarray,
+        method: str = "Tsouprou-marginal",
+        x: Optional[np.ndarray] = None,
+        x_train: Optional[np.ndarray] = None,
     ):
         # Check if there is no censored instance, if so, naive Brier score is applied
         if self._NO_CENSOR:
             method = "uncensored"
-        
+
         if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
             self._error_trainset("Tsouprou Brier score")
             if method == "Tsouprou-conditional":
                 if x is None or x_train is None:
-                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
-        
+                    raise TypeError(
+                        "x and x_train must be provided for Tsouprou-conditional method."
+                    )
+
         pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
-        
+
         return brier_multiple_points_ic(
             pred_mat=pred_probs_mat,
             left_limits=self.left_limits,
@@ -254,18 +284,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             x=x,
             x_train=x_train,
             target_times=target_times,
-            method=method
+            method=method,
         )
-    
+
     def integrated_brier_score(
-            self,
-            num_points: int | None = None,
-            target_times: np.ndarray | None = None,
-            method: str = "uncensored",
-            x: Optional[np.ndarray] = None,
-            x_train: Optional[np.ndarray] = None,
-            integration_method: str = "trapz",
-            draw_figure: bool = False
+        self,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
+        method: str = "uncensored",
+        x: Optional[np.ndarray] = None,
+        x_train: Optional[np.ndarray] = None,
+        integration_method: str = "trapz",
+        draw_figure: bool = False,
     ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the Integrated Brier Score (IBS) from the predicted survival curve.
@@ -292,18 +322,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         method: str, default: "uncensored"
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
             Note: "uncensored" method automatically ignores uncertain areas.
-        
+
         x: Optional[np.ndarray], default: None
             Covariates for the test set. Required if method is "Tsouprou-conditional".
-        
+
         x_train: Optional[np.ndarray], default: None
             Covariates for the training set. Required if method is "Tsouprou-conditional".
-        
+
         integration_method: str, default: "trapz"
             Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
-        
+
         draw_figure: bool, default: False
-            Whether to draw the Brier score curve.  
+            Whether to draw the Brier score curve.
 
         Returns
         -------
@@ -322,7 +352,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self._error_trainset("Tsouprou IBS")
             if method == "Tsouprou-conditional":
                 if x is None or x_train is None:
-                    raise TypeError("x and x_train must be provided for Tsouprou-conditional method.")
+                    raise TypeError(
+                        "x and x_train must be provided for Tsouprou-conditional method."
+                    )
 
                 # Sanity check: cannot pass both num_points and target_times
         if (num_points is not None) and (target_times is not None):
@@ -331,19 +363,29 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
         # Compute max_target_time from test set (and train set if available)
-        if (self.train_left_limits is not None) and (self.train_right_limits is not None):
+        if (self.train_left_limits is not None) and (
+            self.train_right_limits is not None
+        ):
             # max over the lefts and rights of both test and train, ignoring infs
-            max_target_time = np.max(np.concatenate([
-                self.left_limits,
-                self.right_limits[np.isfinite(self.right_limits)],
-                self.train_left_limits,
-                self.train_right_limits[np.isfinite(self.train_right_limits)]
-            ]))
+            max_target_time = np.max(
+                np.concatenate(
+                    [
+                        self.left_limits,
+                        self.right_limits[np.isfinite(self.right_limits)],
+                        self.train_left_limits,
+                        self.train_right_limits[np.isfinite(self.train_right_limits)],
+                    ]
+                )
+            )
         else:
-            max_target_time = np.max(np.concatenate([
-                self.left_limits,
-                self.right_limits[np.isfinite(self.right_limits)],
-            ]))
+            max_target_time = np.max(
+                np.concatenate(
+                    [
+                        self.left_limits,
+                        self.right_limits[np.isfinite(self.right_limits)],
+                    ]
+                )
+            )
 
         # Case 1: user provided explicit target_times
         if target_times is not None:
@@ -354,8 +396,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 raise ValueError("`target_times` must be a 1D array of times.")
 
             if len(target_times) < 2:
-                raise ValueError("`target_times` must contain at least 2 time values "
-                                "to perform numerical integration.")
+                raise ValueError(
+                    "`target_times` must contain at least 2 time values "
+                    "to perform numerical integration."
+                )
 
             # We assume caller gave sorted points. If not, sort them.
             if not np.all(np.diff(target_times) >= 0):
@@ -380,10 +424,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         # Case 3: neither provided → infer from the left/right limits of censored test samples, excluding infs
         else:
-            target_times = np.unique(np.concatenate([
-                self.left_limits,
-                self.right_limits[np.isfinite(self.right_limits)]
-            ]))
+            target_times = np.unique(
+                np.concatenate(
+                    [
+                        self.left_limits,
+                        self.right_limits[np.isfinite(self.right_limits)],
+                    ]
+                )
+            )
 
             if target_times.size < 2:
                 # (old behavior raised if no censor data at all)
@@ -399,10 +447,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             time_range = target_times[-1] - target_times[0]
 
         b_scores = self.brier_score_multiple_points(
-            target_times=target_times,
-            method=method,
-            x=x,
-            x_train=x_train
+            target_times=target_times, method=method, x=x, x_train=x_train
         )
         if np.isnan(b_scores).any():
             warnings.warn("Time-dependent Brier Score contains nan")
@@ -420,13 +465,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             else:
                 integral_value = simpson(y=b_scores, x=target_times)
         else:
-            raise ValueError(f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'.")
+            raise ValueError(
+                f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'."
+            )
 
         ibs_score = integral_value / time_range
 
         if draw_figure:
             fig, ax = plt.subplots()
-            ax.plot(target_times, b_scores, marker='o')
+            ax.plot(target_times, b_scores, marker="o")
             ax.set_xlabel("Time")
             ax.set_ylabel("Brier Score")
             ax.set_title("Time-dependent Brier Score Curve")
@@ -435,9 +482,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         return ibs_score
 
     def crps(
-            self,
-            num_points: int | None = None,
-            target_times: np.ndarray | None = None,
+        self,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
     ) -> float:
         """
         Calculate the Continuous Ranked Probability Score (CRPS) from the predicted survival curve.
@@ -463,8 +510,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             If provided, `num_points` must be None. We'll integrate over exactly these times.
 
             NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
-        
-        Returns    
+
+        Returns
         -------
         crps: float
             The Continuous Ranked Probability Score (CRPS) for the predicted survival curve.
@@ -480,16 +527,16 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             x=None,
             x_train=None,
             integration_method="trapz",
-            draw_figure=False
+            draw_figure=False,
         )
 
     def one_calibration(
-            self,
-            target_time: Numeric,
-            num_bins: int = 10,
-            binning_strategy: str = "C",
-            method: str = "Turnbull",
-            return_details: bool = False
+        self,
+        target_time: Numeric,
+        num_bins: int = 10,
+        binning_strategy: str = "C",
+        method: str = "Turnbull",
+        return_details: bool = False,
     ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
@@ -524,7 +571,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             - p_value: The p-value of the calibration test.
             - statistics: The Hosmer-Lemeshow statistics.
             - observed_probabilities: The observed probabilities in each bin.
-            - expected_probabilities: The expected probabilities in each bin.   
+            - expected_probabilities: The expected probabilities in each bin.
             - slope: The slope of the calibration curve.
             - intercept: The intercept of the calibration curve.
             - max_local_deviation: The maximum local deviation between observed and expected probabilities.
@@ -541,30 +588,50 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             target_time=target_time,
             num_bins=num_bins,
             binning_strategy=binning_strategy,
-            method=method
+            method=method,
         )
         if return_details:
             # Fit least squares line
-            slope, intercept = fit_least_squares(np.array(exp), np.array(obs), left_anchor=True, right_anchor=True)
+            slope, intercept = fit_least_squares(
+                np.array(exp), np.array(obs), left_anchor=True, right_anchor=True
+            )
 
             # Maximum local deviation, x is expected, y is observed
             local_devs = np.diff(obs) / np.diff(exp)
-            max_local_dev = np.max(np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs))
+            max_local_dev = np.max(
+                np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs)
+            )
 
             # Histogram plot
             fig1, ax1 = plt.subplots()
             bar_width = 0.4
             indices = np.arange(len(obs)) + 1
-            ax1.bar([x - 0.2 for x in indices], obs[::-1], width=bar_width, align='center', label='Observed', alpha=0.7)
-            ax1.bar([x + 0.2 for x in indices], exp[::-1], width=bar_width, align='center', label='Expected', alpha=0.7)
-            ax1.set_xlabel('Groups (from lowest to highest predicted probability)')
+            ax1.bar(
+                [x - 0.2 for x in indices],
+                obs[::-1],
+                width=bar_width,
+                align="center",
+                label="Observed",
+                alpha=0.7,
+            )
+            ax1.bar(
+                [x + 0.2 for x in indices],
+                exp[::-1],
+                width=bar_width,
+                align="center",
+                label="Expected",
+                alpha=0.7,
+            )
+            ax1.set_xlabel("Groups (from lowest to highest predicted probability)")
             ax1.set_xticks(indices)
-            ax1.set_ylabel('Probabilities')
+            ax1.set_ylabel("Probabilities")
             ax1.legend()
             fig1.tight_layout()
 
-            fig2, ax2 = pp_plot(obs, exp, xlim=(-0.05, 1.05), ylim=(-0.05, 1.05), color='blue')
-        
+            fig2, ax2 = pp_plot(
+                obs, exp, xlim=(-0.05, 1.05), ylim=(-0.05, 1.05), color="blue"
+            )
+
             details = {
                 "p_value": p_value,
                 "statistics": hl_stats,
@@ -574,16 +641,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 "intercept": intercept,
                 "max_local_deviation": max_local_dev,
                 "histogram_plot": (fig1, ax1),
-                "pp_plot": (fig2, ax2)
+                "pp_plot": (fig2, ax2),
             }
             return p_value, details
         return p_value, obs, exp
 
-
     def d_calibration(
-            self,
-            num_bins: int = 10,
-            return_details: bool = False
+        self, num_bins: int = 10, return_details: bool = False
     ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
@@ -615,11 +679,11 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         """
         pred_probs_left = self.predict_probability_from_curve(self.left_limits)
         pred_probs_right = self.predict_probability_from_curve(self.right_limits)
-    
+
         statistics, p_value, hist = d_cal_ic(
             pred_probs_left=pred_probs_left,
             pred_probs_right=pred_probs_right,
-            num_bins=num_bins
+            num_bins=num_bins,
         )
         if return_details:
             # normalize the histogram
@@ -629,26 +693,36 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             optimal = np.ones_like(d_cal_pdf) / num_bins
             x_cal = np.sum(np.square(d_cal_pdf - optimal))
 
-            d_cal_cdf = np.cumsum(d_cal_pdf[::-1]) # so that the first number belongs to the lowest prob bin
+            d_cal_cdf = np.cumsum(
+                d_cal_pdf[::-1]
+            )  # so that the first number belongs to the lowest prob bin
             d_cal_cdf = np.insert(d_cal_cdf, 0, 0)
             optimal_cdf = np.linspace(0, 1, num_bins + 1)
 
-            # LS fit of observed CDF vs expected CDF 
-            slope, intercept = fit_least_squares(optimal_cdf, d_cal_cdf, left_anchor=False, right_anchor=False)
+            # LS fit of observed CDF vs expected CDF
+            slope, intercept = fit_least_squares(
+                optimal_cdf, d_cal_cdf, left_anchor=False, right_anchor=False
+            )
 
             # Local slope deviation, max slope with the highest ratio difference from 1
             slopes = d_cal_pdf[::-1] / np.diff(optimal_cdf)
             max_slope = np.max(np.maximum(slopes / (1 + 1e-8), (1 + 1e-8) / slopes))
-            
 
             # horizontal histograms
             fig1, ax1 = plt.subplots()
             widths = hist
             y_positions = (optimal_cdf[:-1] + optimal_cdf[1:]) / 2  # midpoints of bins
-            ax1.barh(y_positions, widths, height=np.diff(optimal_cdf), color='blue', alpha=0.7, label='Prediction')
-            ax1.axvline(N / num_bins, ls='dashed', c='grey', label='Ideal Calibration')
-            ax1.set_xlabel('Probability Bins')
-            ax1.set_ylabel('Frequency')
+            ax1.barh(
+                y_positions,
+                widths,
+                height=np.diff(optimal_cdf),
+                color="blue",
+                alpha=0.7,
+                label="Prediction",
+            )
+            ax1.axvline(N / num_bins, ls="dashed", c="grey", label="Ideal Calibration")
+            ax1.set_xlabel("Probability Bins")
+            ax1.set_ylabel("Frequency")
             ax1.legend()
             fig1.tight_layout()
 
@@ -663,15 +737,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 "linear_slope_intercept": {"slope": slope, "intercept": intercept},
                 "max_local_slope": max_slope,
                 "histogram_plot": (fig1, ax1),
-                "pp_plot": (fig2, ax2)
+                "pp_plot": (fig2, ax2),
             }
             return p_value, details
 
         return p_value, hist
 
     def ksd_calibration(
-            self,
-            return_details: bool = False
+        self, return_details: bool = False
     ) -> tuple[float, float] | tuple[float, dict]:
         """
         Calculate the K-S-D calibration score from the predicted survival curve.
@@ -701,7 +774,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         return ksd_cal_ic(
             pred_probs_left=pred_probs_left,
             pred_probs_right=pred_probs_right,
-            return_details=return_details
+            return_details=return_details,
         )
 
     def auprc(self, n_quad: int = 256) -> float:
@@ -715,9 +788,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         returns AUPRC acores for each sample.
         -------
         """
-        return auprc_ic(pred_cdf=1 - self._pred_survs, time_grid=self._time_coordinates,
-                        left=self.left_limits, right=self.right_limits, n_quad=n_quad,
-                        return_details=False)
+        return auprc_ic(
+            pred_cdf=1 - self._pred_survs,
+            time_grid=self._time_coordinates,
+            left=self.left_limits,
+            right=self.right_limits,
+            n_quad=n_quad,
+            return_details=False,
+        )
 
     def inclusion_rate(self) -> float:
         """
@@ -728,11 +806,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         inclusion_rate: float
             The inclusion rate of the predicted median survival times within the interval.
         """
-        return inclusion_rate(self.left_limits, self.right_limits, self.predicted_event_times)
-    
+        return inclusion_rate(
+            self.left_limits, self.right_limits, self.predicted_event_times
+        )
+
     def mae(
-            self,
-            log_scale: bool = False,
+        self,
+        log_scale: bool = False,
     ) -> float:
         """
         Calculate the Mean Absolute Error (MAE) from the predicted median survival times.
@@ -742,11 +822,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         mae: float
             The Mean Absolute Error (MAE) from the predicted median survival times.
         """
-        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="absolute", log_scale=log_scale)
-    
+        return mean_error_ic(
+            self.left_limits,
+            self.right_limits,
+            self.predicted_event_times,
+            error_type="absolute",
+            log_scale=log_scale,
+        )
+
     def mse(
-            self,
-            log_scale: bool = False,
+        self,
+        log_scale: bool = False,
     ) -> float:
         """
         Calculate the Mean Squared Error (MSE) from the predicted median survival times.
@@ -756,11 +842,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         mse: float
             The Mean Squared Error (MSE) from the predicted median survival times.
         """
-        return mean_error_ic(self.left_limits, self.right_limits, self.predicted_event_times, error_type="squared", log_scale=log_scale)
-    
+        return mean_error_ic(
+            self.left_limits,
+            self.right_limits,
+            self.predicted_event_times,
+            error_type="squared",
+            log_scale=log_scale,
+        )
+
     def rmse(
-            self,
-            log_scale: bool = False,
+        self,
+        log_scale: bool = False,
     ) -> float:
         """
         Calculate the Root Mean Squared Error (RMSE) from the predicted median survival times.
@@ -773,10 +865,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         return self.mse(log_scale=log_scale) ** 0.5
 
     def coverage(
-            self,
-            quantile_range: tuple[float, float] = None,
-            cov_level: float = None,
-            method: str = "Turnbull",
+        self,
+        quantile_range: tuple[float, float] = None,
+        cov_level: float = None,
+        method: str = "Turnbull",
     ) -> tuple[float, float, float]:
         """
         Calculate the coverage of the predicted survival intervals.
@@ -799,9 +891,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             Difference between observed coverage and the target level (observed_cov - cov_level).
         avg_width : float
             The average width of the prediction intervals.
-        """        
-        interval_pred = self.predict_interval(quantile_range=quantile_range, cov_level=cov_level)
+        """
+        interval_pred = self.predict_interval(
+            quantile_range=quantile_range, cov_level=cov_level
+        )
 
-        return coverage_ic(interval_pred[:, 0], interval_pred[:, 1], self.left_limits, self.right_limits,
-                           self.train_left_limits, self.train_right_limits, cov_level=cov_level,
-                           method=method)
+        return coverage_ic(
+            interval_pred[:, 0],
+            interval_pred[:, 1],
+            self.left_limits,
+            self.right_limits,
+            self.train_left_limits,
+            self.train_right_limits,
+            cov_level=cov_level,
+            method=method,
+        )

@@ -1,10 +1,12 @@
+from typing import Dict, Literal, Optional, Tuple
+
 import numpy as np
-from typing import Tuple, Literal, Optional, Dict
+
 
 def right_censor_to_interval(
-    event_indicators: np.ndarray,   # (N,) bool: True=event, False=right-censor
-    observed_times: np.ndarray,     # (N,) float: event or censor time
-    max_t = np.inf # max time
+    event_indicators: np.ndarray,  # (N,) bool: True=event, False=right-censor
+    observed_times: np.ndarray,  # (N,) float: event or censor time
+    max_t=np.inf,  # max time
 ):
     """
     Convert (event_indicators, observed_times) to lifelines-style interval data.
@@ -13,13 +15,13 @@ def right_censor_to_interval(
       - Event at time t:
           left = event time t
       - Right-censored at time c:
-          left = max_t 
+          left = max_t
     """
     e = np.asarray(event_indicators, bool)
     y = np.asarray(observed_times, float)
     N = y.shape[0]
 
-    left  = np.empty(N, dtype=float)
+    left = np.empty(N, dtype=float)
     right = np.empty(N, dtype=float)
 
     # small tolerance for alignment checks
@@ -27,17 +29,18 @@ def right_censor_to_interval(
 
     for i in range(N):
         t = y[i]
-        
+
         if e[i]:
             # event case
-            left[i]  = t
+            left[i] = t
             right[i] = t
         else:
             # right-censored case
-            left[i]  = t
+            left[i] = t
             right[i] = max_t
 
     return left, right
+
 
 def _visits_fixed(end: float, step: float) -> np.ndarray:
     if end <= 0:
@@ -48,17 +51,21 @@ def _visits_fixed(end: float, step: float) -> np.ndarray:
         grid = np.concatenate([grid, [end]])
     return np.unique(np.clip(grid, 0.0, end))
 
+
 def _visits_poisson(rng: np.random.Generator, end: float, rate: float) -> np.ndarray:
     if end <= 0:
         return np.array([0.0])
     K = rng.poisson(lam=max(rate * end, 0.0))
-    times = rng.uniform(0.0, end, size=K)    
+    times = rng.uniform(0.0, end, size=K)
     times = np.concatenate(([0.0], times))
     times = np.concatenate((times, [end]))
     times.sort()
     return np.unique(times)
 
-def _visits_lognormal(rng: np.random.Generator, end: float, mean: float, sigma: float) -> np.ndarray:
+
+def _visits_lognormal(
+    rng: np.random.Generator, end: float, mean: float, sigma: float
+) -> np.ndarray:
     times = [0.0]
     t = float(rng.lognormal(mean, sigma))
     while t < end:
@@ -66,6 +73,7 @@ def _visits_lognormal(rng: np.random.Generator, end: float, mean: float, sigma: 
         t += float(rng.lognormal(mean, sigma))
     times.append(end)
     return np.unique(np.array(times))
+
 
 def _visits_exp(rng, end, rate: float = 1.0):
     t = 0.0
@@ -78,20 +86,28 @@ def _visits_exp(rng, end, rate: float = 1.0):
     times.append(end)
     return np.array(times)
 
-def _hawkes_times(rng: np.random.Generator, mu: float = 0.2, alpha: float = 0.3, beta: float = 1.5, end: float = 1000, max_events: int = 100) -> np.ndarray:
+
+def _hawkes_times(
+    rng: np.random.Generator,
+    mu: float = 0.2,
+    alpha: float = 0.3,
+    beta: float = 1.5,
+    end: float = 1000,
+    max_events: int = 100,
+) -> np.ndarray:
     """
     Simulate Hawkes with intensity: λ(t) = μ + α * sum_k exp(-β (t - t_k)).
     Returns sorted event times in (0, T].
     """
     assert mu >= 0 and alpha >= 0 and beta > 0 and end >= 0
-    t, g = 0.0, 0.0                  # g = sum exp(-β (t - t_k))
+    t, g = 0.0, 0.0  # g = sum exp(-β (t - t_k))
     lam = mu + alpha * g
     times = []
 
     while t < end and len(times) < max_events:
         if lam <= 0:
             break
-        w = rng.exponential(1.0 / lam)     # candidate gap
+        w = rng.exponential(1.0 / lam)  # candidate gap
         t_cand = t + w
         if t_cand > end:
             break
@@ -102,23 +118,24 @@ def _hawkes_times(rng: np.random.Generator, mu: float = 0.2, alpha: float = 0.3,
         if rng.random() * lam <= lam_cand and lam_cand > 0:
             # event at t_cand
             times.append(t_cand)
-            g += 1.0                       # kernel at 0 is 1
+            g += 1.0  # kernel at 0 is 1
             t = t_cand
             lam = mu + alpha * g
         else:
             t = t_cand
             lam = lam_cand
 
-    return np.array(times, dtype=float)    
+    return np.array(times, dtype=float)
+
 
 def interval_censor_DGP_from_synthetic_times(
-    event_times: np.ndarray,           # (N,) true event time
-    censoring_times: np.ndarray,       # (N,) right-censor/admin end per subject
+    event_times: np.ndarray,  # (N,) true event time
+    censoring_times: np.ndarray,  # (N,) right-censor/admin end per subject
     *,
     method: str = "fixed",
     # fixed
     params: Optional[Dict[str, float]] = None,
-    seed: int = 42
+    seed: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convert (event_times, censoring_times) into interval-censored bounds (left, right):
@@ -142,25 +159,27 @@ def interval_censor_DGP_from_synthetic_times(
         end_i = max(end_i, 0.0)
 
         if method == "fixed":
-            step = params['step'] if 'step' in params else 1.0
+            step = params["step"] if "step" in params else 1.0
             visits = _visits_fixed(end=end_i, step=step)
         elif method == "poisson":
-            rate = params['rate'] if 'rate' in params else 1.0
+            rate = params["rate"] if "rate" in params else 1.0
             visits = _visits_poisson(rng, end=end_i, rate=rate)
         elif method == "lognormal":
-            ln_mean = params['ln_mean'] if 'ln_mean' in params else 0.0
-            ln_sigma = params['ln_sigma'] if 'ln_sigma' in params else 1.0
+            ln_mean = params["ln_mean"] if "ln_mean" in params else 0.0
+            ln_sigma = params["ln_sigma"] if "ln_sigma" in params else 1.0
             visits = _visits_lognormal(rng, end=end_i, mean=ln_mean, sigma=ln_sigma)
         elif method == "exp":
-            rate = params['rate'] if 'rate' in params else 2.0            
-            visits = _visits_exp(rng, end=end_i, rate = rate)
+            rate = params["rate"] if "rate" in params else 2.0
+            visits = _visits_exp(rng, end=end_i, rate=rate)
         elif method == "hawkes":
-            mu = params['mu'] if 'mu' in params else 0.2
-            alpha = params['alpha'] if 'alpha' in params else 0.3
-            beta = params['beta'] if 'beta' in params else 1.5      
-            visits = _hawkes_times(rng, end=end_i, mu = mu, alpha = alpha, beta = beta)
+            mu = params["mu"] if "mu" in params else 0.2
+            alpha = params["alpha"] if "alpha" in params else 0.3
+            beta = params["beta"] if "beta" in params else 1.5
+            visits = _hawkes_times(rng, end=end_i, mu=mu, alpha=alpha, beta=beta)
         else:
-            raise ValueError("method must be 'fixed'|'poisson'|'lognormal'|'hawkes'|'exp'")
+            raise ValueError(
+                "method must be 'fixed'|'poisson'|'lognormal'|'hawkes'|'exp'"
+            )
 
         n_visits[i] = visits.size
 
@@ -174,13 +193,12 @@ def interval_censor_DGP_from_synthetic_times(
         # interval censor: find j let visits[j] < t <= visits[j+1]
         j = int(np.searchsorted(visits, t, side="right") - 1)
         # print (visits, j, t)
-        if np.isclose(t, float(visits[j])): 
-            left[i] = right[i] = t  # exact        
+        if np.isclose(t, float(visits[j])):
+            left[i] = right[i] = t  # exact
         elif np.isclose(t, float(visits[j + 1])):
             left[i] = right[i] = t  # exact
         else:
-            L, U = float(visits[j]), float(visits[j + 1])                
+            L, U = float(visits[j]), float(visits[j + 1])
             left[i], right[i] = L, U
 
     return left, right, n_visits
-

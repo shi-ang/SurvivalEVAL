@@ -18,7 +18,9 @@ def _sample_interval_data(rng: np.random.Generator, n_samples: int):
         if indicators.any() and (~indicators).any():
             observed = np.minimum(event_times, censor_times)
             return rates, observed, indicators
-    raise RuntimeError("Failed to generate interval data with both events and censoring.")
+    raise RuntimeError(
+        "Failed to generate interval data with both events and censoring."
+    )
 
 
 @pytest.fixture
@@ -104,7 +106,9 @@ def test_brier_scores(evaluator_data):
     assert np.isfinite(brier)
 
     times = np.array([4.0, 8.0, 12.0])
-    brier_mp = evaluator.brier_score_multiple_points(target_times=times, IPCW_weighted=False)
+    brier_mp = evaluator.brier_score_multiple_points(
+        target_times=times, IPCW_weighted=False
+    )
     assert brier_mp.shape == times.shape
     assert np.all(np.isfinite(brier_mp))
 
@@ -116,11 +120,15 @@ def test_integrated_brier_score(evaluator_data):
     assert np.isfinite(ibs_ipcw)
 
     explicit_grid = np.linspace(2.0, 14.0, 6)
-    ibs_naive = evaluator.integrated_brier_score(target_times=explicit_grid, IPCW_weighted=False)
+    ibs_naive = evaluator.integrated_brier_score(
+        target_times=explicit_grid, IPCW_weighted=False
+    )
     assert np.isfinite(ibs_naive)
 
     with pytest.raises(ValueError):
-        evaluator.integrated_brier_score(num_points=5, target_times=np.array([1.0, 2.0, 3.0]))
+        evaluator.integrated_brier_score(
+            num_points=5, target_times=np.array([1.0, 2.0, 3.0])
+        )
 
 
 def test_error_metrics(evaluator_data):
@@ -143,7 +151,9 @@ def test_calibration_metrics(evaluator_data):
     evaluator = evaluator_data["evaluator"]
     target_time = 8.0
 
-    one_p, one_details = evaluator.one_calibration(target_time=target_time, num_bins=5, return_details=True)
+    one_p, one_details = evaluator.one_calibration(
+        target_time=target_time, num_bins=5, return_details=True
+    )
     assert np.isfinite(one_p)
     assert "observed_probabilities" in one_details
     hist_fig, _ = one_details["histogram_plot"]
@@ -151,7 +161,9 @@ def test_calibration_metrics(evaluator_data):
     plt.close(hist_fig)
     plt.close(pp_fig)
 
-    ici_summary = evaluator.integrated_calibration_index(target_time=target_time, draw_figure=False)
+    ici_summary = evaluator.integrated_calibration_index(
+        target_time=target_time, draw_figure=False
+    )
     assert "ICI" in ici_summary
 
     d_p, d_details = evaluator.d_calibration(num_bins=6, return_details=True)

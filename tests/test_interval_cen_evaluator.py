@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
-from pathlib import Path
 from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
@@ -31,7 +32,7 @@ def interval_evaluator():
     test_df = df.iloc[60:].copy()
 
     aft_model = WeibullAFTFitter()
-    aft_model.fit_interval_censoring(train_df, 'left', 'right')
+    aft_model.fit_interval_censoring(train_df, "left", "right")
 
     prediction = aft_model.predict_survival_function(test_df, times=None)
     time_coords = prediction.index.values
@@ -126,5 +127,5 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
 
     coverage, cov_gap, avg_width = evaluator.coverage(cov_level=0.9, method="Turnbull")
     assert np.isfinite(coverage)
-    assert np.isfinite(cov_gap) 
+    assert np.isfinite(cov_gap)
     assert np.isfinite(avg_width)

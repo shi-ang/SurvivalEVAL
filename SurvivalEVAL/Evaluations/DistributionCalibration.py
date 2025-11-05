@@ -1,17 +1,20 @@
-import numpy as np
 from typing import Optional
+
+import numpy as np
 from matplotlib import pyplot as plt
-from scipy.stats import chisquare, kstwobign
 from scipy.integrate import trapezoid
+from scipy.stats import chisquare, kstwobign
 
 from SurvivalEVAL.Evaluations.util import interpolated_curve
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, NelsonAalen, TurnbullEstimatorLifelines
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
+    NelsonAalen,
+    TurnbullEstimatorLifelines,
+)
 
 
 def d_calibration(
-        pred_probs: np.ndarray,
-        event_indicators: np.ndarray,
-        num_bins: int = 10
+    pred_probs: np.ndarray, event_indicators: np.ndarray, num_bins: int = 10
 ) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score.
@@ -38,7 +41,7 @@ def d_calibration(
 
     event_probs = pred_probs[event_indicators.astype(bool)]
     event_position = np.digitize(event_probs, quantile)
-    event_position[event_position == 0] = 1     # class probability==1 to the first bin
+    event_position[event_position == 0] = 1  # class probability==1 to the first bin
 
     event_hist = np.zeros([num_bins])
     for i in range(len(event_position)):
@@ -57,11 +60,8 @@ def d_calibration(
     return statistic, pvalue, combine_hist
 
 
-def create_censor_hist(
-        prob: float,
-        num_bins: int
-) -> np.ndarray:
-    """    Create the binning histogram for a right censored instance.
+def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
+    """Create the binning histogram for a right censored instance.
 
     The bins are defined as follows:
     [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
@@ -89,16 +89,14 @@ def create_censor_hist(
             first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
             rest_bins = 1 / (num_bins * prob) if prob != 0 else 0
             censor_binning[i] += first_bin
-            censor_binning[i + 1:] += rest_bins
+            censor_binning[i + 1 :] += rest_bins
             break
     # assert len(censor_binning) == num_bins, f"censor binning should have size of {num_bins}"
     return censor_binning
 
 
 def d_cal_ic(
-        pred_probs_left: np.ndarray,
-        pred_probs_right: np.ndarray,
-        num_bins: int = 10
+    pred_probs_left: np.ndarray, pred_probs_right: np.ndarray, num_bins: int = 10
 ) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score for interval censored data.
@@ -120,34 +118,42 @@ def d_cal_ic(
     binning: np.ndarray
         The binning histogram of the D-Calibration test.
     """
-    assert len(pred_probs_left) == len(pred_probs_right), \
-        "The length of pred_probs_left and pred_probs_right should have same length."
+    assert len(pred_probs_left) == len(
+        pred_probs_right
+    ), "The length of pred_probs_left and pred_probs_right should have same length."
 
-    assert np.all(pred_probs_left >= pred_probs_right), \
-        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert np.all(
+        pred_probs_left >= pred_probs_right
+    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
 
-    assert (np.all(pred_probs_left >= 0) and np.all(pred_probs_right >= 0) and
-            np.all(pred_probs_left <= 1) and np.all(pred_probs_right <= 1)), \
-        "The predicted probabilities should be in the range [0, 1]."
+    assert (
+        np.all(pred_probs_left >= 0)
+        and np.all(pred_probs_right >= 0)
+        and np.all(pred_probs_left <= 1)
+        and np.all(pred_probs_right <= 1)
+    ), "The predicted probabilities should be in the range [0, 1]."
 
     n = len(pred_probs_left)
 
     binning = np.zeros([num_bins])
     for i in range(n):
-        partial_binning = create_interval_c_hist(pred_probs_left[i], pred_probs_right[i], num_bins)
+        partial_binning = create_interval_c_hist(
+            pred_probs_left[i], pred_probs_right[i], num_bins
+        )
         binning += partial_binning
 
     statistic, pvalue = chisquare(binning)
     return statistic, pvalue, binning
 
+
 def ksd_calibration(
-       pred_probs: np.ndarray,
-       event_indicators: np.ndarray,
-       return_details: bool = False,
+    pred_probs: np.ndarray,
+    event_indicators: np.ndarray,
+    return_details: bool = False,
 ) -> tuple[float, float] | tuple[float, dict]:
     """
     Calculate the K-S D-Calibration score.
-    
+
     Parameters
     ----------
     pred_probs: np.ndarray
@@ -170,9 +176,10 @@ def ksd_calibration(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs) == len(event_indicators), \
-        "The length of pred_probs and event_indicators should have same length."
-    
+    assert len(pred_probs) == len(
+        event_indicators
+    ), "The length of pred_probs and event_indicators should have same length."
+
     n = len(pred_probs)
     km = KaplanMeier(pred_probs, event_indicators)
     x_support = km.survival_times
@@ -185,31 +192,41 @@ def ksd_calibration(
     if return_details:
         fig, ax = plt.subplots()
         # plot the empirical CDF
-        ax.step(x_support, cdf_values, where='post', label='Prediction', color='blue', linewidth=2)
+        ax.step(
+            x_support,
+            cdf_values,
+            where="post",
+            label="Prediction",
+            color="blue",
+            linewidth=2,
+        )
         # plot the ideal CDF
-        ax.plot([0, 1], [0, 1], label='Ideal', linestyle='--', color='grey', linewidth=2)
+        ax.plot(
+            [0, 1], [0, 1], label="Ideal", linestyle="--", color="grey", linewidth=2
+        )
         ax.legend()
-        ax.set_xlabel(r'Survival Probability $S(t_i \mid x)$')
-        ax.set_ylabel('Cumulative Distribution Function')
+        ax.set_xlabel(r"Survival Probability $S(t_i \mid x)$")
+        ax.set_ylabel("Cumulative Distribution Function")
         fig.tight_layout()
 
         details = {
             "statistics": D_n,
             "p_value": p_value,
             "empirical_distribution": (x_support, cdf_values),
-            "figure": (fig, ax)
+            "figure": (fig, ax),
         }
         return p_value, details
     return p_value, D_n
 
+
 def ksd_cal_ic(
-        pred_probs_left: np.ndarray,
-        pred_probs_right: np.ndarray,
-        return_details: bool = False,
+    pred_probs_left: np.ndarray,
+    pred_probs_right: np.ndarray,
+    return_details: bool = False,
 ):
     """
     Calculate the K-S D-Calibration score for interval censored data.
-    
+
     Parameters
     ----------
     pred_probs_left: np.ndarray
@@ -232,11 +249,13 @@ def ksd_cal_ic(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs_left) == len(pred_probs_right), \
-        "The length of pred_probs_left and pred_probs_right should have same length."
-    
-    assert np.all(pred_probs_left >= pred_probs_right), \
-        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert len(pred_probs_left) == len(
+        pred_probs_right
+    ), "The length of pred_probs_left and pred_probs_right should have same length."
+
+    assert np.all(
+        pred_probs_left >= pred_probs_right
+    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
@@ -251,19 +270,28 @@ def ksd_cal_ic(
     if return_details:
         fig, ax = plt.subplots()
         # plot the empirical CDF
-        ax.step(x_support, cdf_values, where='post', label='Prediction', color='blue', linewidth=2)
+        ax.step(
+            x_support,
+            cdf_values,
+            where="post",
+            label="Prediction",
+            color="blue",
+            linewidth=2,
+        )
         # plot the ideal CDF
-        ax.plot([0, 1], [0, 1], label='Ideal', linestyle='--', color='grey', linewidth=2)
+        ax.plot(
+            [0, 1], [0, 1], label="Ideal", linestyle="--", color="grey", linewidth=2
+        )
         ax.legend()
-        ax.set_xlabel(r'Survival Probability $S(t_i \mid x)$')
-        ax.set_ylabel('Cumulative Distribution Function')
+        ax.set_xlabel(r"Survival Probability $S(t_i \mid x)$")
+        ax.set_ylabel("Cumulative Distribution Function")
         fig.tight_layout()
 
         details = {
             "statistics": D_n,
             "p_value": p_value,
             "empirical_distribution": (x_support, cdf_values),
-            "figure": (fig, ax)
+            "figure": (fig, ax),
         }
         return p_value, details
 
@@ -271,9 +299,7 @@ def ksd_cal_ic(
 
 
 def create_interval_c_hist(
-        prob_left: float,
-        prob_right: float,
-        num_bins: int
+    prob_left: float, prob_right: float, num_bins: int
 ) -> np.ndarray:
     """
     Create the binning histogram for an interval censored instance.
@@ -331,8 +357,10 @@ def create_interval_c_hist(
 
             # fill the intermediate bins with equal probability
             if right_idx > left_idx + 1:
-                intermediate_hist = (1.0 - first_hist - last_hist) / (right_idx - left_idx - 1)
-                hist[left_idx + 1:right_idx] = intermediate_hist
+                intermediate_hist = (1.0 - first_hist - last_hist) / (
+                    right_idx - left_idx - 1
+                )
+                hist[left_idx + 1 : right_idx] = intermediate_hist
 
             return hist
 
@@ -342,15 +370,15 @@ _residual_names = {
     "Modified CoxSnell-v1": "Cox-Snell Residuals",
     "Modified CoxSnell-v2": "Cox-Snell Residuals",
     "Martingale": "Martingale Residuals",
-    "Deviance": "Deviance Residuals"
+    "Deviance": "Deviance Residuals",
 }
 
 
 def residuals(
-        pred_probs: np.ndarray,
-        event_indicators: np.ndarray,
-        method: str = "CoxSnell",
-        draw_figure: bool = False
+    pred_probs: np.ndarray,
+    event_indicators: np.ndarray,
+    method: str = "CoxSnell",
+    draw_figure: bool = False,
 ) -> np.ndarray:
     """
     Calculate the residuals based on the predicted probabilities and event times.
@@ -373,7 +401,7 @@ def residuals(
     np.ndarray
         The calculated residuals.
     """
-    cox_residuals = - np.log(pred_probs)
+    cox_residuals = -np.log(pred_probs)
 
     if method == "CoxSnell":
         residuals = cox_residuals
@@ -388,13 +416,16 @@ def residuals(
     elif method == "Martingale":
         residuals = event_indicators - cox_residuals
     elif method == "Deviance":
+
         def safe_log(x):
             return np.log(x + 1e-8)
 
         martingale_res = event_indicators - cox_residuals
         # get the sign of the martingale residuals
         sign = np.sign(martingale_res)
-        residuals = sign * np.sqrt(-2 * (martingale_res + event_indicators * safe_log(cox_residuals)))
+        residuals = sign * np.sqrt(
+            -2 * (martingale_res + event_indicators * safe_log(cox_residuals))
+        )
     else:
         raise ValueError("Unknown method {}".format(method))
 
@@ -402,18 +433,37 @@ def residuals(
         cum_haz_empirical = NelsonAalen(cox_residuals, event_indicators)
         max_res = np.max(cox_residuals)
         fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
-        ax[0].plot(cum_haz_empirical.survival_times, cum_haz_empirical.cumulative_hazard, label='Empirical')
-        ax[0].plot([0, max_res], [0, max_res], label='Ideal', linestyle='--', color='red')
+        ax[0].plot(
+            cum_haz_empirical.survival_times,
+            cum_haz_empirical.cumulative_hazard,
+            label="Empirical",
+        )
+        ax[0].plot(
+            [0, max_res], [0, max_res], label="Ideal", linestyle="--", color="red"
+        )
         ax[0].legend()
-        ax[0].set_xlabel('Cox-Snell Residuals')
-        ax[0].set_ylabel('Cumlative hazard of residuals')
+        ax[0].set_xlabel("Cox-Snell Residuals")
+        ax[0].set_ylabel("Cumlative hazard of residuals")
 
         # use solid scatter points for uncensored instances and hollow scatter points for censored instances
         idx = np.arange(len(residuals))
         event_indicators = event_indicators.astype(bool)
-        ax[1].scatter(idx[event_indicators], residuals[event_indicators], alpha=0.5, color='red', label='Event')
-        ax[1].scatter(idx[~event_indicators], residuals[~event_indicators], facecolors='none', edgecolors='red', alpha=0.5, label='Censored')
-        ax[1].set_xlabel('Index')
+        ax[1].scatter(
+            idx[event_indicators],
+            residuals[event_indicators],
+            alpha=0.5,
+            color="red",
+            label="Event",
+        )
+        ax[1].scatter(
+            idx[~event_indicators],
+            residuals[~event_indicators],
+            facecolors="none",
+            edgecolors="red",
+            alpha=0.5,
+            label="Censored",
+        )
+        ax[1].set_xlabel("Index")
         ax[1].set_ylabel(_residual_names[method])
         ax[1].legend()
         plt.show()
@@ -421,12 +471,12 @@ def residuals(
 
 
 def km_calibration(
-        average_survival_curve: np.ndarray,
-        time_coordinates: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        interpolation_method: str = 'Linear',
-        draw_figure: bool = False
+    average_survival_curve: np.ndarray,
+    time_coordinates: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    interpolation_method: str = "Linear",
+    draw_figure: bool = False,
 ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
@@ -480,7 +530,9 @@ def km_calibration(
         average_survival_curve = np.concatenate([[1], average_survival_curve])
 
     # interpolate the average curve, so that it will have the same time coordinates as km_curve
-    spline = interpolated_curve(time_coordinates, average_survival_curve, interpolation_method)
+    spline = interpolated_curve(
+        time_coordinates, average_survival_curve, interpolation_method
+    )
     average_survival_curve = spline(unique_event_times)
     average_survival_curve = np.clip(average_survival_curve, 0, 1)
 
@@ -491,29 +543,32 @@ def km_calibration(
 
     if draw_figure:
         fig, ax = plt.subplots(dpi=400)
-        ax.plot(unique_event_times, average_survival_curve, label='Average Prediction Curve')
-        ax.plot(unique_event_times, km_curve, label='KM Curve')
+        ax.plot(
+            unique_event_times, average_survival_curve, label="Average Prediction Curve"
+        )
+        ax.plot(unique_event_times, km_curve, label="KM Curve")
         ax.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
-        score_text = r'KM-Calibration$= {:.3f}$'.format(mse)
-        ax.plot([], [], ' ', label=score_text)
+        score_text = r"KM-Calibration$= {:.3f}$".format(mse)
+        ax.plot([], [], " ", label=score_text)
         ax.legend()
-        ax.set_xlabel('Time')
-        ax.set_ylabel('Survival Probability')
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Survival Probability")
         plt.show()
         return mse, (fig, ax)
 
     return mse
 
+
 def coverage_ic(
-        pred_l: np.ndarray,
-        pred_r: np.ndarray,
-        obs_l: np.ndarray,
-        obs_r: np.ndarray,
-        obs_l_train: Optional[np.ndarray] = None,
-        obs_r_train: Optional[np.ndarray] = None,
-        cov_level: float = 0.95,
-        method: str = "Turnbull",
-        eps: float = 1e-12
+    pred_l: np.ndarray,
+    pred_r: np.ndarray,
+    obs_l: np.ndarray,
+    obs_r: np.ndarray,
+    obs_l_train: Optional[np.ndarray] = None,
+    obs_r_train: Optional[np.ndarray] = None,
+    cov_level: float = 0.95,
+    method: str = "Turnbull",
+    eps: float = 1e-12,
 ) -> tuple[float, float, float]:
     """
     Compute the Interval-Censor Coverage (IC) metric.
@@ -527,7 +582,7 @@ def coverage_ic(
     The partial coverage is estimated using the empirical distribution of censoring intervals from the training data.
     Like what we did for the partial weights for concordance_ic().
     That means we estimate the empirical CDF of censoring intervals [L_j, U_j] from the training data using Turnbull estimator,
-    and use it to compute S(L_i), S(U_i), S(t_li), S(t_ui) for each test instance. 
+    and use it to compute S(L_i), S(U_i), S(t_li), S(t_ui) for each test instance.
     The partial coverage is then calculated as:
         partial_coverage = (S(max(L_i, t_li)) - S(min(U_i, t_ui))) / (S(L_i) - S(U_i))
 
@@ -566,7 +621,9 @@ def coverage_ic(
     if obs_l.ndim != 1 or obs_r.ndim != 1:
         raise ValueError("obs_l and obs_r must be 1-dimensional arrays.")
     if not (pred_l.shape == pred_r.shape == obs_l.shape == obs_r.shape):
-        raise ValueError("pred_l, pred_r, obs_l, and obs_r must contain the same number of samples.")
+        raise ValueError(
+            "pred_l, pred_r, obs_l, and obs_r must contain the same number of samples."
+        )
 
     if method == "linear":
         # Linear interpolation method, assumes uniform distribution within each censoring interval
@@ -578,10 +635,14 @@ def coverage_ic(
     elif method == "Turnbull":
         # error if training is None
         if obs_l_train is None or obs_r_train is None:
-            raise ValueError("obs_l_train and obs_r_train must be provided for Turnbull method.")
+            raise ValueError(
+                "obs_l_train and obs_r_train must be provided for Turnbull method."
+            )
 
         if obs_l_train.ndim != 1 or obs_r_train.ndim != 1:
-            raise ValueError("obs_l_train and obs_r_train must be 1-dimensional arrays.")
+            raise ValueError(
+                "obs_l_train and obs_r_train must be 1-dimensional arrays."
+            )
 
         if np.any(obs_l_train > obs_r_train):
             raise ValueError("Found training intervals with left > right.")
@@ -623,10 +684,9 @@ def coverage_ic(
 
     return observed_cov, cov_gap, avg_length
 
+
 def discrepancy_to_uniform(
-        x: np.ndarray,
-        cdf: np.ndarray,
-        x_support: Optional[tuple[float, float]] = None
+    x: np.ndarray, cdf: np.ndarray, x_support: Optional[tuple[float, float]] = None
 ) -> float:
     """
     Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
@@ -650,7 +710,9 @@ def discrepancy_to_uniform(
     if x.ndim != 1 or cdf.ndim != 1 or x.size != cdf.size:
         raise ValueError("x and cdf must be 1D arrays of the same length.")
 
-    assert np.all(cdf >= 0) and np.all(cdf <= 1), "The cdf values must be in the range [0, 1]."
+    assert np.all(cdf >= 0) and np.all(
+        cdf <= 1
+    ), "The cdf values must be in the range [0, 1]."
 
     if not (np.all(np.diff(x) >= 0) and np.all(np.diff(cdf) >= 0)):
         raise ValueError("x and cdf must be nondecreasing.")
@@ -668,6 +730,7 @@ def discrepancy_to_uniform(
     D_n = float(max(D_plus, D_minus))
     return D_n
 
+
 def ks_pvalue(D_n: float, n: int) -> float:
     """
     Compute asymptotic KS one-sample p-value using SciPy's Kolmogorov distribution.
@@ -684,7 +747,7 @@ def ks_pvalue(D_n: float, n: int) -> float:
     return float(kstwobign.sf(lambda_n))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ### test the KM calibration
 
     # # first we define the time coordinates

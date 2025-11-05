@@ -101,12 +101,16 @@ def test_quantile_brier_metrics(quantile_evaluator):
     assert np.isfinite(brier_single)
 
     target_grid = np.array([4.0, 8.0, 12.0])
-    brier_multi = evaluator.brier_score_multiple_points(target_times=target_grid, IPCW_weighted=False)
+    brier_multi = evaluator.brier_score_multiple_points(
+        target_times=target_grid, IPCW_weighted=False
+    )
     assert brier_multi.shape == target_grid.shape
     assert np.all(np.isfinite(brier_multi))
 
     ibs_ipcw = evaluator.integrated_brier_score(num_points=9, IPCW_weighted=True)
-    ibs_naive = evaluator.integrated_brier_score(target_times=np.linspace(2.0, 14.0, 7), IPCW_weighted=False)
+    ibs_naive = evaluator.integrated_brier_score(
+        target_times=np.linspace(2.0, 14.0, 7), IPCW_weighted=False
+    )
     assert np.isfinite(ibs_ipcw)
     assert np.isfinite(ibs_naive)
 
@@ -129,7 +133,9 @@ def test_quantile_calibration_tools(quantile_evaluator):
     evaluator = quantile_evaluator["evaluator"]
     target_time = 6.0
 
-    one_p, one_details = evaluator.one_calibration(target_time=target_time, num_bins=5, return_details=True)
+    one_p, one_details = evaluator.one_calibration(
+        target_time=target_time, num_bins=5, return_details=True
+    )
     assert np.isfinite(one_p)
     assert "observed_probabilities" in one_details
     fig_hist, _ = one_details["histogram_plot"]
@@ -137,7 +143,9 @@ def test_quantile_calibration_tools(quantile_evaluator):
     plt.close(fig_hist)
     plt.close(fig_pp)
 
-    ici_summary = evaluator.integrated_calibration_index(target_time=target_time, draw_figure=False)
+    ici_summary = evaluator.integrated_calibration_index(
+        target_time=target_time, draw_figure=False
+    )
     assert "ICI" in ici_summary
 
     d_p, d_details = evaluator.d_calibration(num_bins=6, return_details=True)

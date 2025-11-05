@@ -87,4 +87,6 @@ def test_brier_multiple_points_ic_matches_single_uncensored() -> None:
         ]
     )
 
-    np.testing.assert_allclose(multi_scores, single_scores, rtol=1e-6, atol=1e-8, equal_nan=True)
+    np.testing.assert_allclose(
+        multi_scores, single_scores, rtol=1e-6, atol=1e-8, equal_nan=True
+    )

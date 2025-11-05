@@ -1,19 +1,24 @@
 from typing import Optional
+
 import numpy as np
 import pandas as pd
 from lifelines import WeibullAFTFitter
+
 from SurvivalEVAL.Evaluations.custom_types import Numeric
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, TurnbullEstimatorLifelines
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
+    TurnbullEstimatorLifelines,
+)
 
 
 def single_brier_score(
-        preds: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        train_event_times: np.ndarray,
-        train_event_indicators: np.ndarray,
-        target_time: Optional[float] = None,
-        ipcw: bool = True
+    preds: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray,
+    train_event_indicators: np.ndarray,
+    target_time: Optional[float] = None,
+    ipcw: bool = True,
 ) -> float:
     """
     Calculate the Brier score at a specific time.
@@ -65,10 +70,12 @@ def single_brier_score(
         # of censoring model.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = ((event_times <= target_time) & event_indicators)
-        weight_cat2 = (event_times > target_time)
+        weight_cat1 = (event_times <= target_time) & event_indicators
+        weight_cat2 = event_times > target_time
 
-    b_score = (np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2).mean()
+    b_score = (
+        np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
+    ).mean()
     ###########################
     # Here we are ordering event times and then using predict with level.chaos = 1 which returns
     # predictions ordered by time.
@@ -96,15 +103,15 @@ def single_brier_score(
 
 
 def brier_score_ic(
-        preds: np.ndarray,
-        left_limits: np.ndarray,
-        right_limits: np.ndarray,
-        train_left_limits: Optional[np.ndarray] = None,
-        train_right_limits: Optional[np.ndarray] = None,
-        x: Optional[np.ndarray] = None,
-        x_train: Optional[np.ndarray] = None,
-        target_time: Optional[Numeric] = None,
-        method: str = "Tsouprou-marginal",
+    preds: np.ndarray,
+    left_limits: np.ndarray,
+    right_limits: np.ndarray,
+    train_left_limits: Optional[np.ndarray] = None,
+    train_right_limits: Optional[np.ndarray] = None,
+    x: Optional[np.ndarray] = None,
+    x_train: Optional[np.ndarray] = None,
+    target_time: Optional[Numeric] = None,
+    method: str = "Tsouprou-marginal",
 ) -> float:
     """
     Calculate the Brier score at a specific time.
@@ -138,7 +145,9 @@ def brier_score_ic(
         Value of the brier score.
     """
     if target_time is None:
-        tau_vals = np.concatenate([left_limits, right_limits[np.isfinite(right_limits)]])
+        tau_vals = np.concatenate(
+            [left_limits, right_limits[np.isfinite(right_limits)]]
+        )
         tau = np.unique(np.sort(tau_vals))
         target_time = np.median(tau)
 
@@ -174,47 +183,58 @@ def brier_score_ic(
             target_probs = marginal_estimator.predict(target_time)
         elif method == "Tsouprou-conditional":
             if x is None or x_train is None:
-                raise ValueError("Features for both training and testing data must be provided for "
-                                 "Tsouprou-conditional method.")
+                raise ValueError(
+                    "Features for both training and testing data must be provided for "
+                    "Tsouprou-conditional method."
+                )
 
             if x.ndim != x_train.ndim:
-                raise ValueError("x and x_train must have the same number of dimensions.")
+                raise ValueError(
+                    "x and x_train must have the same number of dimensions."
+                )
 
-            train_data = {
-                'left': train_left_limits,
-                'right': train_right_limits
-            }
+            train_data = {"left": train_left_limits, "right": train_right_limits}
             if x_train.ndim == 1:
-                train_data['feature'] = x_train
+                train_data["feature"] = x_train
             elif x_train.ndim == 2:
                 for i in range(x_train.shape[1]):
-                    train_data[f'feature_{i}'] = x_train[:, i]
+                    train_data[f"feature_{i}"] = x_train[:, i]
             else:
                 raise ValueError("x_train must be a 1-D or 2-D array.")
             train_df = pd.DataFrame(train_data)
 
             x_data = {}
             if x.ndim == 1:
-                x_data['feature'] = x
+                x_data["feature"] = x
             elif x.ndim == 2:
                 for i in range(x.shape[1]):
-                    x_data[f'feature_{i}'] = x[:, i]
+                    x_data[f"feature_{i}"] = x[:, i]
             else:
                 raise ValueError("x must be a 1-D or 2-D array.")
             x_df = pd.DataFrame(x_data)
 
             aft_model = WeibullAFTFitter()
-            aft_model.fit_interval_censoring(train_df, 'left', 'right')
+            aft_model.fit_interval_censoring(train_df, "left", "right")
             # get the conditional survival probabilities at the left limit, right limit, and target time
-            left_probs = aft_model.predict_survival_function(x_df, times=left_limits).values.diagonal()
-            right_probs = aft_model.predict_survival_function(x_df, times=right_limits).values.diagonal()
-            target_probs = aft_model.predict_survival_function(x_df, target_time).values.flatten()
+            left_probs = aft_model.predict_survival_function(
+                x_df, times=left_limits
+            ).values.diagonal()
+            right_probs = aft_model.predict_survival_function(
+                x_df, times=right_limits
+            ).values.diagonal()
+            target_probs = aft_model.predict_survival_function(
+                x_df, target_time
+            ).values.flatten()
         else:
             raise ValueError(f"Method {method} is not supported.")
         # exam on non-bad indices
         # bad indices are those (1) the target time is within the interval and (2) the left and right survival
         # probabilities are the same, which leads to zeros in both numerator and denominator in survival_status
-        bad = (left_probs == right_probs) & (left_limits < target_time) & (target_time <= right_limits)
+        bad = (
+            (left_probs == right_probs)
+            & (left_limits < target_time)
+            & (target_time <= right_limits)
+        )
         if np.sum(bad) > 0:
             left_limits = left_limits[~bad]
             right_limits = right_limits[~bad]
@@ -225,13 +245,15 @@ def brier_score_ic(
                 target_probs = target_probs[~bad]
 
         # supress warnings for divide by zero
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             survival_status = (target_probs - right_probs) / (left_probs - right_probs)
         survival_status[right_limits < target_time] = 0
         survival_status[left_limits >= target_time] = 1
 
         if np.any((survival_status < 0) | (survival_status > 1)):
-            raise ValueError("Calculated survival status contains values outside [0, 1].")
+            raise ValueError(
+                "Calculated survival status contains values outside [0, 1]."
+            )
 
         # calculate the brier score
         brier_score = np.mean(np.square(preds - survival_status))
@@ -241,13 +263,13 @@ def brier_score_ic(
 
 
 def brier_multiple_points(
-        pred_mat: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray],
-        train_event_indicators: Optional[np.ndarray],
-        target_times: np.ndarray,
-        ipcw: bool = True
+    pred_mat: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: Optional[np.ndarray],
+    train_event_indicators: Optional[np.ndarray],
+    target_times: np.ndarray,
+    ipcw: bool = True,
 ) -> np.ndarray:
     """
     Calculate multiple Brier scores at multiple specific times.
@@ -279,14 +301,22 @@ def brier_multiple_points(
         raise TypeError(error)
 
     # bs_points_matrix = np.tile(event_times, (len(target_times), 1))
-    target_times_mat = np.repeat(target_times.reshape(1, -1), repeats=len(event_times), axis=0)
-    event_times_mat = np.repeat(event_times.reshape(-1, 1), repeats=len(target_times), axis=1)
-    event_indicators_mat = np.repeat(event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1)
+    target_times_mat = np.repeat(
+        target_times.reshape(1, -1), repeats=len(event_times), axis=0
+    )
+    event_times_mat = np.repeat(
+        event_times.reshape(-1, 1), repeats=len(target_times), axis=1
+    )
+    event_indicators_mat = np.repeat(
+        event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1
+    )
     event_indicators_mat = event_indicators_mat.astype(bool)
 
     if ipcw:
         if train_event_times is None or train_event_indicators is None:
-            raise ValueError("Training event times and indicators must be provided for IPCW weighting.")
+            raise ValueError(
+                "Training event times and indicators must be provided for IPCW weighting."
+            )
 
         inverse_train_event_indicators = 1 - train_event_indicators
 
@@ -297,7 +327,9 @@ def brier_multiple_points(
         ipc_pred = ipc_model.predict(event_times_mat)
         # Catch if denominator is 0.
         ipc_pred[ipc_pred == 0] = np.inf
-        weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat) / ipc_pred
+        weight_cat1 = (
+            (event_times_mat <= target_times_mat) & event_indicators_mat
+        ) / ipc_pred
         # Catch if event times goes over max training event time, i.e. predict gives NA
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
@@ -310,24 +342,26 @@ def brier_multiple_points(
         # the inverse probability of censoring model.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = ((event_times_mat <= target_times_mat) & event_indicators_mat)
-        weight_cat2 = (event_times_mat > target_times_mat)
+        weight_cat1 = (event_times_mat <= target_times_mat) & event_indicators_mat
+        weight_cat2 = event_times_mat > target_times_mat
 
-    ipcw_square_error_mat = np.square(pred_mat) * weight_cat1 + np.square(1 - pred_mat) * weight_cat2
+    ipcw_square_error_mat = (
+        np.square(pred_mat) * weight_cat1 + np.square(1 - pred_mat) * weight_cat2
+    )
     brier_scores = np.mean(ipcw_square_error_mat, axis=0)
     return brier_scores
 
 
 def brier_multiple_points_ic(
-        pred_mat: np.ndarray,
-        left_limits: np.ndarray,
-        right_limits: np.ndarray,
-        target_times: np.ndarray,
-        train_left_limits: Optional[np.ndarray] = None,
-        train_right_limits: Optional[np.ndarray] = None,
-        x: Optional[np.ndarray] = None,
-        x_train: Optional[np.ndarray] = None,
-        method: str = "Tsouprou-marginal",
+    pred_mat: np.ndarray,
+    left_limits: np.ndarray,
+    right_limits: np.ndarray,
+    target_times: np.ndarray,
+    train_left_limits: Optional[np.ndarray] = None,
+    train_right_limits: Optional[np.ndarray] = None,
+    x: Optional[np.ndarray] = None,
+    x_train: Optional[np.ndarray] = None,
+    method: str = "Tsouprou-marginal",
 ) -> np.ndarray:
     """
     Compute Brier scores at multiple target times for interval-censored data.
@@ -373,9 +407,15 @@ def brier_multiple_points_ic(
         )
 
     # Broadcast helpers
-    left_mat  = np.repeat(left_limits.reshape(-1, 1), n_times, axis=1)   # (n_samples, n_times)
-    right_mat = np.repeat(right_limits.reshape(-1, 1), n_times, axis=1)  # (n_samples, n_times)
-    time_mat  = np.repeat(target_times.reshape(1, -1), n_samples, axis=0)  # (n_samples, n_times)
+    left_mat = np.repeat(
+        left_limits.reshape(-1, 1), n_times, axis=1
+    )  # (n_samples, n_times)
+    right_mat = np.repeat(
+        right_limits.reshape(-1, 1), n_times, axis=1
+    )  # (n_samples, n_times)
+    time_mat = np.repeat(
+        target_times.reshape(1, -1), n_samples, axis=0
+    )  # (n_samples, n_times)
 
     # ============================================================
     # Case 1: 'uncensored' (naive treating intervals like exact-ish)
@@ -396,7 +436,7 @@ def brier_multiple_points_ic(
         # survival_status default to 0 then overwrite alive cases:
         survival_status_mat = np.zeros_like(pred_mat, dtype=float)
         # alive if t_j < L_i
-        alive_mask = (time_mat < left_mat)
+        alive_mask = time_mat < left_mat
         survival_status_mat[alive_mask] = 1.0
         # dead if t_j >= R_i and not inf
         # (already 0 there, so nothing to set)
@@ -433,31 +473,32 @@ def brier_multiple_points_ic(
             )
 
             # Per-sample probs at L_i and R_i
-            left_probs  = marginal_estimator.predict(left_limits)    # (n_samples,)
-            right_probs = marginal_estimator.predict(right_limits)   # (n_samples,)
+            left_probs = marginal_estimator.predict(left_limits)  # (n_samples,)
+            right_probs = marginal_estimator.predict(right_limits)  # (n_samples,)
 
             # Per-time probs S(t_j). Same for every sample.
             target_probs_vec = marginal_estimator.predict(target_times)  # (n_times,)
 
             # Broadcast:
-            left_probs_mat  = np.repeat(left_probs.reshape(-1, 1), n_times, axis=1)
+            left_probs_mat = np.repeat(left_probs.reshape(-1, 1), n_times, axis=1)
             right_probs_mat = np.repeat(right_probs.reshape(-1, 1), n_times, axis=1)
-            target_probs_mat = np.repeat(target_probs_vec.reshape(1, -1), n_samples, axis=0)
+            target_probs_mat = np.repeat(
+                target_probs_vec.reshape(1, -1), n_samples, axis=0
+            )
 
         elif method == "Tsouprou-conditional":
             if x is None or x_train is None:
-                raise ValueError("x and x_train must be provided for Tsouprou-conditional.")
+                raise ValueError(
+                    "x and x_train must be provided for Tsouprou-conditional."
+                )
 
             # build train_df
-            train_data = {
-                'left': train_left_limits,
-                'right': train_right_limits
-            }
+            train_data = {"left": train_left_limits, "right": train_right_limits}
             if x_train.ndim == 1:
-                train_data['feature'] = x_train
+                train_data["feature"] = x_train
             elif x_train.ndim == 2:
                 for k in range(x_train.shape[1]):
-                    train_data[f'feature_{k}'] = x_train[:, k]
+                    train_data[f"feature_{k}"] = x_train[:, k]
             else:
                 raise ValueError("x_train must be a 1-D or 2-D array.")
             train_df = pd.DataFrame(train_data)
@@ -465,23 +506,25 @@ def brier_multiple_points_ic(
             # build x_df for test
             x_data = {}
             if x.ndim == 1:
-                x_data['feature'] = x
+                x_data["feature"] = x
             elif x.ndim == 2:
                 for k in range(x.shape[1]):
-                    x_data[f'feature_{k}'] = x[:, k]
+                    x_data[f"feature_{k}"] = x[:, k]
             else:
                 raise ValueError("x must be a 1-D or 2-D array.")
             x_df = pd.DataFrame(x_data)
 
             aft_model = WeibullAFTFitter()
-            aft_model.fit_interval_censoring(train_df, 'left', 'right')
+            aft_model.fit_interval_censoring(train_df, "left", "right")
 
             # left_probs[i]   = S_i(L_i)
             # right_probs[i]  = S_i(R_i)
             # We'll grab these by diagonal extraction, same as single-time code:
-            left_sf_df  = aft_model.predict_survival_function(x_df, times=left_limits)    # rows=times, cols=samples
+            left_sf_df = aft_model.predict_survival_function(
+                x_df, times=left_limits
+            )  # rows=times, cols=samples
             right_sf_df = aft_model.predict_survival_function(x_df, times=right_limits)
-            left_probs  = left_sf_df.values.diagonal()   # (n_samples,)
+            left_probs = left_sf_df.values.diagonal()  # (n_samples,)
             right_probs = right_sf_df.values.diagonal()  # (n_samples,)
 
             # target_probs_mat[i,j] = S_i(t_j)
@@ -490,8 +533,8 @@ def brier_multiple_points_ic(
             target_probs_mat = full_sf_df.T.values  # shape (n_samples, n_times)
 
             # broadcast left/right
-            left_probs_mat  = np.repeat(left_probs.reshape(-1,1), n_times, axis=1)
-            right_probs_mat = np.repeat(right_probs.reshape(-1,1), n_times, axis=1)
+            left_probs_mat = np.repeat(left_probs.reshape(-1, 1), n_times, axis=1)
+            right_probs_mat = np.repeat(right_probs.reshape(-1, 1), n_times, axis=1)
 
         else:
             raise ValueError(f"Method {method} is not supported.")
@@ -510,14 +553,14 @@ def brier_multiple_points_ic(
         #       if t_j <= L_i -> 1
         # This guarantees values in [0,1].
 
-        denom = (left_probs_mat - right_probs_mat)
+        denom = left_probs_mat - right_probs_mat
 
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             survival_status_mat = (target_probs_mat - right_probs_mat) / denom
 
         # Apply boundary overrides
-        after_right_mask = (time_mat > right_mat)
-        before_left_mask = (time_mat <= left_mat)
+        after_right_mask = time_mat > right_mat
+        before_left_mask = time_mat <= left_mat
         survival_status_mat[after_right_mask] = 0.0
         survival_status_mat[before_left_mask] = 1.0
 
@@ -529,7 +572,9 @@ def brier_multiple_points_ic(
         # sanity check: any out-of-range due to numerical issues?
         oob_mask = (survival_status_mat < 0.0) | (survival_status_mat > 1.0)
         if np.any(oob_mask & ~bad_mask):
-            raise ValueError("Calculated survival status contains values outside [0,1] for some non-bad entries.")
+            raise ValueError(
+                "Calculated survival status contains values outside [0,1] for some non-bad entries."
+            )
 
         # We'll exclude bad_mask entries from the averaging for their column.
         usable_mask = ~bad_mask
