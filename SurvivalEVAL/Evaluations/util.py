@@ -336,6 +336,7 @@ def predict_rmst(
         time coordinate of the survival curve of a single sample.
     interpolation: str
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
+        If 'None', no interpolation is applied. Use step function to calculate the area under the curve.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
 
@@ -344,44 +345,55 @@ def predict_rmst(
     restricted_mean_survival_times: float
         The restricted mean survival time(s).
     """
+    # ensure valid alignment before any reshaping/broadcasting
     _check_dim_align(survival_curves, times_coordinates)
+
+    survival_curves = np.asarray(survival_curves, dtype=float)
+    times_coordinates = np.asarray(times_coordinates, dtype=float)
 
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    return_scalar = ndim_surv == 1 and ndim_time == 1
+
+    def _broadcast_to_rows(
+        surv: np.ndarray, times: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        surv_rows = 1 if surv.ndim == 1 else surv.shape[0]
+        time_rows = 1 if times.ndim == 1 else times.shape[0]
+        n_rows = max(surv_rows, time_rows)
+
+        if surv.ndim == 1:
+            surv = np.tile(surv, (n_rows, 1))
+        if times.ndim == 1:
+            times = np.tile(times, (n_rows, 1))
+        return surv, times
 
     if interpolation == "None":
-        width = np.diff(times_coordinates, axis=1 if ndim_time == 2 else 0)
-        areas = (
-            width * survival_curves[:, :-1]
-            if ndim_surv == 2
-            else width * survival_curves[:-1]
-        )
+        surv, times = _broadcast_to_rows(survival_curves, times_coordinates)
+        width = np.diff(times, axis=1)
+        areas = width * surv[:, :-1]
         rmst = np.sum(areas, axis=1)
     elif interpolation == "Linear":
-        rmst = trapezoid(survival_curves, times_coordinates, axis=-1)
+        surv, times = _broadcast_to_rows(survival_curves, times_coordinates)
+        rmst = trapezoid(surv, times, axis=-1)
     elif interpolation == "Pchip":
         if ndim_time == 1:
             spline = PchipInterpolator(
                 times_coordinates, survival_curves, axis=1 if ndim_surv == 2 else 0
             )
-            rmst = spline.integrate(0, max(times_coordinates))
+            rmst = spline.integrate(0, float(np.max(times_coordinates)))
         elif ndim_time == 2:
-            rmst = np.empty(survival_curves.shape[0])
-            if ndim_surv == 1:
-                for i in range(times_coordinates.shape[0]):
-                    spline = PchipInterpolator(times_coordinates[i], survival_curves)
-                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
-            elif ndim_surv == 2:
-                for i in range(times_coordinates.shape[0]):
-                    print(i)
-                    spline = PchipInterpolator(times_coordinates[i], survival_curves[i])
-                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
+            surv, times = _broadcast_to_rows(survival_curves, times_coordinates)
+            rmst = np.empty(times.shape[0], dtype=float)
+            for i in range(times.shape[0]):
+                spline = PchipInterpolator(times[i], surv[i])
+                rmst[i] = spline.integrate(0, float(np.max(times[i])))
         else:
             raise ValueError("times_coordinate must be 1-D or 2-D")
     else:
         raise ValueError("interpolation should be one of ['None', 'Linear', 'Pchip']")
 
-    return rmst
+    return rmst.item() if return_scalar else rmst
 
 
 def predict_mean_st(
