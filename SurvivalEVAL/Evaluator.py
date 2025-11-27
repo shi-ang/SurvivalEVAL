@@ -929,7 +929,7 @@ class SurvivalEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def mse(
@@ -980,7 +980,7 @@ class SurvivalEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def rmse(
@@ -1756,7 +1756,7 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def mse(
@@ -1807,7 +1807,7 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def rmse(
