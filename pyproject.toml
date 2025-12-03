@@ -53,7 +53,7 @@ Changelog = "https://github.com/shi-ang/SurvivalEVAL/blob/main/CHANGELOG.md"
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = { attr = "SurvivalEVAL.__version__" }
+version = { attr = "SurvivalEVAL.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
