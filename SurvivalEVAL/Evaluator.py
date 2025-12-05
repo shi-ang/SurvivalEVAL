@@ -2187,6 +2187,10 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
         survival_level = 1 - quantile_levels
+        if predict_time_method == "RMST":
+            raise NotImplementedError(
+                "RMST prediction time method is not implemented for quantile curves."
+            )
         super(QuantileRegEvaluator, self).__init__(
             survival_level,
             pred_regs,
