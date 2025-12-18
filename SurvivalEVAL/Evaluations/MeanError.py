@@ -41,7 +41,7 @@ def mean_error(
         Method of handling censorship.
         Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", and "Pseudo_obs_pop"
     weighted: boolean, default: True
-        Whether to use weighting scheme for MAE.
+        Whether to use weighting scheme for mean error.
         If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
@@ -52,7 +52,7 @@ def mean_error(
 
     Returns
     -------
-    Value for the calculated MAE score.
+    Value for the calculated mean error.
     """
     event_indicators = event_indicators.astype(bool)
     n_test = event_times.size
