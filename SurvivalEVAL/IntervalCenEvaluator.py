@@ -906,6 +906,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self.right_limits,
             self.train_left_limits,
             self.train_right_limits,
-            cov_level=cov_level,
+            cov_level=cov_level if cov_level is not None else (quantile_range[1] - quantile_range[0]),
             method=method,
         )
