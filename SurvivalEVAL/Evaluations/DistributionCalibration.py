@@ -259,7 +259,7 @@ def ksd_cal_ic(
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
-    tb = TurnbullEstimatorLifelines(pred_probs_left, pred_probs_right)
+    tb = TurnbullEstimatorLifelines(pred_probs_right, pred_probs_left)
     x_support = tb.survival_times
     cdf_values = tb.cumulative_dens
 
