@@ -137,15 +137,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
     def concordance(
-        self, method: str = "probabilistic", ties: str = "skip", *args, **kwargs
+        self, method: str = "comparable", ties: str = "skip", *args, **kwargs
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index from the predicted survival curve.
 
         Parameters
         ----------
-        method: str, default: "probabilistic"
-            Method to calculate concordance index. Options are "probabilistic" and "midpoint".
+        method: str, default: "comparable"
+            Method to calculate concordance index. Options are "comparable", "probabilistic" and "midpoint".
         tie_strategy: str, default: "skip"
             How to handle ties in eta:
               - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
@@ -175,19 +175,20 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 ties=ties,
             )
             return c_index, num, den
-        elif method == "probabilistic":
+        elif method in ["comparable", "probability"]:
             c_index, num, den = concordance_ic(
                 eta=-pred_times,
                 left=self.left_limits,
                 right=self.right_limits,
                 left_train=self.train_left_limits,
                 right_train=self.train_right_limits,
+                method=method,
                 ties=ties,
             )
             return c_index, np.sum(num), np.sum(den)
         else:
             raise ValueError(
-                "Please enter one of 'probabilistic' or 'midpoint' for concordance method."
+                "Please enter one of 'probability' or 'midpoint' for concordance method."
             )
 
     def brier_score(
@@ -756,17 +757,16 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         Returns
         -------
-        ks_statistic: float
-            The K-S statistic of the calibration test.
-        d_statistic: float
-            The D statistic of the calibration test.
+        pvalue: float
+            The p-value of the K-S D-Calibration test.
+        statistic: float
+            The test statistic of the K-S D-Calibration test.
         details: dict, optional
-            A dictionary containing detailed calibration information, including:
-            - ks_statistic: The K-S statistic of the calibration test.
-            - d_statistic: The D statistic of the calibration test.
-            - ks_p_value: The p-value of the K-S test.
-            - d_p_value: The p-value of the D test.
-
+            The detailed information including the empirical distribution and the figure.
+            - statistics: float
+            - p_value: float
+            - empirical_distribution: tuple (x_support, cdf_values)
+            - figure: tuple (fig, ax)
         """
         pred_probs_left = self.predict_probability_from_curve(self.left_limits)
         pred_probs_right = self.predict_probability_from_curve(self.right_limits)
@@ -785,7 +785,11 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         ----------
         n_quad: int, default: 256
             Number of quadrature points to use for numerical integration.
-        returns AUPRC acores for each sample.
+
+        Returns
+        -------
+        auprc: float
+            The AUPRC scores for each sample.
         -------
         """
         return auprc_ic(
@@ -903,6 +907,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self.right_limits,
             self.train_left_limits,
             self.train_right_limits,
-            cov_level=cov_level,
+            cov_level=cov_level if cov_level is not None else (quantile_range[1] - quantile_range[0]),
             method=method,
         )

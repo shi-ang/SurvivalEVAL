@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import os
+from pathlib import Path
 from setuptools import setup, find_packages
-from SurvivalEVAL.version import __version__
 
 exec(compile(open("SurvivalEVAL/version.py").read(), "SurvivalEVAL/version.py", "exec"))
 
@@ -11,10 +11,16 @@ def read(filename):
     with open(os.path.join(os.path.dirname(__file__), filename), encoding='utf8') as f:
         return f.read()
 
+def read_version():
+    version_file = Path(__file__).parent / "SurvivalEVAL" / "version.py"
+    for line in version_file.read_text().splitlines():
+        if line.startswith("__version__"):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    raise RuntimeError("Unable to find __version__ in SurvivalEVAL/version.py")
 
 setup(
     name="SurvivalEVAL",
-    version=__version__,
+    version=read_version(),
     packages=find_packages(),
     author="Shi-ang Qi, Weijie Sun",
     author_email="shiang@ualberta.ca, weijie2@ualberta.ca",
