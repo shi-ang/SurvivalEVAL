@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-01-22: Version 0.6.1
+
+1. Add a version of Concordance index for interval censoring based on comparable pairs only, just like Harrell's C for right censoring.
+2. Added Fiducial estimator for interval censored data. This haven't been integrated into the Evaluator class yet.
+3. Bug fixes for Distribution Calibration (for interval censoring), and coverage (for interval censoring).
+
 ## 2025-11-04: Version 0.6.0
 
 1. Add IntervalCenEvaluator.py for interval censoring evaluation. The new features include:

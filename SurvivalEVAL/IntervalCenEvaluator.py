@@ -785,9 +785,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         ----------
         n_quad: int, default: 256
             Number of quadrature points to use for numerical integration.
-        
+
         Returns
-        ------- 
+        -------
         auprc: float
             The AUPRC scores for each sample.
         -------
