@@ -137,15 +137,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
     def concordance(
-        self, method: str = "probabilistic", ties: str = "skip", *args, **kwargs
+        self, method: str = "comparable", ties: str = "skip", *args, **kwargs
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index from the predicted survival curve.
 
         Parameters
         ----------
-        method: str, default: "probabilistic"
-            Method to calculate concordance index. Options are "probabilistic" and "midpoint".
+        method: str, default: "comparable"
+            Method to calculate concordance index. Options are "comparable", "probabilistic" and "midpoint".
         tie_strategy: str, default: "skip"
             How to handle ties in eta:
               - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
@@ -175,13 +175,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 ties=ties,
             )
             return c_index, num, den
-        elif method == "probabilistic":
+        elif method in ["comparable", "probabilistic"]:
             c_index, num, den = concordance_ic(
                 eta=-pred_times,
                 left=self.left_limits,
                 right=self.right_limits,
                 left_train=self.train_left_limits,
                 right_train=self.train_right_limits,
+                method=method,
                 ties=ties,
             )
             return c_index, np.sum(num), np.sum(den)

@@ -108,14 +108,18 @@ def concordance(
     # time_ties means true times are the same while predicted times are different.
     # c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
     #     event_indicators, event_times, estimate=risk)
-    c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = (
-        _estimate_concordance_index(
-            event_indicators,
-            event_times,
-            estimate=risks,
-            bg_event_time=bg_event_times,
-            partial_weights=partial_weights,
-        )
+    (
+        c_index,
+        concordant_pairs,
+        discordant_pairs,
+        risk_ties,
+        time_ties,
+    ) = _estimate_concordance_index(
+        event_indicators,
+        event_times,
+        estimate=risks,
+        bg_event_time=bg_event_times,
+        partial_weights=partial_weights,
     )
     if ties == "None":
         total_pairs = concordant_pairs + discordant_pairs
@@ -317,7 +321,73 @@ def _get_comparable(
     return comparable, tied_time, weight
 
 
-def pairwise_w(S_Li, S_Ri, eps=1e-12):
+def _get_comparable_ic(
+    left: np.ndarray,
+    right: np.ndarray,
+    tol: float = 0.0,
+) -> np.ndarray:
+    """
+    comparable[i, j] = True iff the intervals for i and j are disjoint.
+
+    By default, intervals are left-open, right-closed -- aka (l, r].
+    Exact-time events are represented by left == right -- [t, t].
+
+    Parameters
+    ----------
+    left, right : (n,) arrays
+        Left and right endpoints of intervals.
+    tol : float
+        Tolerance for treating left==right / boundary equality for float times.
+
+    Returns
+    -------
+    comparable : (n, n) bool array with False diagonal
+    """
+    if left.size == 0:
+        return np.zeros((0, 0), dtype=bool)
+
+    # Identify exact times: treat as point [t, t]
+    if tol > 0:
+        exact = np.isclose(left, right, rtol=0.0, atol=tol)
+    else:
+        exact = left == right
+
+    # Boundary inclusivity:
+    # - Default (l, r]: left_inclusive=False, right_inclusive=True
+    # - Exact [t, t]: left_inclusive=True, right_inclusive=True
+    left_incl = exact  # only exact points include the left endpoint
+    right_incl = np.ones(
+        left.size, dtype=bool
+    )  # (l, r] always includes right; exact includes too
+
+    # Disjointness test for two 1D intervals with endpoint inclusivity:
+    # i is strictly before j if:
+    #   R_i < L_j  OR  (R_i == L_j AND NOT (R_i_inclusive AND L_j_inclusive))
+    Ri = right[:, None]
+    Lj = left[None, :]
+    R_incl_i = right_incl[:, None]
+    L_incl_j = left_incl[None, :]
+
+    # check, for every pair (i,j), whether R_i == L_j
+    if tol > 0:
+        eq = np.isclose(Ri, Lj, rtol=0.0, atol=tol)
+    else:
+        eq = Ri == Lj
+
+    # if equal, check whether both endpoints are inclusive
+    is_not_equal_inclusive = eq & ~(R_incl_i & L_incl_j)
+
+    # last step: i before j
+    before_ij = (Ri < Lj) | is_not_equal_inclusive
+
+    # comparable if i before j OR j before i
+    comparable = before_ij | before_ij.T
+
+    np.fill_diagonal(comparable, False)
+    return comparable
+
+
+def _pairwise_w(S_Li, S_Ri, eps=1e-12):
     """
     Compute pair weights w_{i<j} for interval-censored pairs.
 
@@ -402,9 +472,9 @@ def concordance_ic(
     eta: np.ndarray,
     left: np.ndarray,
     right: np.ndarray,
-    left_train: np.ndarray,
-    right_train: np.ndarray,
-    method: str = "probability",
+    left_train: Optional[np.ndarray] = None,
+    right_train: Optional[np.ndarray] = None,
+    method: str = "comparable",
     ties: str = "skip",
     eps: float = 1e-12,
 ) -> tuple[float, np.ndarray, np.ndarray]:
@@ -419,20 +489,20 @@ def concordance_ic(
         Left endpoints l_i (can be -inf).
     right : np.ndarray of shape (n_sample,)
         Right endpoints r_i (can be +inf to represent right censoring).
-    left_train : np.ndarray of shape (n_train_sample,)
+    left_train : Optional[np.ndarray] = None, shape (n_train_sample,)
         Left endpoints of training data for Turnbull estimator.
-    right_train : np.ndarray of shape (n_train_sample,)
+    right_train : Optional[np.ndarray] = None, shape (n_train_sample,)
         Right endpoints of training data for Turnbull estimator.
-    method : {"probability", "midpoint"}, default="probability"
+    method : {"comparable", "probability"}, default="comparable"
         Method for forming pair weights:
+          - "comparable": use only comparable pairs.
           - "probability": use closed-form pair weights based on Turnbull estimator.
-          - "midpoint": use standard right-censored C-index on midpoint imputed times.
     ties : {"skip", "half"}, default="skip"
         How to handle ties in eta:
           - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
           - "half":  ties contribute 0.5 * w_{i<j} to the numerator.
     eps : float, default=1e-12
-        Numerical guard to avoid division by ~0.
+        Numerical guard.
 
     Returns
     -------
@@ -447,8 +517,6 @@ def concordance_ic(
     eta = np.asarray(eta, dtype=float)
     l = np.asarray(left, dtype=float)
     r = np.asarray(right, dtype=float)
-    l_train = np.asarray(left_train, dtype=float)
-    r_train = np.asarray(right_train, dtype=float)
     n = eta.shape[0]
     if l.shape != (n,) or r.shape != (n,):
         raise ValueError("eta, left, right must all be 1-D arrays of same length.")
@@ -456,20 +524,29 @@ def concordance_ic(
     # Basic sanity
     if np.any(l > r):
         raise ValueError("Found an interval with left > right in testing data.")
-    if np.any(l_train > r_train):
-        raise ValueError("Found an interval with left > right in training data.")
 
-    # train Turnbull estimator on training data
-    tb = TurnbullEstimatorLifelines(l_train, r_train)
+    if method == "probability":
+        if left_train is None or right_train is None:
+            raise ValueError(
+                "Training data must be provided when method='probability'."
+            )
+        l_train = np.asarray(left_train, dtype=float)
+        r_train = np.asarray(right_train, dtype=float)
+        if np.any(l_train > r_train):
+            raise ValueError("Found an interval with left > right in training data.")
 
-    S_l = tb.predict(l)
-    S_r = tb.predict(r)
-    if method == "midpoint":
-        pass
-    elif method == "probability":
-        w = pairwise_w(S_l, S_r, eps=eps)
+        # train Turnbull estimator on training data
+        tb = TurnbullEstimatorLifelines(l_train, r_train)
+
+        S_l = tb.predict(l)
+        S_r = tb.predict(r)
+
+        w = _pairwise_w(S_l, S_r, eps=eps)
+    elif method == "comparable":
+        comparable = _get_comparable_ic(l, r, tol=eps)
+        w = comparable.astype(float)
     else:
-        raise ValueError("method must be 'probability' or 'midpoint'.")
+        raise ValueError("method must be 'comparable' or 'probability'.")
 
     # Concordant matrix based on eta
     gt = (eta[:, None] > eta[None, :]).astype(float)
