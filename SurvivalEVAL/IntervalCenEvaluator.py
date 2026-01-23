@@ -175,7 +175,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 ties=ties,
             )
             return c_index, num, den
-        elif method in ["comparable", "probabilistic"]:
+        elif method in ["comparable", "probability"]:
             c_index, num, den = concordance_ic(
                 eta=-pred_times,
                 left=self.left_limits,
@@ -188,7 +188,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             return c_index, np.sum(num), np.sum(den)
         else:
             raise ValueError(
-                "Please enter one of 'probabilistic' or 'midpoint' for concordance method."
+                "Please enter one of 'probability' or 'midpoint' for concordance method."
             )
 
     def brier_score(

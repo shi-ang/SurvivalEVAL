@@ -381,7 +381,7 @@ def _get_comparable_ic(
     before_ij = (Ri < Lj) | is_not_equal_inclusive
 
     # comparable if i before j OR j before i
-    comparable = before_ij | before_ij.T
+    comparable = before_ij #| before_ij.T
 
     np.fill_diagonal(comparable, False)
     return comparable
