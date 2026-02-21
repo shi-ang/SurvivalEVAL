@@ -410,8 +410,8 @@ def predict_mean_st(
 
     Returns
     -------
-    median_survival_time: float
-        The median survival time(s).
+    mean_survival_time: float
+        The mean survival time(s).
     """
     _check_dim_align(survival_curves, times_coordinates)
 
