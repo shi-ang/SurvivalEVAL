@@ -333,7 +333,12 @@ def _get_comparable_ic(
     tol: float = 0.0,
 ) -> np.ndarray:
     """
-    comparable[i, j] = True iff the intervals for i and j are disjoint.
+    Return the directed comparability relation for interval-censored outcomes.
+
+    ``comparable[i, j]`` is True when interval ``i`` lies entirely before
+    interval ``j``, so the event for sample ``i`` is known to precede the event
+    for sample ``j``. For a disjoint pair, exactly one of ``[i, j]`` and
+    ``[j, i]`` is True; this matrix is intentionally not symmetric.
 
     By default, intervals are left-open, right-closed -- aka (l, r].
     Exact-time events are represented by left == right -- [t, t].
@@ -347,7 +352,8 @@ def _get_comparable_ic(
 
     Returns
     -------
-    comparable : (n, n) bool array with False diagonal
+    comparable : (n, n) bool array
+        Directed precedence matrix with a False diagonal.
     """
     if left.size == 0:
         return np.zeros((0, 0), dtype=bool)
@@ -386,11 +392,8 @@ def _get_comparable_ic(
     # last step: i before j
     before_ij = (Ri < Lj) | is_not_equal_inclusive
 
-    # comparable if i before j OR j before i
-    comparable = before_ij #| before_ij.T
-
-    np.fill_diagonal(comparable, False)
-    return comparable
+    np.fill_diagonal(before_ij, False)
+    return before_ij
 
 
 def _pairwise_w(S_Li, S_Ri, eps=1e-12):
