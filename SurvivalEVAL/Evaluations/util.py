@@ -435,8 +435,9 @@ def predict_mean_st(
 
     Returns
     -------
-    median_survival_time: float
-        The median survival time(s).
+    mean_survival_times: float or np.ndarray
+        A float when both inputs are 1-D, otherwise one mean survival
+        time per survival curve or time coordinate row.
     """
     _check_dim_align(survival_curves, times_coordinates)
 
@@ -651,7 +652,8 @@ def survival_to_quantile(
     Notes
     -----
     - For q beyond the maximum observed CDF value in a row, extrapolates with a
-      constant hazard tail: t ≈ q / slope, where slope = F(T_max)/T_max.
+      linear CDF tail through the origin: t ≈ q / slope, where
+      slope = F(T_max)/T_max.
     - Rows with duplicated CDF x-values are de-duplicated (keep first occurrence).
     """
     # Convert to arrays

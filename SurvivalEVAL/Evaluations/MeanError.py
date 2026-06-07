@@ -43,7 +43,8 @@ def mean_error(
         Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
     weighted: boolean, default: True
         Whether to use weighting scheme for MAE.
-        If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
+        If true, each censored sample has confidence weight
+        1 - S_KM(censoring time).
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
     verbose: boolean, default: False

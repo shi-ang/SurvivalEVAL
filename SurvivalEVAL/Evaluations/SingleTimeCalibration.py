@@ -174,8 +174,10 @@ def one_cal_ic(
         to compute the average observed probabilities in each bin.
     Returns
     -------
-    score: float
-        The one calibration score.
+    p_value: float
+        The one-calibration p-value.
+    statistics: float
+        The Hosmer-Lemeshow statistic.
     observed_probabilities: list
         The observed probabilities in each bin.
     expected_probabilities: list
