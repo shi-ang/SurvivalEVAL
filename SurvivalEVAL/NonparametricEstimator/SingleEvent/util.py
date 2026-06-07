@@ -49,8 +49,11 @@ def infer_survival_probabilities(
         survival_probabilities
 ):
     indices = np.searchsorted(survival_times, prediction_times, side="right") - 1
+    # Index -1 denotes the pre-observation baseline, where survival is still 1.
+    before_first = indices < 0
     indices = np.clip(indices, 0, survival_times.size - 1)
     probs = survival_probabilities[indices].astype(float, copy=True)
+    probs[before_first] = 1.0
 
     # Extrapolate linearly for times beyond the last observed time point
     # using the line connecting (t_last, S(t_last)) and (t0, S(t0))

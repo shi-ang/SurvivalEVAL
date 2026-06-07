@@ -41,6 +41,20 @@ class NelsonAalen:
         self.cumulative_hazard = np.cumsum(self.hazard)
         self.survival_probabilities = np.exp(-self.cumulative_hazard)
 
+        # Add the pre-event baseline explicitly and keep all fitted arrays aligned.
+        # An observed time zero is left untouched because it contains a real update.
+        if self.survival_times[0] > 0:
+            self.survival_times = np.insert(self.survival_times, 0, 0.0)
+            self.population_count = np.insert(
+                self.population_count, 0, len(event_indicators)
+            )
+            self.events = np.insert(self.events, 0, 0)
+            self.hazard = np.insert(self.hazard, 0, 0.0)
+            self.cumulative_hazard = np.insert(self.cumulative_hazard, 0, 0.0)
+            self.survival_probabilities = np.insert(
+                self.survival_probabilities, 0, 1.0
+            )
+
     def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
         Predict the cumulative hazard based on the survival times.
@@ -53,11 +67,23 @@ class NelsonAalen:
         cumulative_hazard: float | np.ndarray
             The predicted cumulative hazard at the given times.
         """
-        indices = (
-            np.searchsorted(self.survival_times, prediction_times, side="right") - 1
-        )
+        prediction_times = np.asarray(prediction_times, dtype=float)
+        original_shape = prediction_times.shape
+        prediction_times = prediction_times.reshape(-1)
+        if np.any(prediction_times < 0):
+            raise ValueError("Prediction times must be non-negative.")
+
+        # Nelson-Aalen is a right-continuous step function: use the latest
+        # cumulative hazard whose fitted time is not greater than the query.
+        indices = np.searchsorted(
+            self.survival_times, prediction_times, side="right"
+        ) - 1
         indices = np.clip(indices, 0, self.survival_times.size - 1)
         cumulative_hazard = self.cumulative_hazard[indices].astype(float, copy=True)
+
+        cumulative_hazard = cumulative_hazard.reshape(original_shape)
+        if cumulative_hazard.ndim == 0:
+            return float(cumulative_hazard)
 
         return cumulative_hazard
 
