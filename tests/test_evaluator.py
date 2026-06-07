@@ -6,7 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from SurvivalEVAL import SurvivalEvaluator
+from SurvivalEVAL import ScikitSurvivalEvaluator, SurvivalEvaluator
+
+
+class _StepFunction:
+    def __init__(self, times, probabilities):
+        self.x = np.asarray(times)
+        self.y = np.asarray(probabilities)
 
 
 def _sample_interval_data(rng: np.random.Generator, n_samples: int):
@@ -76,6 +82,38 @@ def test_prediction_utilities(evaluator_data):
     intervals = evaluator.predict_interval(cov_level=0.8)
     assert intervals.shape == (n_test, 2)
     assert np.all(intervals[:, 0] <= intervals[:, 1])
+
+
+def test_scikit_survival_evaluator_handles_all_one_curves():
+    curves = [
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+    ]
+
+    evaluator = ScikitSurvivalEvaluator(
+        surv=curves,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    np.testing.assert_allclose(evaluator.pred_survs[:, -1], 0.99)
+    assert np.all(np.isfinite(evaluator.predicted_event_times))
+
+
+def test_scikit_survival_evaluator_preserves_mixed_batch_repair():
+    curves = [
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 0.9, 0.8]),
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+    ]
+
+    evaluator = ScikitSurvivalEvaluator(
+        surv=curves,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    assert np.isclose(evaluator.pred_survs[0, -1], 0.8)
+    assert np.isclose(evaluator.pred_survs[1, -1], 0.99)
 
 
 def test_concordance_variants(evaluator_data):

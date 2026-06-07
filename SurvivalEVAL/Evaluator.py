@@ -1576,16 +1576,19 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             predicted_curves = np.concatenate(
                 [np.ones([len(predicted_curves), 1]), predicted_curves], 1
             )
-        # If some survival curves are all ones, we should do something.
-        if np.any(predicted_curves[:, len(time_coordinates) - 1] == 1):
-            idx_need_fix = predicted_curves[:, len(time_coordinates) - 1] == 1
-            max_prob_at_end = np.max(
-                predicted_curves[~idx_need_fix, len(time_coordinates) - 1]
-            )
-            # max_prob_at_end + (1 - max_prob_at_end) * 0.9
-            predicted_curves[idx_need_fix, len(time_coordinates) - 1] = max(
-                0.1 * max_prob_at_end + 0.9, 0.99
-            )
+        # Ensure flat all-one curves have a finite extrapolated event time.
+        end_probabilities = predicted_curves[:, -1]
+        idx_need_fix = end_probabilities == 1
+        if np.any(idx_need_fix):
+            reference_end_probabilities = end_probabilities[~idx_need_fix]
+            if reference_end_probabilities.size == 0:
+                replacement_probability = 0.99
+            else:
+                max_prob_at_end = np.max(reference_end_probabilities)
+                replacement_probability = max(
+                    0.1 * max_prob_at_end + 0.9, 0.99
+                )
+            predicted_curves[idx_need_fix, -1] = replacement_probability
         super(ScikitSurvivalEvaluator, self).__init__(
             predicted_curves,
             time_coordinates,
