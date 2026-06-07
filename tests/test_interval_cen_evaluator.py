@@ -68,14 +68,19 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
     assert "predicted_event_times" not in evaluator.__dict__
     assert evaluator.predicted_event_times.shape == predicted_times.shape
 
-    c_prob, num_prob, den_prob = evaluator.concordance(method="probabilistic")
+    c_prob, num_prob, den_prob = evaluator.concordance(method="probability")
     assert np.isfinite(c_prob)
     assert np.isfinite(num_prob)
     assert np.isfinite(den_prob)
+    assert np.isscalar(num_prob)
+    assert np.isscalar(den_prob)
 
     c_mid, num_mid, den_mid = evaluator.concordance(method="midpoint")
     assert np.isfinite(c_mid)
-    assert num_mid.shape == den_mid.shape
+    assert np.isfinite(num_mid)
+    assert np.isfinite(den_mid)
+    assert np.isscalar(num_mid)
+    assert np.isscalar(den_mid)
 
     target_time = float(time_coords[min(3, len(time_coords) - 1)])
     brier = evaluator.brier_score(

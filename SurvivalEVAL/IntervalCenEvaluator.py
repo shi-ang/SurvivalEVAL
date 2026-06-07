@@ -147,8 +147,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         Parameters
         ----------
         method: str, default: "comparable"
-            Method to calculate concordance index. Options are "comparable", "probabilistic" and "midpoint".
-        tie_strategy: str, default: "skip"
+            Method to calculate concordance index. Options are "comparable",
+            "probability", and "midpoint".
+        ties: str, default: "skip"
             How to handle ties in eta:
               - "skip": pairs with eta_i == eta_j contribute 0 to the numerator.
               - "half":  ties contribute 0.5 * w_{i<j} to the numerator.
@@ -157,10 +158,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         -------
         c_index: float
             The concordance index.
-        num_matrix: np.ndarray of shape (n_sample, n_sample)
-            per-pair contributions to numerator,
-        den_matrix: np.ndarray of shape (n_sample, n_sample)
-            per-pair weights (same as weights) in denominator.
+        concordant_pairs: float
+            The total concordant contribution to the numerator.
+        total_pairs: float
+            The total comparable weight in the denominator.
         """
         pred_times = self.predict_time_method(
             self._pred_survs, self._time_coordinates, interpolation=self.interpolation
@@ -190,7 +191,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             return c_index, np.sum(num), np.sum(den)
         else:
             raise ValueError(
-                "Please enter one of 'probability' or 'midpoint' for concordance method."
+                "Please enter one of 'comparable', 'probability', or 'midpoint' "
+                "for concordance method."
             )
 
     def brier_score(
