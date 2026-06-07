@@ -3,7 +3,10 @@ from __future__ import annotations
 import numpy as np
 from scipy.interpolate import interp1d
 
-from SurvivalEVAL.Evaluations.util import check_monotonicity
+from SurvivalEVAL.Evaluations.util import (
+    align_curve_and_time_coordinates,
+    check_monotonicity,
+)
 
 
 def _interp_cdf_row(F_i, t_grid, t_eval, left_fill=None):
@@ -37,15 +40,18 @@ def auprc_uncensored_grid(
         AUPRC(y; F) = ∫_0^1 [ F(y/t) - F(y*t) ] dt
     Returns: (N,) array of scores in [0, 1].
     """
+    event_times = np.asarray(event_times, float)
+    N = event_times.shape[0]
+    pred_cdf, time_grid = align_curve_and_time_coordinates(
+        pred_cdf, time_grid, n_samples=N
+    )
+
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(
         time_grid, direction="increasing"
     ), "time_grid must be non-decreasing"
-
-    event_times = np.asarray(event_times, float)
-    N = event_times.shape[0]
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
@@ -58,8 +64,8 @@ def auprc_uncensored_grid(
         # Evaluate F at transformed times
         t_right = yi / ts_mid  # y / t
         t_left = yi * ts_mid  # y * t
-        Fi_right = _interp_cdf_row(pred_cdf[i], time_grid, t_right)
-        Fi_left = _interp_cdf_row(pred_cdf[i], time_grid, t_left)
+        Fi_right = _interp_cdf_row(pred_cdf[i], time_grid[i], t_right)
+        Fi_left = _interp_cdf_row(pred_cdf[i], time_grid[i], t_left)
         integrand = Fi_right - Fi_left
         scores[i] = float(np.sum(integrand * widths))
     return scores
@@ -77,6 +83,12 @@ def auprc_right_censored_grid(
         (F(t_k) - F(t_k+1))/(t_k+1 - t_k)
     Returns: (Nc,) array of scores in [0, 1].
     """
+    censor_times = np.asarray(censor_times, float)
+    Nc = censor_times.shape[0]
+    pred_cdf, time_grid = align_curve_and_time_coordinates(
+        pred_cdf, time_grid, n_samples=Nc
+    )
+
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
@@ -84,15 +96,15 @@ def auprc_right_censored_grid(
         time_grid, direction="increasing"
     ), "time_grid must be non-decreasing"
 
-    Nc = censor_times.shape[0]
-
     ts = np.linspace(0.0, 1.0, n_quad + 1)
     ts_mid = 0.5 * (ts[1:] + ts[:-1])
     widths = ts[1:] - ts[:-1]
 
     scores = np.empty(Nc, float)
     for i in range(Nc):
-        Fi_at = _interp_cdf_row(pred_cdf[i], time_grid, float(censor_times[i]) * ts_mid)
+        Fi_at = _interp_cdf_row(
+            pred_cdf[i], time_grid[i], float(censor_times[i]) * ts_mid
+        )
         integrand = 1.0 - Fi_at
         scores[i] = float(np.sum(integrand * widths))
     return scores
@@ -115,11 +127,13 @@ def auprc_right_censor(
 
     Parameters
     ----------
-    pred_cdf: np.ndarray, (n_samples, n_time_points)
+    pred_cdf: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
         Predicted cumulative event probabilities F(t) = 1 - S(t) for the
-        testing samples. Values must be nondecreasing over time.
-    time_grid:  np.ndarray, (n_time_points,)
-        The time grid corresponding to the predicted CDF values.
+        testing samples. A 1D array is shared by all samples. Values must be
+        nondecreasing over time.
+    time_grid: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+        Time grids corresponding to the predicted CDF values. A 1D array is
+        shared by all samples.
     event_times: np.ndarray, (n_samples,)
         Observed event or censoring times for the testing samples.
     event_indicators: np.ndarray, (n_samples,)
@@ -136,15 +150,14 @@ def auprc_right_censor(
     scores: np.ndarray, (n_samples,)
         Per-patient AUPRC scores.
     """
-    assert check_monotonicity(
-        pred_cdf, direction="increasing"
-    ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(
-        time_grid, direction="increasing"
-    ), "time_grid must be non-decreasing"
-
     event_times = np.asarray(event_times, float)
     event_indicators = np.asarray(event_indicators, bool)
+    if event_times.shape != event_indicators.shape:
+        raise ValueError("event_times and event_indicators must have the same shape.")
+
+    pred_cdf, time_grid = align_curve_and_time_coordinates(
+        pred_cdf, time_grid, event_times.shape[0]
+    )
 
     # Split rows
     idx_event, idx_cens = np.where(event_indicators)[0], np.where(~event_indicators)[0]
@@ -152,11 +165,17 @@ def auprc_right_censor(
     scores = np.empty(pred_cdf.shape[0], float)
     if idx_event.size:  # for uncensor
         scores[idx_event] = auprc_uncensored_grid(
-            pred_cdf[idx_event], time_grid, event_times[idx_event], n_quad=n_quad
+            pred_cdf[idx_event],
+            time_grid[idx_event],
+            event_times[idx_event],
+            n_quad=n_quad,
         )
     if idx_cens.size:  # for right censor
         scores[idx_cens] = auprc_right_censored_grid(
-            pred_cdf[idx_cens], time_grid, event_times[idx_cens], n_quad=n_quad
+            pred_cdf[idx_cens],
+            time_grid[idx_cens],
+            event_times[idx_cens],
+            n_quad=n_quad,
         )
 
     auprc = scores.mean()
@@ -190,11 +209,13 @@ def auprc_ic(
 
     Parameters
     ----------
-    pred_cdf: np.ndarray, (n_samples, n_time_points)
+    pred_cdf: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
         Predicted cumulative event probabilities F(t) = 1 - S(t) for the
-        testing samples. Values must be nondecreasing over time.
-    time_grid:  np.ndarray, (n_time_points,)
-        The time grid corresponding to the predicted CDF values.
+        testing samples. A 1D array is shared by all samples. Values must be
+        nondecreasing over time.
+    time_grid: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+        Time grids corresponding to the predicted CDF values. A 1D array is
+        shared by all samples.
     left: np.ndarray, (n_samples,)
         Left interval bounds
     right: np.ndarray, (n_samples,)
@@ -213,14 +234,22 @@ def auprc_ic(
     scores: np.ndarray, (n_samples,), optional
         Per-patient AUPRC scores, returned if return_details=True.
     """
+    left = np.asarray(left, float)
+    right = np.asarray(right, float)
+    if left.shape != right.shape:
+        raise ValueError("left and right must have the same shape.")
+
+    N = left.shape[0]
+    pred_cdf, time_grid = align_curve_and_time_coordinates(
+        pred_cdf, time_grid, n_samples=N
+    )
+
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
     assert check_monotonicity(
         time_grid, direction="increasing"
     ), "time_grid must be non-decreasing"
-
-    N = left.shape[0]
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
@@ -239,13 +268,19 @@ def auprc_ic(
         else:
             t_right = ri / ts_mid  # can exceed grid → right=1.0
             Fi_right = _interp_cdf_row(
-                pred_cdf[i], time_grid, t_right, left_fill=left_extrapolation_value
+                pred_cdf[i],
+                time_grid[i],
+                t_right,
+                left_fill=left_extrapolation_value,
             )
 
         # Left term: F(L*t). If L=0 and you want F(0)=0, set left_extrapolation_value=0.0
         t_left = li * ts_mid  # can be < grid_min → left fill is used
         Fi_left = _interp_cdf_row(
-            pred_cdf[i], time_grid, t_left, left_fill=left_extrapolation_value
+            pred_cdf[i],
+            time_grid[i],
+            t_left,
+            left_fill=left_extrapolation_value,
         )
 
         integrand = Fi_right - Fi_left

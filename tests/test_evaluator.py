@@ -229,6 +229,41 @@ def test_residuals_and_km_calibration(evaluator_data):
     assert np.isfinite(km_cal)
 
 
+def test_calibration_metrics_support_shared_curve_with_per_sample_grids():
+    shared_curve = np.array([1.0, 0.8, 0.45, 0.1])
+    per_sample_grids = np.array(
+        [
+            [0.0, 1.0, 2.0, 4.0],
+            [0.0, 0.5, 2.5, 5.0],
+            [0.0, 1.5, 3.0, 6.0],
+            [0.0, 0.75, 1.75, 3.5],
+        ]
+    )
+    event_times = np.array([1.2, 2.0, 3.5, 2.7])
+    event_indicators = np.array([1, 0, 1, 1])
+
+    shared_curve_evaluator = SurvivalEvaluator(
+        pred_survs=shared_curve,
+        time_coordinates=per_sample_grids,
+        event_times=event_times,
+        event_indicators=event_indicators,
+    )
+    expanded_curve_evaluator = SurvivalEvaluator(
+        pred_survs=np.tile(shared_curve, (event_times.size, 1)),
+        time_coordinates=per_sample_grids,
+        event_times=event_times,
+        event_indicators=event_indicators,
+    )
+
+    shared_km_cal = shared_curve_evaluator.km_calibration()
+    shared_auprc = shared_curve_evaluator.auprc(n_quad=64)
+
+    assert np.isfinite(shared_km_cal)
+    assert 0.0 <= shared_auprc <= 1.0
+    assert np.isclose(shared_km_cal, expanded_curve_evaluator.km_calibration())
+    assert np.isclose(shared_auprc, expanded_curve_evaluator.auprc(n_quad=64))
+
+
 def test_log_rank_and_auprc(evaluator_data):
     evaluator = evaluator_data["evaluator"]
 

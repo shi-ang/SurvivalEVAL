@@ -3,10 +3,49 @@ import pytest
 
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_uncensored_grid
 from SurvivalEVAL.Evaluations.util import (
+    align_curve_and_time_coordinates,
     check_monotonicity,
     make_monotonic,
     survival_to_quantile,
 )
+
+
+@pytest.mark.parametrize(
+    ("curves", "time_coordinates", "expected_curves", "expected_times"),
+    [
+        (
+            np.array([1.0, 0.5, 0.0]),
+            np.array([[0.0, 1.0, 2.0], [0.0, 2.0, 4.0]]),
+            np.array([[1.0, 0.5, 0.0], [1.0, 0.5, 0.0]]),
+            np.array([[0.0, 1.0, 2.0], [0.0, 2.0, 4.0]]),
+        ),
+        (
+            np.array([[1.0, 0.7, 0.2], [1.0, 0.4, 0.1]]),
+            np.array([0.0, 1.0, 2.0]),
+            np.array([[1.0, 0.7, 0.2], [1.0, 0.4, 0.1]]),
+            np.array([[0.0, 1.0, 2.0], [0.0, 1.0, 2.0]]),
+        ),
+    ],
+)
+def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
+    curves, time_coordinates, expected_curves, expected_times
+):
+    aligned_curves, aligned_times = align_curve_and_time_coordinates(
+        curves, time_coordinates
+    )
+
+    np.testing.assert_allclose(aligned_curves, expected_curves)
+    np.testing.assert_allclose(aligned_times, expected_times)
+
+
+def test_align_curve_and_time_coordinates_accepts_external_sample_count():
+    curves, times = align_curve_and_time_coordinates(
+        curves=np.array([1.0, 0.5, 0.0]),
+        time_coordinates=np.array([0.0, 1.0, 2.0]),
+        n_samples=2,
+    )
+
+    assert curves.shape == times.shape == (2, 3)
 
 
 @pytest.mark.parametrize(

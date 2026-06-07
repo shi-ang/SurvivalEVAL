@@ -31,6 +31,7 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     one_calibration,
 )
 from SurvivalEVAL.Evaluations.util import (
+    align_curve_and_time_coordinates,
     check_and_convert,
     fit_least_squares,
     predict_mean_st,
@@ -369,22 +370,9 @@ class SurvivalEvaluator:
         else:
             raise ValueError("Please provide either 'quantile_range' or 'cov_level'.")
 
-        # if pred_survs is 1D, repeat it along the time dimension so it matches the time coordinates
-        # if time_coordinates is 1D, repeat it along the sample dimension so it matches the predictions
-        # if both are 1D, raise error
-        if self.ndim_time == 1:
-            time_coordinates = np.tile(
-                self._time_coordinates, (self._pred_survs.shape[0], 1)
-            )
-        else:
-            time_coordinates = self._time_coordinates
-
-        if self.ndim_surv == 1:
-            pred_survs = np.tile(
-                self._pred_survs[np.newaxis, :], (self._time_coordinates.shape[0], 1)
-            )
-        else:
-            pred_survs = self._pred_survs
+        pred_survs, time_coordinates = align_curve_and_time_coordinates(
+            self._pred_survs, self._time_coordinates
+        )
 
         interval_pred = survival_to_quantile(
             pred_survs,
@@ -1361,10 +1349,19 @@ class SurvivalEvaluator:
             It is calculated by comparing the average survival curve with the Kaplan-Meier estimate of the survival
             function.
         """
-        average_survival_curve = np.mean(self._pred_survs, axis=0)
+        if self.ndim_time == 1:
+            average_survival_curve = np.mean(self._pred_survs, axis=0)
+            calibration_times = self._time_coordinates
+        else:
+            calibration_times = np.unique(self.event_times[self.event_indicators == 1])
+            sample_survival_curves = self.predict_multi_probabilities_from_curve(
+                calibration_times
+            )
+            average_survival_curve = np.mean(sample_survival_curves, axis=0)
+
         return km_calibration(
             average_survival_curve=average_survival_curve,
-            time_coordinates=self.time_coordinates,
+            time_coordinates=calibration_times,
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             interpolation_method=self.interpolation,

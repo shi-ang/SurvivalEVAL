@@ -308,36 +308,66 @@ def predict_multi_probs_from_curve(
     return predict_probabilities
 
 
-def _check_dim_align(
-    survival_curves: np.ndarray, times_coordinates: np.ndarray
-) -> None:
-    # check dimension alignment
-    ndim_surv = survival_curves.ndim
-    ndim_time = times_coordinates.ndim
+def align_curve_and_time_coordinates(
+    curves: NumericArrayLike,
+    time_coordinates: NumericArrayLike,
+    n_samples: int = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Validate and broadcast curve values and time coordinates to matching 2D arrays.
 
-    if ndim_surv == 1 and ndim_time == 1:
-        assert len(survival_curves) == len(
-            times_coordinates
-        ), "The length of survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 2 and ndim_time == 2:
-        assert (
-            survival_curves.shape[0] == times_coordinates.shape[0]
-        ), "The number of samples in survival_curves and times_coordinate must be the same."
-        assert (
-            survival_curves.shape[1] == times_coordinates.shape[1]
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 2 and ndim_time == 1:
-        assert survival_curves.shape[1] == len(
-            times_coordinates
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 1 and ndim_time == 2:
-        assert (
-            len(survival_curves) == times_coordinates.shape[1]
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    else:
+    Either input may be 1D and shared by all samples, while a 2D input contains
+    one row per sample. When both inputs are 1D, they represent one sample unless
+    ``n_samples`` is provided.
+
+    Parameters
+    ----------
+    curves: NumericArrayLike
+        Curve values with shape ``(n_time_points,)`` or
+        ``(n_samples, n_time_points)``.
+    time_coordinates: NumericArrayLike
+        Time coordinates with shape ``(n_time_points,)`` or
+        ``(n_samples, n_time_points)``.
+    n_samples: int, optional
+        Expected number of samples. This is useful when both curve inputs are
+        shared and the sample count comes from a separate outcome array.
+
+    Returns
+    -------
+    aligned_curves: np.ndarray, shape = (n_samples, n_time_points)
+        Curve values with shared rows broadcast across samples.
+    aligned_time_coordinates: np.ndarray, shape = (n_samples, n_time_points)
+        Time coordinates with shared rows broadcast across samples.
+    """
+    curves = np.asarray(curves, dtype=float)
+    time_coordinates = np.asarray(time_coordinates, dtype=float)
+
+    if curves.ndim not in (1, 2) or time_coordinates.ndim not in (1, 2):
+        raise ValueError("curves and time_coordinates must be 1D or 2D arrays.")
+    if curves.shape[-1] != time_coordinates.shape[-1]:
         raise ValueError(
-            "The dimension of survival_curves and times_coordinate must be 1-D or 2-D."
+            "curves and time_coordinates must contain the same number of time points."
         )
+
+    inferred_sample_counts = [
+        array.shape[0] for array in (curves, time_coordinates) if array.ndim == 2
+    ]
+    if n_samples is None:
+        n_samples = inferred_sample_counts[0] if inferred_sample_counts else 1
+    elif not isinstance(n_samples, (int, np.integer)) or n_samples < 1:
+        raise ValueError("n_samples must be a positive integer.")
+
+    if any(sample_count != n_samples for sample_count in inferred_sample_counts):
+        raise ValueError("curves and time_coordinates must contain one row per sample.")
+
+    if curves.ndim == 1:
+        curves = np.broadcast_to(curves, (n_samples, curves.shape[0]))
+    if time_coordinates.ndim == 1:
+        time_coordinates = np.broadcast_to(
+            time_coordinates, (n_samples, time_coordinates.shape[0])
+        )
+
+    return curves, time_coordinates
 
 
 def predict_rmst(
@@ -371,26 +401,12 @@ def predict_rmst(
         A float when both inputs are 1-D, otherwise one restricted mean
         survival time per survival curve or time coordinate row.
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
     scalar_output = ndim_surv == 1 and ndim_time == 1
-
-    if ndim_surv == 1:
-        num_samples = times_coordinates.shape[0] if ndim_time == 2 else 1
-        curves = np.broadcast_to(
-            survival_curves, (num_samples, survival_curves.shape[0])
-        )
-    else:
-        curves = survival_curves
-
-    if ndim_time == 1:
-        time_grids = np.broadcast_to(
-            times_coordinates, (curves.shape[0], times_coordinates.shape[0])
-        )
-    else:
-        time_grids = times_coordinates
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
     if interpolation == "None":
         width = np.diff(time_grids, axis=1)
@@ -439,20 +455,23 @@ def predict_mean_st(
         A float when both inputs are 1-D, otherwise one mean survival
         time per survival curve or time coordinate row.
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    scalar_output = ndim_surv == 1 and ndim_time == 1
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
-    rmst = predict_rmst(survival_curves, times_coordinates, interpolation)
+    rmst = predict_rmst(curves, time_grids, interpolation)
 
-    last_prob = survival_curves[:, -1] if ndim_surv == 2 else survival_curves[-1]
-    last_time = times_coordinates[:, -1] if ndim_time == 2 else times_coordinates[-1]
+    last_prob = curves[:, -1]
+    last_time = time_grids[:, -1]
     # the residual area is calculated as the area of a triangle with height = last_prob
     # and base = extrapolation_time - last_time
     # extrapolation_time is the time point where the survival curve crosses 0 (using the linear function of [0, 1] - [last_time, last_prob])
     residual_area = 0.5 * last_prob**2 * last_time / (1 - last_prob)
-    return rmst + residual_area
+    mean_st = rmst + residual_area
+    return float(mean_st[0]) if scalar_output else mean_st
 
 
 def predict_median_st(
@@ -484,39 +503,18 @@ def predict_median_st(
     median_survival_time: float
         The median survival time(s).
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    scalar_output = ndim_surv == 1 and ndim_time == 1
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
-    if ndim_surv == 1 and ndim_time == 1:
-        median_sts = predict_median_st_ind(
-            survival_curves, times_coordinates, interpolation
-        )
-    elif ndim_surv == 2 and ndim_time == 1:
-        median_sts = np.empty(survival_curves.shape[0])
-        for i in range(survival_curves.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves[i, :], times_coordinates, interpolation
-            )
-    elif ndim_surv == 1 and ndim_time == 2:
-        median_sts = np.empty(times_coordinates.shape[0])
-        for i in range(times_coordinates.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves, times_coordinates[i, :], interpolation
-            )
-    elif ndim_surv == 2 and ndim_time == 2:
-        median_sts = np.empty(survival_curves.shape[0])
-        for i in range(survival_curves.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves[i, :], times_coordinates[i, :], interpolation
-            )
-    else:
-        raise ValueError(
-            "The dimension of survival_curves and times_coordinate must be 1-D or 2-D."
-        )
+    median_sts = np.empty(curves.shape[0])
+    for i in range(curves.shape[0]):
+        median_sts[i] = predict_median_st_ind(curves[i], time_grids[i], interpolation)
 
-    return median_sts
+    return float(median_sts[0]) if scalar_output else median_sts
 
 
 def predict_median_st_ind(
