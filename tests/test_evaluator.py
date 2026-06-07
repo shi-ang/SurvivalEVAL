@@ -141,6 +141,34 @@ def test_scikit_survival_evaluator_preserves_mixed_batch_repair():
     assert np.isclose(evaluator.pred_survs[1, -1], 0.99)
 
 
+def test_pchip_with_2d_zero_based_grids_does_not_get_duplicate_zeros():
+    time_coordinates = np.array(
+        [
+            [0.0, 1.0, 2.0, 3.0],
+            [0.0, 1.5, 2.5, 4.0],
+        ]
+    )
+    pred_survs = np.array(
+        [
+            [0.9, 0.7, 0.4, 0.1],
+            [0.8, 0.6, 0.3, 0.1],
+        ]
+    )
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+        predict_time_method="Mean",
+        interpolation="Pchip",
+    )
+
+    np.testing.assert_allclose(evaluator.time_coordinates, time_coordinates)
+    assert np.all(np.diff(evaluator.time_coordinates, axis=1) > 0)
+    assert np.all(np.isfinite(evaluator.predicted_event_times))
+
+
 def test_concordance_variants(evaluator_data):
     evaluator = evaluator_data["evaluator"]
 

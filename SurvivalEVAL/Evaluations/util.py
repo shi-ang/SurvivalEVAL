@@ -808,7 +808,7 @@ def zero_padding(pred_survs, time_coordinates):
     ndim_time = time_coordinates.ndim
     ndim_surv = pred_survs.ndim
     zero_pad_msg = (
-        "The first time coordinate is not 0. A authentic survival curve should start from 0 "
+        "The first time coordinate is not 0. An authentic survival curve should start from 0 "
         "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
         "and 1 to the beginning of the predicted curves."
     )
@@ -829,8 +829,16 @@ def zero_padding(pred_survs, time_coordinates):
             _pred_survs = pred_survs
             _time_coordinates = time_coordinates
     elif ndim_time == 2:
+        starts_at_zero = np.isclose(time_coordinates[:, 0], 0.0)
+        if np.any(starts_at_zero) and not np.all(starts_at_zero):
+            raise ValueError(
+                "All rows of 2D time_coordinates must either start at 0 or "
+                "all require zero-padding."
+            )
+
+        needs_padding = not np.all(starts_at_zero)
         if ndim_surv == 1:
-            if pred_survs[0] != 1:
+            if needs_padding:
                 warnings.warn(zero_pad_msg)
                 _pred_survs = np.empty(pred_survs.shape[0] + 1)
                 _pred_survs[1:] = pred_survs
@@ -844,7 +852,7 @@ def zero_padding(pred_survs, time_coordinates):
                 _pred_survs = pred_survs
                 _time_coordinates = time_coordinates
         elif ndim_surv == 2:
-            if np.any(pred_survs[:, 0] != 1):
+            if needs_padding:
                 warnings.warn(zero_pad_msg)
                 _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
                 _pred_survs[:, 1:] = pred_survs

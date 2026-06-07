@@ -7,6 +7,7 @@ from SurvivalEVAL.Evaluations.util import (
     check_monotonicity,
     make_monotonic,
     survival_to_quantile,
+    zero_padding,
 )
 
 
@@ -46,6 +47,48 @@ def test_align_curve_and_time_coordinates_accepts_external_sample_count():
     )
 
     assert curves.shape == times.shape == (2, 3)
+
+
+@pytest.mark.parametrize(
+    "curves",
+    [
+        np.array([1.0, 0.6, 0.2]),
+        np.array([[1.0, 0.6, 0.2], [1.0, 0.5, 0.1]]),
+    ],
+)
+def test_zero_padding_uses_2d_time_coordinates(curves):
+    time_coordinates = np.array([[1.0, 2.0, 3.0], [1.5, 2.5, 3.5]])
+
+    with pytest.warns(UserWarning, match="first time coordinate"):
+        padded_curves, padded_times = zero_padding(curves, time_coordinates)
+
+    np.testing.assert_allclose(padded_times[:, 0], 0.0)
+    np.testing.assert_allclose(padded_times[:, 1:], time_coordinates)
+    if curves.ndim == 1:
+        np.testing.assert_allclose(padded_curves[0], 1.0)
+        np.testing.assert_allclose(padded_curves[1:], curves)
+    else:
+        np.testing.assert_allclose(padded_curves[:, 0], 1.0)
+        np.testing.assert_allclose(padded_curves[:, 1:], curves)
+
+
+def test_zero_padding_does_not_duplicate_existing_2d_zero_coordinates():
+    curves = np.array([[0.9, 0.5, 0.1], [0.8, 0.4, 0.1]])
+    time_coordinates = np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])
+
+    padded_curves, padded_times = zero_padding(curves, time_coordinates)
+
+    np.testing.assert_allclose(padded_curves, curves)
+    np.testing.assert_allclose(padded_times, time_coordinates)
+    assert np.all(np.diff(padded_times, axis=1) > 0)
+
+
+def test_zero_padding_rejects_mixed_2d_grid_starts():
+    with pytest.raises(ValueError, match="All rows"):
+        zero_padding(
+            np.array([[1.0, 0.5, 0.1], [1.0, 0.4, 0.1]]),
+            np.array([[0.0, 1.0, 2.0], [1.0, 2.0, 3.0]]),
+        )
 
 
 @pytest.mark.parametrize(
