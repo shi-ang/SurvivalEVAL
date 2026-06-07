@@ -85,18 +85,41 @@ def check_and_convert(*args):
     return result
 
 
-def check_monotonicity(array: NumericArrayLike):
+def check_monotonicity(
+    array: NumericArrayLike,
+    direction: str | None = None,
+) -> bool:
+    """
+    Check whether values are monotonic along the last axis.
+
+    Parameters
+    ----------
+    array : NumericArrayLike
+        A one- or two-dimensional array.
+    direction : {"increasing", "decreasing"}, optional
+        Required monotonic direction. Both directions allow equal adjacent values.
+        If omitted, either direction is accepted for backward compatibility.
+
+    Returns
+    -------
+    bool
+        Whether the array is monotonic in the requested direction.
+    """
     array = check_and_convert(array)
-    if array.ndim == 1:
-        return all(array[i] <= array[i + 1] for i in range(len(array) - 1)) or all(
-            array[i] >= array[i + 1] for i in range(len(array) - 1)
-        )
-    elif array.ndim == 2:
-        return all(
-            all(array[:, i] <= array[:, i + 1]) for i in range(array.shape[1] - 1)
-        ) or all(all(array[:, i] >= array[:, i + 1]) for i in range(array.shape[1] - 1))
-    else:
+    if array.ndim not in (1, 2):
         raise ValueError("The input array must be 1-D or 2-D.")
+
+    differences = np.diff(array, axis=-1)
+    is_increasing = bool(np.all(differences >= 0))
+    is_decreasing = bool(np.all(differences <= 0))
+
+    if direction is None:
+        return is_increasing or is_decreasing
+    if direction == "increasing":
+        return is_increasing
+    if direction == "decreasing":
+        return is_decreasing
+    raise ValueError("direction must be one of ['increasing', 'decreasing']")
 
 
 def make_monotonic(
@@ -139,7 +162,7 @@ def make_monotonic(
         np.random.seed(seed)
 
     survival_curves = np.clip(survival_curves, 0, 1)
-    if not check_monotonicity(survival_curves):
+    if not check_monotonicity(survival_curves, direction="decreasing"):
         if method == "ceil":
             survival_curves = np.maximum.accumulate(survival_curves[:, ::-1], axis=1)[
                 :, ::-1
@@ -594,7 +617,9 @@ def quantile_to_survival(
 
     # sanity checks
     assert np.all(surv_pred >= 0), "Survival predictions contain negative."
-    assert check_monotonicity(surv_pred), "Survival predictions are not monotonic."
+    assert check_monotonicity(
+        surv_pred, direction="decreasing"
+    ), "Survival predictions are not nonincreasing."
     return surv_pred
 
 
@@ -644,13 +669,13 @@ def survival_to_quantile(
     if quantile_levels.ndim != 1:
         raise ValueError("`quantile_levels` must be 1D.")
 
-    if not check_monotonicity(surv_prob):
+    if not check_monotonicity(surv_prob, direction="decreasing"):
         raise ValueError("Each row of `surv_prob` must be nonincreasing.")
 
-    if not check_monotonicity(time_coordinates):
+    if not check_monotonicity(time_coordinates, direction="increasing"):
         raise ValueError("Each row of `time_coordinates` must be strictly increasing.")
 
-    if not check_monotonicity(quantile_levels):
+    if not check_monotonicity(quantile_levels, direction="increasing"):
         raise ValueError("`quantile_levels` must be in increasing order.")
 
     if np.any(quantile_levels < 0) or np.any(quantile_levels >= 1):
@@ -715,7 +740,7 @@ def survival_to_quantile(
     # Sanity checks
     if np.any(qpred < 0):
         raise RuntimeError("Quantile predictions contain negative values.")
-    if not check_monotonicity(qpred):
+    if not check_monotonicity(qpred, direction="increasing"):
         raise RuntimeError(
             "Quantile predictions are not nondecreasing across quantile levels per row."
         )

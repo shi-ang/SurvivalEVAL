@@ -38,9 +38,11 @@ def auprc_uncensored_grid(
     Returns: (N,) array of scores in [0, 1].
     """
     assert check_monotonicity(
-        pred_cdf
+        pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
+    assert check_monotonicity(
+        time_grid, direction="increasing"
+    ), "time_grid must be non-decreasing"
 
     event_times = np.asarray(event_times, float)
     N = event_times.shape[0]
@@ -76,9 +78,11 @@ def auprc_right_censored_grid(
     Returns: (Nc,) array of scores in [0, 1].
     """
     assert check_monotonicity(
-        pred_cdf
+        pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
+    assert check_monotonicity(
+        time_grid, direction="increasing"
+    ), "time_grid must be non-decreasing"
 
     Nc = censor_times.shape[0]
 
@@ -132,9 +136,11 @@ def auprc_right_censor(
         Per-patient AUPRC scores.
     """
     assert check_monotonicity(
-        pred_cdf
+        pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
+    assert check_monotonicity(
+        time_grid, direction="increasing"
+    ), "time_grid must be non-decreasing"
 
     event_times = np.asarray(event_times, float)
     event_indicators = np.asarray(event_indicators, bool)
@@ -206,9 +212,11 @@ def auprc_ic(
         Per-patient AUPRC scores, returned if return_details=True.
     """
     assert check_monotonicity(
-        pred_cdf
+        pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(time_grid), "time_grid must be non-decreasing"
+    assert check_monotonicity(
+        time_grid, direction="increasing"
+    ), "time_grid must be non-decreasing"
 
     N = left.shape[0]
 
