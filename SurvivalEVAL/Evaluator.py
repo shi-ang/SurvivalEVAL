@@ -640,7 +640,7 @@ class SurvivalEvaluator:
         ----------
         target_time: float, int, or None, default = None
             Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
-            median time of all the event/censor times from the training and test sets.
+            median time of the test event/censor times and, when available, the training event/censor times.
         IPCW_weighted: bool, default = True
             Whether to use IPCW weighting for the Brier score.
         :return: float
@@ -653,9 +653,10 @@ class SurvivalEvaluator:
             self._error_trainset("IPCW-weighted Brier score (BS)")
 
         if target_time is None:
-            target_time = np.quantile(
-                np.concatenate((self.event_times, self.train_event_times)), 0.5
-            )
+            time_arrays = [self.event_times]
+            if self.train_event_times is not None:
+                time_arrays.append(self.train_event_times)
+            target_time = np.quantile(np.concatenate(time_arrays), 0.5)
 
         predict_probs = self.predict_probability_from_curve(target_time)
 

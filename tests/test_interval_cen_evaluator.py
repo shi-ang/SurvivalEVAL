@@ -149,3 +149,24 @@ def test_interval_evaluator_rejects_negative_left_limits():
             left_limits=np.array([-1.0, 1.0]),
             right_limits=np.array([1.0, np.inf]),
         )
+
+
+def test_uncensored_brier_score_without_training_data():
+    evaluator = IntervalCenEvaluator(
+        pred_survs=np.array(
+            [
+                [1.0, 0.8, 0.4, 0.1],
+                [1.0, 0.6, 0.3, 0.05],
+                [1.0, 0.9, 0.5, 0.2],
+            ]
+        ),
+        time_coordinates=np.array([0.0, 1.0, 2.0, 3.0]),
+        left_limits=np.array([0.5, 1.0, 2.0]),
+        right_limits=np.array([1.5, 2.0, np.inf]),
+    )
+
+    brier = evaluator.brier_score(target_time=None, method="uncensored")
+
+    assert np.isfinite(brier)
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        evaluator.brier_score(target_time=None, method="Tsouprou-marginal")

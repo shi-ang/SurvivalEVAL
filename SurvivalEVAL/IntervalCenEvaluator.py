@@ -220,7 +220,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         Parameters
         ----------
         target_time: Optional[Numeric], default: None
-            The time point at which to calculate the Brier score. If None, the median of the unique observed times is used.
+            The time point at which to calculate the Brier score. If None, the
+            median of the unique finite test interval bounds and, when
+            available, training interval bounds is used.
         method: str, default: "Tsouprou-marginal"
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
         x: Optional[np.ndarray], default: None
@@ -246,14 +248,23 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                     )
 
         if target_time is None:
-            tau_vals = np.concatenate(
-                [
-                    self.left_limits,
-                    self.right_limits[np.isfinite(self.right_limits)],
-                    self.train_left_limits,
-                    self.train_right_limits[np.isfinite(self.train_right_limits)],
-                ]
-            )
+            time_arrays = [
+                self.left_limits,
+                self.right_limits[np.isfinite(self.right_limits)],
+            ]
+            if (
+                self.train_left_limits is not None
+                and self.train_right_limits is not None
+            ):
+                time_arrays.extend(
+                    [
+                        self.train_left_limits,
+                        self.train_right_limits[
+                            np.isfinite(self.train_right_limits)
+                        ],
+                    ]
+                )
+            tau_vals = np.concatenate(time_arrays)
             tau = np.unique(np.sort(tau_vals))
             target_time = np.quantile(tau, 0.5)
 

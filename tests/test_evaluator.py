@@ -151,6 +151,38 @@ def test_brier_scores(evaluator_data):
     assert np.all(np.isfinite(brier_mp))
 
 
+def test_default_brier_score_without_training_data():
+    time_grid = np.array([0.0, 1.0, 2.0, 4.0])
+    pred_survs = np.array(
+        [
+            [1.0, 0.8, 0.5, 0.2],
+            [1.0, 0.7, 0.4, 0.1],
+            [1.0, 0.9, 0.6, 0.3],
+        ]
+    )
+    event_times = np.array([1.0, 2.0, 3.0])
+
+    censored_evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=event_times,
+        event_indicators=np.array([1, 0, 1]),
+    )
+    uncensored_evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=event_times,
+        event_indicators=np.ones(event_times.shape[0]),
+    )
+
+    assert np.isfinite(
+        censored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
+    )
+    assert np.isfinite(uncensored_evaluator.brier_score(target_time=None))
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        censored_evaluator.brier_score(target_time=None, IPCW_weighted=True)
+
+
 def test_integrated_brier_score(evaluator_data):
     evaluator = evaluator_data["evaluator"]
 
