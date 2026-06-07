@@ -146,6 +146,15 @@ def test_survival_to_quantile_rejects_decreasing_time_coordinates():
         )
 
 
+def test_survival_to_quantile_rejects_duplicate_time_coordinates():
+    with pytest.raises(ValueError, match="strictly increasing"):
+        survival_to_quantile(
+            surv_prob=[[1.0, 0.8, 0.5]],
+            time_coordinates=[[0.0, 1.0, 1.0]],
+            quantile_levels=[0.25, 0.5],
+        )
+
+
 def test_survival_to_quantile_rejects_decreasing_quantile_levels():
     with pytest.raises(ValueError, match="increasing order"):
         survival_to_quantile(

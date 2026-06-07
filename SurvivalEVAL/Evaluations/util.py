@@ -672,7 +672,7 @@ def survival_to_quantile(
     if not check_monotonicity(surv_prob, direction="decreasing"):
         raise ValueError("Each row of `surv_prob` must be nonincreasing.")
 
-    if not check_monotonicity(time_coordinates, direction="increasing"):
+    if np.any(np.diff(time_coordinates, axis=1) <= 0):
         raise ValueError("Each row of `time_coordinates` must be strictly increasing.")
 
     if not check_monotonicity(quantile_levels, direction="increasing"):
