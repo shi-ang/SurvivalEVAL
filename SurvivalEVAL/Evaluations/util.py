@@ -151,7 +151,7 @@ def make_monotonic(
     survival_curves: np.ndarray
         Survival curves with monotonicity. 2-D array of survival probabilities.
     """
-    if np.all(np.sort(times_coordinate) != times_coordinate):
+    if not check_monotonicity(times_coordinate, direction="increasing"):
         raise ValueError("The time coordinates must be sorted in ascending order.")
 
     if num_bs is None:
