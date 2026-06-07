@@ -8,6 +8,8 @@ Description:
     These functions can be used independently for custom evaluation needs or further research.
 """
 
+from __future__ import annotations
+
 from typing import Sequence, Tuple
 
 import numpy as np

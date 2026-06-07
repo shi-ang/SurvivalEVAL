@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 import pandas as pd
