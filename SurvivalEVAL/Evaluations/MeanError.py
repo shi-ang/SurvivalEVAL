@@ -40,7 +40,7 @@ def mean_error(
         Type of mean error to use. Options are "absolute" and "squared".
     method: string, default: "Hinge"
         Method of handling censorship.
-        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", and "Pseudo_obs_pop"
+        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
     weighted: boolean, default: True
         Whether to use weighting scheme for MAE.
         If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
@@ -61,7 +61,7 @@ def mean_error(
         train_event_indicators = train_event_indicators.astype(bool)
 
     # calculate the weighting for each sample
-    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", "Pseudo_obs_pop"]:
+    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
                 "If method is '{}', training set values must be included.".format(
