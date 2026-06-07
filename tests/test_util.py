@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_uncensored_grid
+from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_uncensored_grid
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_monotonicity,
@@ -180,3 +180,22 @@ def test_auprc_rejects_decreasing_time_grid():
             time_grid=np.array([2.0, 1.0, 0.0]),
             event_times=np.array([1.0]),
         )
+
+
+def test_auprc_ic_left_censored_uses_zero_at_origin_by_default():
+    pred_cdf = np.array([[0.2, 0.6, 1.0]])
+    time_grid = np.array([1.0, 2.0, 3.0])
+    left = np.array([0.0])
+    right = np.array([np.inf])
+
+    default_score = auprc_ic(pred_cdf, time_grid, left, right)
+    overridden_score = auprc_ic(
+        pred_cdf,
+        time_grid,
+        left,
+        right,
+        left_extrapolation_value=0.2,
+    )
+
+    assert default_score == pytest.approx(1.0)
+    assert overridden_score == pytest.approx(0.8)

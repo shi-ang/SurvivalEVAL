@@ -223,7 +223,9 @@ def auprc_ic(
     n_quad: int
         Number of quadrature points for numerical integration.
     left_extrapolation_value: float, optional
-        Value to use for F(0) when left=0; by default uses F(t_min).
+        Value to use for CDF evaluations before the first time-grid point.
+        When omitted, ``left == 0`` uses ``F(0) = 0`` automatically, while
+        other evaluations before the grid use ``F(t_min)``.
     return_details: bool
         If True, also return per-patient scores.
 
@@ -274,14 +276,22 @@ def auprc_ic(
                 left_fill=left_extrapolation_value,
             )
 
-        # Left term: F(L*t). If L=0 and you want F(0)=0, set left_extrapolation_value=0.0
-        t_left = li * ts_mid  # can be < grid_min → left fill is used
-        Fi_left = _interp_cdf_row(
-            pred_cdf[i],
-            time_grid[i],
-            t_left,
-            left_fill=left_extrapolation_value,
-        )
+        # For a left-censored interval, L=0 makes this term F(0).
+        if li == 0.0:
+            left_boundary = (
+                0.0
+                if left_extrapolation_value is None
+                else left_extrapolation_value
+            )
+            Fi_left = np.full_like(ts_mid, left_boundary)
+        else:
+            t_left = li * ts_mid  # can be < grid_min, so the left fill is used
+            Fi_left = _interp_cdf_row(
+                pred_cdf[i],
+                time_grid[i],
+                t_left,
+                left_fill=left_extrapolation_value,
+            )
 
         integrand = Fi_right - Fi_left
         scores[i] = float(np.sum(integrand * widths))
