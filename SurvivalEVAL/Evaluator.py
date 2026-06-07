@@ -572,8 +572,7 @@ class SurvivalEvaluator:
         :return: (float, float, int)
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
-        # Choose prediction method based on the input argument
-        # Check if there is no censored instance, if so, naive Brier score is applied
+        # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
         if self._NO_CENSOR:
             method = "Harrell"
 
@@ -1357,9 +1356,8 @@ class SurvivalEvaluator:
         Returns
         -------
         km_cal: float
-            The KM calibration score, which is the mean survival curve of the predicted survival curves.
-            It is calculated by comparing the average survival curve with the Kaplan-Meier estimate of the survival
-            function.
+            Normalized integrated squared error between the average predicted
+            survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         if self.ndim_time == 1:
             average_survival_curve = np.mean(self._pred_survs, axis=0)
@@ -1426,6 +1424,11 @@ class SurvivalEvaluator:
     def auprc(self, n_quad: int = 256) -> float:
         """
         Calculate the survival AUPRC for right-censored data.
+
+        Parameters
+        ----------
+        n_quad: int, default: 256
+            Number of quadrature intervals used for numerical integration.
 
         Returns
         -------
@@ -1714,7 +1717,7 @@ class PointEvaluator:
         total_pairs: int
             The total number of comparable pairs considered in the concordance calculation.
         """
-        # Check if there is no censored instance, if so, naive Brier score is applied
+        # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
         if self._NO_CENSOR:
             method = "Harrell"
 
@@ -1847,10 +1850,10 @@ class PointEvaluator:
         Parameters
         ----------
         method: string, default: "Hinge"
-            The method used to calculate the MAE score.
+            The method used to calculate the RMSE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
         weighted: bool, default: None
-            Whether to use weighting scheme for MAE.
+            Whether to use a weighting scheme for RMSE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
         log_scale: boolean, default = False
             Whether to use log scale for the time axis.
@@ -1862,7 +1865,7 @@ class PointEvaluator:
         Returns
         -------
         rmse_score: float
-            The MAE score for the test set.
+            The RMSE score for the test set.
         """
         return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
@@ -2237,9 +2240,8 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         Returns
         -------
         km_cal: float
-            The KM calibration score, which is the mean survival curve of the predicted survival curves.
-            It is calculated by comparing the average survival curve with the Kaplan-Meier estimate of the survival
-            function.
+            Normalized integrated squared error between the average predicted
+            survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         unique_times = np.unique(self.event_times[self.event_indicators == 1])
         survival_curves = quantile_to_survival(

@@ -108,8 +108,9 @@ class KaplanMeierArea(KaplanMeier):
             area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
 
-        # we are facing the choice of using the trapezoidal rule or directly using the area under the step function
-        # we choose to use trapezoid because it is more accurate
+        # A KM curve is a step function, so step integration would give its exact
+        # area. This class intentionally retains the legacy trapezoidal,
+        # piecewise-linear approximation used by downstream best-guess estimates.
         area_diff = np.diff(area_times, 1)
         average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
         area = np.flip(np.flip(area_diff * average_probabilities).cumsum())

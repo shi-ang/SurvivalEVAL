@@ -585,6 +585,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             uses the DN's method (Kaplan-Meier estimate of the survival function).
             "Turnbull" method uses the Turnbull estimator for the survival function
             to compute the average observed probabilities in each bin.
+        return_details: bool, default: False
+            Whether to return detailed calibration information and plots.
 
         Returns
         -------
@@ -829,12 +831,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def inclusion_rate(self) -> float:
         """
-        Calculate the inclusion rate of the predicted median survival times within the interval.
+        Calculate the inclusion rate of the configured point predictions within the observed intervals.
+
+        Point predictions use the evaluator's `predict_time_method`, which may
+        be "Median", "Mean", or "RMST".
 
         Returns
         -------
         inclusion_rate: float
-            The inclusion rate of the predicted median survival times within the interval.
+            Proportion of configured point predictions within the observed intervals.
         """
         return inclusion_rate(
             self.left_limits, self.right_limits, self.predicted_event_times
@@ -845,12 +850,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         log_scale: bool = False,
     ) -> float:
         """
-        Calculate the Mean Absolute Error (MAE) from the predicted median survival times.
+        Calculate MAE from point predictions produced by the configured prediction-time method.
+
+        Parameters
+        ----------
+        log_scale: bool, default: False
+            Whether to calculate errors after applying the natural logarithm to times.
 
         Returns
         -------
         mae: float
-            The Mean Absolute Error (MAE) from the predicted median survival times.
+            The Mean Absolute Error (MAE) of the configured point predictions.
         """
         return mean_error_ic(
             self.left_limits,
@@ -865,12 +875,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         log_scale: bool = False,
     ) -> float:
         """
-        Calculate the Mean Squared Error (MSE) from the predicted median survival times.
+        Calculate MSE from point predictions produced by the configured prediction-time method.
+
+        Parameters
+        ----------
+        log_scale: bool, default: False
+            Whether to calculate errors after applying the natural logarithm to times.
 
         Returns
         -------
         mse: float
-            The Mean Squared Error (MSE) from the predicted median survival times.
+            The Mean Squared Error (MSE) of the configured point predictions.
         """
         return mean_error_ic(
             self.left_limits,
@@ -885,12 +900,17 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         log_scale: bool = False,
     ) -> float:
         """
-        Calculate the Root Mean Squared Error (RMSE) from the predicted median survival times.
+        Calculate RMSE from point predictions produced by the configured prediction-time method.
+
+        Parameters
+        ----------
+        log_scale: bool, default: False
+            Whether to calculate errors after applying the natural logarithm to times.
 
         Returns
         -------
         rmse: float
-            The Root Mean Squared Error (RMSE) from the predicted median survival times.
+            The Root Mean Squared Error (RMSE) of the configured point predictions.
         """
         return self.mse(log_scale=log_scale) ** 0.5
 

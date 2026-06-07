@@ -47,7 +47,7 @@ def concordance(
         will be calculated and used to construct the pairs.
     ties: str, optional (default="Risk")
         A string indicating the way ties should be handled.
-        Options: "None" (default), "Time", "Risk", or "All"
+        Options: "None", "Time", "Risk" (default), or "All"
         "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
         "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
         "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
@@ -180,7 +180,7 @@ def _estimate_concordance_index(
     partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
         The partial weights for the censored samples.
     tied_tol: float, optional (default=1e-8)
-        The tolerance for considering two times as tied.
+        The tolerance for considering two estimated risk scores as tied.
 
     Returns
     -------

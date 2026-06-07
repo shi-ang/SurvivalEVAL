@@ -507,6 +507,9 @@ def km_calibration(
     event_indicators: np.ndarray
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
+    interpolation_method: str, default "Linear"
+        Interpolation method for evaluating the average survival curve.
+        Options are "Linear" and "Pchip".
     draw_figure: bool
         Whether to visualize the comparison of the KM curve and average curve.
 
@@ -612,6 +615,8 @@ def coverage_ic(
         Method to compute the coverage.
         - "Turnbull": use the empirical distribution (Turnbull estimator) of censoring intervals from the training data.
         - "linear": use linear interpolation between the left and right bounds of the censoring intervals.
+    eps : float, default 1e-12
+        Numerical tolerance for treating the conditional coverage denominator as zero.
 
     Returns
     -------

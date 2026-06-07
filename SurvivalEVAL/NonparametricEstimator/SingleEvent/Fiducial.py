@@ -526,7 +526,8 @@ def fit_fiducial_interval_censor(
     mburn : int
         Number of burn-in samples (default 100)
     alpha : float
-        Confidence level for intervals (default 0.05, gives 95% CI)
+        Two-sided tail probability for fiducial intervals. The default 0.05
+        produces a 95% interval.
     ngrid : int
         Number of internal grid points for QP (default 100)
     ntest : int
@@ -534,7 +535,8 @@ def fit_fiducial_interval_censor(
     grid_low : float, optional
         Lower bound of grid (default: min(l))
     grid_high : float, optional
-        Upper bound of grid (default: max(r))
+        Upper bound of the grid. By default, uses the largest finite value in
+        `r`; if all right endpoints are infinite, uses `max(l)`.
     grid_high_override : float, optional
         Override for upper bound of grid (takes precedence)
     lam : float
