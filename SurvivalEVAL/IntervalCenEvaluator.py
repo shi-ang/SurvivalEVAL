@@ -908,10 +908,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         ----------
         quantile_range: tuple[float, float], default: None
             The lower and upper quantiles to define the prediction interval.
-            If provided, `cov_level` must be None.
+            If `cov_level` is also provided, it must equal the difference
+            between the upper and lower quantiles.
         cov_level: float, default: None
             The coverage level to define the prediction interval.
-            If provided, `quantile_range` must be None.
+            If `quantile_range` is also provided, it must equal the difference
+            between the upper and lower quantiles.
         method: str, default: "Turnbull"
             The method to handle censored patients. Options are "Turnbull" and "linear".
         Returns

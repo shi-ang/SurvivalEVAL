@@ -83,6 +83,31 @@ def test_prediction_utilities(evaluator_data):
     assert intervals.shape == (n_test, 2)
     assert np.all(intervals[:, 0] <= intervals[:, 1])
 
+    quantile_intervals = evaluator.predict_interval(quantile_range=(0.1, 0.9))
+    np.testing.assert_allclose(quantile_intervals, intervals)
+
+
+def test_predict_interval_accepts_matching_quantile_range_and_coverage_level(
+    evaluator_data,
+):
+    evaluator = evaluator_data["evaluator"]
+
+    combined_intervals = evaluator.predict_interval(
+        quantile_range=(0.1, 0.9), cov_level=0.8
+    )
+    quantile_intervals = evaluator.predict_interval(quantile_range=(0.1, 0.9))
+
+    np.testing.assert_allclose(combined_intervals, quantile_intervals)
+
+
+def test_predict_interval_rejects_mismatched_quantile_range_and_coverage_level(
+    evaluator_data,
+):
+    evaluator = evaluator_data["evaluator"]
+
+    with pytest.raises(ValueError, match="must equal"):
+        evaluator.predict_interval(quantile_range=(0.1, 0.8), cov_level=0.8)
+
 
 def test_scikit_survival_evaluator_handles_all_one_curves():
     curves = [

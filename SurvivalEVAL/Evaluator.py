@@ -341,30 +341,39 @@ class SurvivalEvaluator:
         ----------
         quantile_range: tuple[float, float]
             The lower and upper quantiles to define the prediction interval.
-            If provided, `cov_level` must be None.
+            If `cov_level` is also provided, it must equal the difference
+            between the upper and lower quantiles.
         cov_level: float, default: None
             The coverage level to define the prediction interval.
-            If provided, `quantile_range` must be None.
+            If `quantile_range` is also provided, it must equal the difference
+            between the upper and lower quantiles.
         Returns
         -------
         intervals: np.ndarray, shape = (n_samples, 2)
             The predicted survival intervals for each sample.
         """
         if (quantile_range is not None) and (cov_level is not None):
-            quantile_diff = quantile_range[1] - quantile_range[0]
-            assert (
-                quantile_diff == cov_level
-            ), "The difference between upper and lower quantiles must be equal to the coverage level."
-            assert (
-                0 < quantile_range[0] < quantile_range[1] < 1
-            ), "Quantiles must be between 0 and 1 and lower < upper."
+            lower_quantile, upper_quantile = quantile_range
+            if not 0 < lower_quantile < upper_quantile < 1:
+                raise ValueError(
+                    "Quantiles must be between 0 and 1 and lower < upper."
+                )
+            if not 0 < cov_level < 1:
+                raise ValueError("Coverage level must be between 0 and 1.")
+            if not np.isclose(upper_quantile - lower_quantile, cov_level):
+                raise ValueError(
+                    "The difference between upper and lower quantiles must "
+                    "equal the coverage level."
+                )
         elif (quantile_range is not None) and (cov_level is None):
             lower_quantile, upper_quantile = quantile_range
-            assert (
-                0 < lower_quantile < upper_quantile < 1
-            ), "Quantiles must be between 0 and 1 and lower < upper."
+            if not 0 < lower_quantile < upper_quantile < 1:
+                raise ValueError(
+                    "Quantiles must be between 0 and 1 and lower < upper."
+                )
         elif (quantile_range is None) and (cov_level is not None):
-            assert 0 < cov_level < 1, "Coverage level must be between 0 and 1."
+            if not 0 < cov_level < 1:
+                raise ValueError("Coverage level must be between 0 and 1.")
             lower_quantile = (1 - cov_level) / 2
             upper_quantile = 1 - lower_quantile
         else:
