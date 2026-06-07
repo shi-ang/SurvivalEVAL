@@ -15,6 +15,20 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
 )
 
 
+def _h_statistic_bin_masks(preds: np.ndarray, num_bins: int) -> list[np.ndarray]:
+    """Return equal-width probability-bin masks with a closed final bin."""
+    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_masks = []
+    for i in range(num_bins):
+        upper_mask = (
+            preds <= bin_edges[i + 1]
+            if i == num_bins - 1
+            else preds < bin_edges[i + 1]
+        )
+        bin_masks.append((preds >= bin_edges[i]) & upper_mask)
+    return bin_masks
+
+
 def one_calibration(
     preds: np.ndarray,
     event_time: np.ndarray,
@@ -71,15 +85,11 @@ def one_calibration(
         binned_event_indicator = np.array_split(sorted_event_indicator, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
     elif binning_strategy == "H":
-        # Create bins from 0 to 1 with equal increments
-        bin_edges = np.linspace(0, 1, num_bins + 1)
         binned_event_time = []
         binned_event_indicator = []
         binned_predictions = []
 
-        for i in range(num_bins):
-            # Get the indices of predictions that fall into the current bin
-            bin_mask = (preds >= bin_edges[i]) & (preds < bin_edges[i + 1])
+        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
             binned_event_time.append(event_time[bin_mask])
             binned_event_indicator.append(event_indicator[bin_mask])
             binned_predictions.append(preds[bin_mask])
@@ -202,15 +212,11 @@ def one_cal_ic(
         binned_right = np.array_split(sorted_right, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
     elif binning_strategy == "H":
-        # Create bins from 0 to 1 with equal increments
-        bin_edges = np.linspace(0, 1, num_bins + 1)
         binned_left = []
         binned_right = []
         binned_predictions = []
 
-        for i in range(num_bins):
-            # Get the indices of predictions that fall into the current bin
-            bin_mask = (preds >= bin_edges[i]) & (preds < bin_edges[i + 1])
+        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
             binned_left.append(left_limits[bin_mask])
             binned_right.append(right_limits[bin_mask])
             binned_predictions.append(preds[bin_mask])

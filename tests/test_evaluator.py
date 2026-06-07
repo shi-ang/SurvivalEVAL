@@ -321,6 +321,23 @@ def test_uncensored_one_calibration_uses_filtered_bin_size():
     np.testing.assert_allclose(expected, [0.9, 0.55, 0.25])
 
 
+def test_h_statistic_one_calibration_includes_prediction_one():
+    p_value, statistic, observed, expected = one_calibration(
+        preds=np.array([0.1, 0.4, 0.7, 1.0]),
+        event_time=np.full(4, 2.0),
+        event_indicator=np.ones(4, dtype=int),
+        target_time=1.0,
+        num_bins=3,
+        binning_strategy="H",
+        method="Uncensored",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isfinite(statistic)
+    np.testing.assert_allclose(observed, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
+
+
 def test_residuals_and_km_calibration(evaluator_data):
     evaluator = evaluator_data["evaluator"]
 

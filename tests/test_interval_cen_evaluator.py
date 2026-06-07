@@ -6,6 +6,7 @@ import pytest
 from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimator
 
@@ -24,6 +25,23 @@ def _midpoint_times(interval_df: pd.DataFrame):
     times = np.where(is_finite, (left + right) / 2.0, left)
     indicators = is_finite.astype(int)
     return times, indicators
+
+
+def test_h_statistic_interval_one_calibration_includes_prediction_one():
+    p_value, statistic, observed, expected = one_cal_ic(
+        preds=np.array([0.1, 0.4, 0.7, 1.0]),
+        left_limits=np.full(4, 2.0),
+        right_limits=np.full(4, 2.0),
+        target_time=1.0,
+        num_bins=3,
+        binning_strategy="H",
+        method="MidPoint",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isfinite(statistic)
+    np.testing.assert_allclose(observed, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
 
 
 @pytest.fixture(scope="module")
