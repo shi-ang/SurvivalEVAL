@@ -918,7 +918,7 @@ class SurvivalEvaluator:
             method = "Uncensored"
 
         if weighted is None:
-            weighted = False if method == "Uncensored" or "Hinge" else True
+            weighted = method not in ("Uncensored", "Hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -969,7 +969,7 @@ class SurvivalEvaluator:
             method = "Uncensored"
 
         if weighted is None:
-            weighted = False if method == "Uncensored" or "Hinge" else True
+            weighted = method not in ("Uncensored", "Hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -1745,7 +1745,7 @@ class PointEvaluator:
             method = "Uncensored"
 
         if weighted is None:
-            weighted = False if method == "Uncensored" or "Hinge" else True
+            weighted = method not in ("Uncensored", "Hinge")
 
         return mean_error(
             predicted_times=self._pred_times,
@@ -1796,7 +1796,7 @@ class PointEvaluator:
             method = "Uncensored"
 
         if weighted is None:
-            weighted = False if method == "Uncensored" or "Hinge" else True
+            weighted = method not in ("Uncensored", "Hinge")
 
         return mean_error(
             predicted_times=self._pred_times,
