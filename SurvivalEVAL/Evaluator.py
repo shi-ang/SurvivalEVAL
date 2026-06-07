@@ -210,14 +210,15 @@ class SurvivalEvaluator:
         Parameters
         ----------
         target_time: Union[float, int, np.ndarray], shape = (n_samples, )
-            Time point(s) at which the probability of event is to be predicted. If float or int, the same time point is
-            used for all samples. If array-like, each sample will have it own target time. The length of the array must
-            be the same as the number of samples.
+            Time point(s) at which the survival probability is to be predicted.
+            If float or int, the same time point is used for all samples. If
+            array-like, each sample will have its own target time. The length
+            of the array must be the same as the number of samples.
 
         Returns
         -------
-        predicted_probability: np.ndarray, shape = (n_samples, )
-            Predicted probabilities of event at the target time point(s).
+        predicted_survival_probability: np.ndarray, shape = (n_samples, )
+            Predicted survival probabilities at the target time point(s).
         """
         if self.ndim_surv == 2 and self.ndim_time == 1:
             n_samples = self._pred_survs.shape[0]
@@ -280,12 +281,12 @@ class SurvivalEvaluator:
         Parameters
         ----------
         target_times: np.ndarray, shape = (n_target_times)
-            Time points at which the probability of event is to be predicted.
+            Time points at which the survival probabilities are to be predicted.
 
         Returns
         -------
         prob_mat: np.ndarray, shape = (n_samples, n_target_times)
-            Predicted probabilities of event at the target time points.
+            Predicted survival probabilities at the target time points.
         """
         if self.ndim_surv == 2 and self.ndim_time == 1:
             n_samples = self._pred_survs.shape[0]

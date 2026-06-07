@@ -116,7 +116,8 @@ def auprc_right_censor(
     Parameters
     ----------
     pred_cdf: np.ndarray, (n_samples, n_time_points)
-        Predicted survival probabilities for the testing samples.
+        Predicted cumulative event probabilities F(t) = 1 - S(t) for the
+        testing samples. Values must be nondecreasing over time.
     time_grid:  np.ndarray, (n_time_points,)
         The time grid corresponding to the predicted CDF values.
     event_times: np.ndarray, (n_samples,)
@@ -190,7 +191,8 @@ def auprc_ic(
     Parameters
     ----------
     pred_cdf: np.ndarray, (n_samples, n_time_points)
-        Predicted survival probabilities for the testing samples.
+        Predicted cumulative event probabilities F(t) = 1 - S(t) for the
+        testing samples. Values must be nondecreasing over time.
     time_grid:  np.ndarray, (n_time_points,)
         The time grid corresponding to the predicted CDF values.
     left: np.ndarray, (n_samples,)
