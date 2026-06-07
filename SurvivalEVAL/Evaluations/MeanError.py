@@ -31,11 +31,13 @@ def mean_error(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     error_type: string, default: "absolute"
         Type of mean error to use. Options are "absolute" and "squared".
     method: string, default: "Hinge"

@@ -74,11 +74,13 @@ class SurvivalEvaluator:
         event_times: NumericArrayLike, shape = (n_samples, )
             Actual event/censor time for the testing samples.
         event_indicators: NumericArrayLike, shape = (n_samples, )
-            Binary indicators of censoring for the testing samples
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: Optional[NumericArrayLike], shape = (n_train_samples, ), default: None
             Actual event/censor time for the training samples.
         train_event_indicators: Optional[NumericArrayLike], shape = (n_train_samples, ), default: None
-            Binary indicators of censoring for the training samples
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         predict_time_method: str, default = "Median"
             Method for calculating predicted survival time. Available options are "Median", "Mean" and "RMST".
         interpolation: str, default = "Linear"
@@ -1464,11 +1466,13 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         event_times: NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
         event_indicators: NumericArrayLike, shape = (n_samples,)
-            Event indicators for the testing samples.
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
         train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
-            Event indicators for the training samples.
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
         interpolation: string, default: "Linear"
@@ -1512,11 +1516,13 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
         event_times: NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
         event_indicators: NumericArrayLike, shape = (n_samples,)
-            Event indicators for the testing samples.
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
         train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
-            Event indicators for the training samples.
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean" and "RMST".
         interpolation: string, default: "Linear"
@@ -1557,11 +1563,13 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
         event_times: NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
         event_indicators: NumericArrayLike, shape = (n_samples,)
-            Event indicators for the testing samples.
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
         train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
-            Event indicators for the training samples.
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         predict_time_method: string, default: "Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
         interpolation: string, default: "Linear"
@@ -1630,11 +1638,13 @@ class PointEvaluator:
         event_times: structured array, shape = (n_samples, )
             Actual event/censor time for the testing samples.
         event_indicators: structured array, shape = (n_samples, )
-            Binary indicators of censoring for the testing samples
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: structured array, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
         train_event_indicators: structured array, shape = (n_train_samples, )
-            Binary indicators of censoring for the training samples
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         """
         self._pred_times = check_and_convert(pred_times)
 
@@ -1920,13 +1930,15 @@ class SingleTimeEvaluator:
         event_times: structured array, shape = (n_samples, )
             Actual event/censor time for the testing samples.
         event_indicators: structured array, shape = (n_samples, )
-            Binary indicators of censoring for the testing samples
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         target_time: float, int, or None, default = None
             Time point at which the evaluation is to be performed. If None, the target time is set to the median time
         train_event_times: structured array, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
         train_event_indicators: structured array, shape = (n_train_samples, )
-            Binary indicators of censoring for the training samples
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         """
         self._pred_probs = check_and_convert(pred_probs)
         if self._pred_probs.ndim != 1:
@@ -2189,11 +2201,13 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         event_times: structured array, shape = (n_samples, )
             Actual event/censor time for the testing samples.
         event_indicators: structured array, shape = (n_samples, )
-            Binary indicators of censoring for the testing samples
+            Binary event indicators for the testing samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         train_event_times: structured array, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
         train_event_indicators: structured array, shape = (n_train_samples, )
-            Binary indicators of censoring for the training samples
+            Binary event indicators for the training samples: 1 denotes an
+            observed event and 0 denotes a censored observation.
         predict_time_method: str, default = "Median"
             Method for calculating predicted survival time. Available options are "Median", "Mean" or "RMST".
         interpolation: str, default = "Linear"

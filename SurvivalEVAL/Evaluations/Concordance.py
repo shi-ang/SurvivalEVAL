@@ -29,11 +29,13 @@ def concordance(
     event_times: np.ndarray, shape = (n_samples,)
         The true survival times.
     event_indicators: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples,)
         The true survival times of the training set.
     train_event_indicators: np.ndarray, shape = (n_train_samples,)
-        The event indicators of the true survival times of the training set.
+        Binary training-set event indicators: 1 denotes an observed event and
+        0 denotes a censored observation.
     method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
         "Harrell": the pairs are constructed by comparing the predicted survival time of each sample with the
@@ -166,7 +168,8 @@ def _estimate_concordance_index(
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
     estimate: np.ndarray, shape = (n_samples,)
@@ -271,7 +274,8 @@ def _get_comparable(
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
     order: np.ndarray, shape = (n_samples,)

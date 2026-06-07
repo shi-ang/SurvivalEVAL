@@ -48,7 +48,8 @@ def one_calibration(
     event_time: np.ndarray
         The true event times.
     event_indicator: np.ndarray
-        The indicator of whether the event is observed or not.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     target_time: Numeric
         The time of interest.
     num_bins: int
@@ -298,7 +299,8 @@ def integrated_calibration_index(
     event_time: NumericArrayLike
         The true event times.
     event_indicator: NumericArrayLike
-        The indicator of whether the event is observed or not.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     target_time: Numeric
         The time of interest for calibration.
     knots: int

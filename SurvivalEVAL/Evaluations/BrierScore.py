@@ -30,11 +30,13 @@ def single_brier_score(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_time: float, default: None
         The specific time point for which to estimate the Brier score.
     ipcw: bool, default: True
@@ -281,11 +283,13 @@ def brier_multiple_points(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_times: float
         The specific time points for which to estimate the Brier scores.
     ipcw: bool, default: True
