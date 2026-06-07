@@ -65,11 +65,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             Time coordinates for the predicted survival probabilities.
             At least one of `pred_survs` or `time_coordinates` must be a 2D array.
         left_limits: NumericArrayLike, shape = (n_samples,)
-            Left limits of the interval-censored testing data.
+            Finite, non-negative left limits of the interval-censored testing
+            data. Use 0 for left-censored observations.
         right_limits: NumericArrayLike, shape = (n_samples,)
             Right limits of the interval-censored testing data.
         train_left_limits: Optional[NumericArrayLike], shape = (n_train_samples,), default: None
-            Left limits of the interval-censored data for the training set.
+            Finite, non-negative left limits of the interval-censored training
+            data. Use 0 for left-censored observations.
         train_right_limits: Optional[NumericArrayLike], shape = (n_train_samples,), default: None
             Right limits of the interval-censored data for the training set.
         predict_time_method: str, default: "Median"
@@ -92,6 +94,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         )
 
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
+        if np.any(~np.isfinite(left_limits)) or np.any(left_limits < 0):
+            raise ValueError(
+                "Testing left limits must be finite and non-negative."
+            )
         if np.any(left_limits > right_limits):
             raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
@@ -101,6 +107,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             train_left_limits, train_right_limits = check_and_convert(
                 train_left_limits, train_right_limits
             )
+            if np.any(~np.isfinite(train_left_limits)) or np.any(
+                train_left_limits < 0
+            ):
+                raise ValueError(
+                    "Training left limits must be finite and non-negative."
+                )
             if np.any(train_left_limits > train_right_limits):
                 raise ValueError(
                     "Found an interval with left > right in the training data."

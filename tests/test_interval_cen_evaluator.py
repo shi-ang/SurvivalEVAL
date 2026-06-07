@@ -134,3 +134,18 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
     assert np.isfinite(coverage)
     assert np.isfinite(cov_gap)
     assert np.isfinite(avg_width)
+
+
+def test_interval_evaluator_rejects_negative_left_limits():
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        IntervalCenEvaluator(
+            pred_survs=np.array(
+                [
+                    [1.0, 0.8, 0.4, 0.1],
+                    [1.0, 0.5, 0.2, 0.1],
+                ]
+            ),
+            time_coordinates=np.array([0.0, 1.0, 2.0, 3.0]),
+            left_limits=np.array([-1.0, 1.0]),
+            right_limits=np.array([1.0, np.inf]),
+        )

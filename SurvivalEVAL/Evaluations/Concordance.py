@@ -574,13 +574,19 @@ def impute_times_midpoint(
     right: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    according to (left, right] intervals, construct (t, delta) via "endpoint/midpoint imputation".
+    Construct (t, delta) from (left, right] intervals using endpoint/midpoint
+    imputation.
 
-    rules:
+    Rules:
       - Interval censoring: both L and R finite => t = (L+R)/2, delta=1
       - Right censor: L finite, R non-finite => t = L, delta= 0
-      - Left censor: L non-finite, R finite => t = R, delta= 1
-      - Other (both non-finite) => discard
+
+    Parameters
+    ----------
+    left, right : np.ndarray
+        Left and right interval endpoints. Left endpoints must be finite and
+        non-negative. Use a left endpoint of 0 for left-censored observations
+        and a right endpoint of ``np.inf`` for right-censored observations.
 
     Returns
     -------
@@ -590,34 +596,29 @@ def impute_times_midpoint(
     left = np.asarray(left, dtype=float)
     right = np.asarray(right, dtype=float)
 
-    is_L_finite = np.isfinite(left)
+    if left.shape != right.shape:
+        raise ValueError("left and right must have the same shape.")
+    if np.any(~np.isfinite(left)) or np.any(left < 0):
+        raise ValueError("Left endpoints must be finite and non-negative.")
+    if np.any(left > right):
+        raise ValueError(
+            "Left endpoints must be less than or equal to right endpoints."
+        )
+
     is_R_finite = np.isfinite(right)
 
     n = left.shape[0]
     t = np.empty(n, dtype=float)
     delta = np.empty(n, dtype=int)
 
-    # interval censoring：L limited, R limited -> use midpoint as event time
-    mask_interval = is_L_finite & is_R_finite
+    # Interval censoring: use midpoint as event time.
+    mask_interval = is_R_finite
     t[mask_interval] = 0.5 * (left[mask_interval] + right[mask_interval])
     delta[mask_interval] = 1
 
-    # left censor: L non-finite, R finite -> use R as event time
-    mask_left_cens = (~is_L_finite) & is_R_finite
-    t[mask_left_cens] = right[mask_left_cens]
-    delta[mask_left_cens] = 1
-
-    # right censor: L finite, R non-finite -> use L, mark as censor
-    mask_right_cens = is_L_finite & (~is_R_finite)
+    # Right censoring: use the finite left endpoint and mark as censored.
+    mask_right_cens = ~is_R_finite
     t[mask_right_cens] = left[mask_right_cens]
     delta[mask_right_cens] = 0
 
-    # other: both non-finite -> discard
-    mask_bad = (~is_L_finite) & (~is_R_finite)
-    if mask_bad.any():
-        t[mask_bad] = np.nan
-        delta[mask_bad] = -1  # mark as invalid
-
-    # remove invalid entries
-    valid = ~np.isnan(t) & (delta >= 0)
-    return t[valid], delta[valid]
+    return t, delta
