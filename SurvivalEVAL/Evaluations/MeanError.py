@@ -365,9 +365,16 @@ def _compute_inside_mask(
         Boolean mask for right-censored intervals.
     """
     is_right_cens = np.isinf(right)
-    inside_finite = (~is_right_cens) & (predicted > left) & (predicted <= right)
+    is_exact = (~is_right_cens) & (left == right)
+    inside_exact = is_exact & np.isclose(predicted, right)
+    inside_finite = (
+        (~is_right_cens)
+        & (~is_exact)
+        & (predicted > left)
+        & (predicted <= right)
+    )
     inside_right = is_right_cens & (predicted > left)
-    inside = inside_finite | inside_right
+    inside = inside_exact | inside_finite | inside_right
     return inside, is_right_cens
 
 

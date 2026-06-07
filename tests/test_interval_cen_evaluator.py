@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
+from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimator
 
@@ -149,6 +150,29 @@ def test_interval_evaluator_rejects_negative_left_limits():
             left_limits=np.array([-1.0, 1.0]),
             right_limits=np.array([1.0, np.inf]),
         )
+
+
+def test_exact_intervals_treat_matching_predictions_as_inside():
+    left = np.array([2.0, 2.0])
+    right = np.array([2.0, 2.0])
+    predicted = np.array([2.0, 3.0])
+
+    assert inclusion_rate(left, right, predicted) == 0.5
+    assert mean_error_ic(left, right, predicted, error_type="absolute") == 0.5
+    assert mean_error_ic(left, right, predicted, error_type="squared") == 0.5
+
+
+def test_exact_interval_matching_uses_numerical_tolerance():
+    exact_time = np.array([2.0])
+    predicted = np.array([2.0 + 1e-10])
+
+    assert inclusion_rate(exact_time, exact_time, predicted) == 1.0
+    assert (
+        mean_error_ic(
+            exact_time, exact_time, predicted, error_type="absolute"
+        )
+        == 0.0
+    )
 
 
 def test_uncensored_brier_score_without_training_data():
