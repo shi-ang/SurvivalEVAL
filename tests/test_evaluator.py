@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import ScikitSurvivalEvaluator, SurvivalEvaluator
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
 
 
 class _StepFunction:
@@ -302,6 +303,22 @@ def test_calibration_metrics(evaluator_data):
     assert "figure" in ksd_details
     ksd_fig, _ = ksd_details["figure"]
     plt.close(ksd_fig)
+
+
+def test_uncensored_one_calibration_uses_filtered_bin_size():
+    p_value, statistic, observed, expected = one_calibration(
+        preds=np.array([0.9, 0.8, 0.6, 0.5, 0.3, 0.2]),
+        event_time=np.array([1.0, 0.5, 3.0, 4.0, 5.0, 6.0]),
+        event_indicator=np.array([1, 0, 1, 1, 1, 1]),
+        target_time=2.0,
+        num_bins=3,
+        method="Uncensored",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isclose(statistic, 29 / 9)
+    np.testing.assert_allclose(observed, [1.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.9, 0.55, 0.25])
 
 
 def test_residuals_and_km_calibration(evaluator_data):

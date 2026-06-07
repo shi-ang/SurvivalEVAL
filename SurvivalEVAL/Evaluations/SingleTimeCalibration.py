@@ -45,7 +45,8 @@ def one_calibration(
         H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
     method: str
         The method to handle censored patients. The options are: "DN" (default), and "Uncensored".
-        "Uncensored" method simply removes the censored patients, and uses the standard Hosmer-Lemeshow test.
+        "Uncensored" removes observations censored before the target time, whose event status is unknown,
+        and uses the standard Hosmer-Lemeshow test on the remaining observations.
         "DN" method uses the D'Agostino-Nam method, which uses the Kaplan-Meier estimate of the survival function
         to compute the average observed probabilities in each bin.
 
@@ -105,11 +106,19 @@ def one_calibration(
             filter_idx = ~(
                 (binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0)
             )
-            mean_prob = np.mean(binned_predictions[b][filter_idx])
-            event_count = sum(binned_event_time[b][filter_idx] < target_time)
-            event_probability = event_count / bin_size
-            hl_statistics += (event_count - bin_size * mean_prob) ** 2 / (
-                bin_size * mean_prob * (1 - mean_prob)
+            filtered_predictions = binned_predictions[b][filter_idx]
+            filtered_event_times = binned_event_time[b][filter_idx]
+            retained_bin_size = len(filtered_event_times)
+            if retained_bin_size == 0:
+                continue
+
+            mean_prob = np.mean(filtered_predictions)
+            event_count = np.sum(filtered_event_times < target_time)
+            event_probability = event_count / retained_bin_size
+            hl_statistics += (
+                event_count - retained_bin_size * mean_prob
+            ) ** 2 / (
+                retained_bin_size * mean_prob * (1 - mean_prob)
             )
         elif method == "DN":
             mean_prob = np.mean(binned_predictions[b])
