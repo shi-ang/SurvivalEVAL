@@ -85,7 +85,7 @@ def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
     censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
         if prob == 1:
-            censor_binning += 0.1
+            censor_binning += 1 / num_bins
             break
         elif quantile[i] > prob >= quantile[i + 1]:
             first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
