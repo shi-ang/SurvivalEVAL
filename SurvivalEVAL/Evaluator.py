@@ -2192,11 +2192,12 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         ----------
         pred_regs: structured array,
             Accept shapes: (n_quantiles,) or (n_samples, n_quantiles).
-            Predicted survival curves for the testing samples.
+            Predicted event-time quantiles for the testing samples. Each column
+            corresponds to the matching entry in `quantile_levels`.
             At least one of `pred_regs` or `quantile_levels` must be a 2D array.
         quantile_levels: structured array,
             Accept shapes: (n_quantiles,) or (n_samples, n_quantiles).
-            Time coordinates corresponding to the survival curves.
+            Cumulative event-probability levels corresponding to `pred_regs`.
             At least one of `pred_regs` or `quantile_levels` must be a 2D array.
         event_times: structured array, shape = (n_samples, )
             Actual event/censor time for the testing samples.

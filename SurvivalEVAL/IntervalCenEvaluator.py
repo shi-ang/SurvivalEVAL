@@ -816,8 +816,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         Returns
         -------
         auprc: float
-            The AUPRC scores for each sample.
-        -------
+            The mean AUPRC across all testing samples.
         """
         return auprc_ic(
             pred_cdf=1 - self._pred_survs,

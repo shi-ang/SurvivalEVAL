@@ -311,7 +311,7 @@ def integrated_calibration_index(
     figure_range: tuple
         The range of the x-axis and y-axis for the plot.
         It should be a tuple of the form (x_min, x_max, y_min, y_max).
-        If None, it will be set to the range of predicted survival probabilities.
+        If None, it will be set to the range of predicted event probabilities.
         Default is None.
     Returns
     -------
@@ -383,8 +383,8 @@ def integrated_calibration_index(
 
         ax.plot(grid, cal_pred, label="Calibration Curve", color="blue")
         ax.plot(grid, grid, label="Perfect Calibration", linestyle="--", color="grey")
-        ax.set_xlabel("Predicted Survival Probability")
-        ax.set_ylabel("Observed Survival Probability")
+        ax.set_xlabel("Predicted Event Probability")
+        ax.set_ylabel("Observed Event Probability")
         ax.set_title("Graphical Calibration Curve")
         ax.legend()
         if figure_range is not None:
