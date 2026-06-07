@@ -226,13 +226,13 @@ def one_cal_ic(
         if method == "MidPoint":
             mid = l_limits + (r_limits - l_limits) / 2.0
             finite_mid = np.isfinite(mid)
-            event_times = np.where(finite_mid, mid, left_limits)
+            event_times = np.where(finite_mid, mid, l_limits)
             event_indicators = finite_mid.astype(int)
 
             km_model = KaplanMeier(event_times, event_indicators)
             event_probability = 1 - km_model.predict(target_time)
         elif method == "Turnbull":
-            tb = TurnbullEstimatorLifelines(left_limits, right_limits)
+            tb = TurnbullEstimatorLifelines(l_limits, r_limits)
             event_probability = 1 - tb.predict(target_time)
         else:
             error = "Please enter one of 'MidPoint','Turnbull' for method."
