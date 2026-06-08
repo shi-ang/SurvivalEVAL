@@ -58,6 +58,9 @@ version = { attr = "SurvivalEVAL.version.__version__" }
 [tool.setuptools.packages.find]
 where = ["."]
 
+[tool.pytest.ini_options]
+addopts = ["--ignore=tests/private"]
+
 [project.optional-dependencies]
 dev = [
     "pycox>=0.2.3",
