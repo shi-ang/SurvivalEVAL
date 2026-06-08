@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_uncensored_grid
+from SurvivalEVAL.Evaluations.AreaUnderPRCurve import (
+    auprc_ic,
+    auprc_right_censored_grid,
+    auprc_uncensored_grid,
+)
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_monotonicity,
@@ -300,6 +304,15 @@ def test_auprc_rejects_decreasing_time_grid():
             pred_cdf=np.array([[0.2, 0.5, 0.8]]),
             time_grid=np.array([2.0, 1.0, 0.0]),
             event_times=np.array([1.0]),
+        )
+
+
+def test_auprc_right_censored_rejects_duplicate_time_grid():
+    with pytest.raises(AssertionError, match="strictly increasing"):
+        auprc_right_censored_grid(
+            pred_cdf=np.array([[0.2, 0.5, 0.8]]),
+            time_grid=np.array([0.0, 1.0, 1.0]),
+            censor_times=np.array([1.0]),
         )
 
 

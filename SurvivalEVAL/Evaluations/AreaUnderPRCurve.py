@@ -92,9 +92,7 @@ def auprc_right_censored_grid(
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(
-        time_grid, direction="increasing"
-    ), "time_grid must be non-decreasing"
+    assert np.all(np.diff(time_grid, axis=-1) > 0), "time_grid must be strictly increasing"
 
     ts = np.linspace(0.0, 1.0, n_quad + 1)
     ts_mid = 0.5 * (ts[1:] + ts[:-1])
