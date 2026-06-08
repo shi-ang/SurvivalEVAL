@@ -30,11 +30,13 @@ def single_brier_score(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_time: float, default: None
         The specific time point for which to estimate the Brier score.
     ipcw: bool, default: True
@@ -61,13 +63,12 @@ def single_brier_score(
         # Category one calculates IPCW weight at observed time point.
         # Category one is individuals with event time lower than the time of interest and were NOT censored.
         weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
-        # Catch if event times goes over max training event time, i.e. predict gives NA
+        # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
         # contain both censored and uncensored individuals.
         weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
-        # predict returns NA if the passed-in time is greater than any of the times used to build the inverse probability
-        # of censoring model.
+        # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
         weight_cat1 = (event_times <= target_time) & event_indicators
@@ -83,7 +84,7 @@ def single_brier_score(
     # Refer above few lines for the justified code
     ###########################
     # order_of_times = np.argsort(event_times)
-    # # Catch if event times goes over max training event time, i.e. predict gives NA
+    # # Defensively discard any undefined IPCW weights.
     # weight_cat1 = ((event_times[order_of_times] <= target_time) & event_indicators[order_of_times]) /\
     #               ipc_model.predict(event_times[order_of_times])
     # weight_cat1[np.isnan(weight_cat1)] = 0
@@ -134,9 +135,9 @@ def brier_score_ic(
         Features for the training samples. Use only when method is 'Tsouprou-conditional'.
     target_time: numeric, default: None
         The specific time point for which to estimate the Brier score.
-    method: str, default: IPCW
+    method: str, default: "Tsouprou-marginal"
         Method to use for handling censoring. One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
-        'uncensored': Treat censored data as uncensored.
+        'uncensored': Exclude samples whose event status is ambiguous at the target time.
         'Tsouprou-marginal': Use marginal survival probabilities based on Turnbull estimator.
         'Tsouprou-conditional': Use conditional survival probabilities based on Weibull AFT model.
     Returns
@@ -152,8 +153,8 @@ def brier_score_ic(
         target_time = np.median(tau)
 
     if method == "uncensored":
-        # if the target time is within the interval, then we calculate the brier score
-        # otherwise, we skip the instance
+        # If the target time lies within the censoring interval, the event status
+        # is ambiguous and the sample is excluded.
         mask = (left_limits <= target_time) & (right_limits > target_time)
         weight = 1 - mask.astype(float)
         # get the survival status at the target time
@@ -281,11 +282,13 @@ def brier_multiple_points(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_times: float
         The specific time points for which to estimate the Brier scores.
     ipcw: bool, default: True
@@ -330,7 +333,7 @@ def brier_multiple_points(
         weight_cat1 = (
             (event_times_mat <= target_times_mat) & event_indicators_mat
         ) / ipc_pred
-        # Catch if event times goes over max training event time, i.e. predict gives NA
+        # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
         # contain both censored and uncensored individuals.
@@ -338,8 +341,7 @@ def brier_multiple_points(
         # Catch if denominator is 0.
         ipc_target_pred[ipc_target_pred == 0] = np.inf
         weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-        # predict returns NA if the passed in time is greater than any of the times used to build
-        # the inverse probability of censoring model.
+        # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
         weight_cat1 = (event_times_mat <= target_times_mat) & event_indicators_mat

@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import warnings
-from dataclasses import dataclass, InitVar, field
+from dataclasses import InitVar, dataclass, field
 
 import numpy as np
 from scipy.integrate import trapezoid
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import infer_survival_probabilities
+from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    infer_survival_probabilities,
+)
 
 
 @dataclass
@@ -43,6 +47,17 @@ class KaplanMeier:
 
         event_ratios = 1 - self.events / self.population_count
         self.survival_probabilities = np.cumprod(event_ratios)
+
+        # Add the pre-event baseline explicitly and keep all fitted arrays aligned.
+        # An observed time zero is left untouched because it contains a real update.
+        if self.survival_times[0] > 0:
+            self.survival_times = np.insert(self.survival_times, 0, 0.0)
+            self.population_count = np.insert(
+                self.population_count, 0, len(event_indicators)
+            )
+            self.events = np.insert(self.events, 0, 0)
+            self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
+
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
@@ -86,15 +101,16 @@ class KaplanMeierArea(KaplanMeier):
 
     def __post_init__(self, event_times, event_indicators):
         super().__post_init__(event_times, event_indicators)
-        area_probabilities = np.append(1, self.survival_probabilities)
-        area_times = np.append(0, self.survival_times)
+        area_probabilities = self.survival_probabilities.copy()
+        area_times = self.survival_times.copy()
         self.km_linear_zero = area_times[-1] / (1 - area_probabilities[-1])
         if self.survival_probabilities[-1] != 0:
             area_times = np.append(area_times, self.km_linear_zero)
             area_probabilities = np.append(area_probabilities, 0)
 
-        # we are facing the choice of using the trapezoidal rule or directly using the area under the step function
-        # we choose to use trapezoid because it is more accurate
+        # A KM curve is a step function, so step integration would give its exact
+        # area. This class intentionally retains the legacy trapezoidal,
+        # piecewise-linear approximation used by downstream best-guess estimates.
         area_diff = np.diff(area_times, 1)
         average_probabilities = (area_probabilities[0:-1] + area_probabilities[1:]) / 2
         area = np.flip(np.flip(area_diff * average_probabilities).cumsum())

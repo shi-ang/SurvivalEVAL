@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
@@ -29,19 +31,22 @@ def mean_error(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     error_type: string, default: "absolute"
         Type of mean error to use. Options are "absolute" and "squared".
     method: string, default: "Hinge"
         Method of handling censorship.
-        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", and "Pseudo_obs_pop"
+        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
     weighted: boolean, default: True
         Whether to use weighting scheme for MAE.
-        If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
+        If true, each censored sample has confidence weight
+        1 - S_KM(censoring time).
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
     verbose: boolean, default: False
@@ -59,7 +64,7 @@ def mean_error(
         train_event_indicators = train_event_indicators.astype(bool)
 
     # calculate the weighting for each sample
-    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", "Pseudo_obs_pop"]:
+    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
                 "If method is '{}', training set values must be included.".format(
@@ -362,9 +367,13 @@ def _compute_inside_mask(
         Boolean mask for right-censored intervals.
     """
     is_right_cens = np.isinf(right)
-    inside_finite = (~is_right_cens) & (predicted > left) & (predicted <= right)
+    is_exact = (~is_right_cens) & (left == right)
+    inside_exact = is_exact & np.isclose(predicted, right)
+    inside_finite = (
+        (~is_right_cens) & (~is_exact) & (predicted > left) & (predicted <= right)
+    )
     inside_right = is_right_cens & (predicted > left)
-    inside = inside_finite | inside_right
+    inside = inside_exact | inside_finite | inside_right
     return inside, is_right_cens
 
 

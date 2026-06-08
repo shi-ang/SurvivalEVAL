@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 from typing import Union
 
@@ -6,6 +8,7 @@ import pandas as pd
 import torch
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
+from sklearn.isotonic import isotonic_regression
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
@@ -83,18 +86,41 @@ def check_and_convert(*args):
     return result
 
 
-def check_monotonicity(array: NumericArrayLike):
+def check_monotonicity(
+    array: NumericArrayLike,
+    direction: str | None = None,
+) -> bool:
+    """
+    Check whether values are monotonic along the last axis.
+
+    Parameters
+    ----------
+    array : NumericArrayLike
+        A one- or two-dimensional array.
+    direction : {"increasing", "decreasing"}, optional
+        Required monotonic direction. Both directions allow equal adjacent values.
+        If omitted, either direction is accepted for backward compatibility.
+
+    Returns
+    -------
+    bool
+        Whether the array is monotonic in the requested direction.
+    """
     array = check_and_convert(array)
-    if array.ndim == 1:
-        return all(array[i] <= array[i + 1] for i in range(len(array) - 1)) or all(
-            array[i] >= array[i + 1] for i in range(len(array) - 1)
-        )
-    elif array.ndim == 2:
-        return all(
-            all(array[:, i] <= array[:, i + 1]) for i in range(array.shape[1] - 1)
-        ) or all(all(array[:, i] >= array[:, i + 1]) for i in range(array.shape[1] - 1))
-    else:
+    if array.ndim not in (1, 2):
         raise ValueError("The input array must be 1-D or 2-D.")
+
+    differences = np.diff(array, axis=-1)
+    is_increasing = bool(np.all(differences >= 0))
+    is_decreasing = bool(np.all(differences <= 0))
+
+    if direction is None:
+        return is_increasing or is_decreasing
+    if direction == "increasing":
+        return is_increasing
+    if direction == "decreasing":
+        return is_decreasing
+    raise ValueError("direction must be one of ['increasing', 'decreasing']")
 
 
 def make_monotonic(
@@ -103,72 +129,117 @@ def make_monotonic(
     method: str = "ceil",
     seed: int = None,
     num_bs: int = None,
+    direction: str = "decreasing",
 ):
     """
-    Make the survival curves monotonic.
+    Make curves monotonic along the time axis.
 
     Parameters
     ----------
     survival_curves: np.ndarray
-        Survival curves. 2-D array of survival probabilities. The first dimension is the number of samples. The second
-        dimension is the number of time points.
+        One- or two-dimensional probability curves. For a 2-D array, rows are
+        samples and columns are time points.
     times_coordinate: np.ndarray
         Time points corresponding to the survival curves. 1-D array of time points.
     method: str
-        The method to make the survival curves monotonic. One of ['ceil', 'floor', 'bootstrap']. Default: 'ceil'.
+        Correction method. One of ``"ceil"``, ``"floor"``, ``"bootstrap"``,
+        or ``"isotonic"``. Isotonic regression gives the L2-optimal monotonic
+        approximation. Default: ``"ceil"``.
     seed: int
         Random seed for bootstrapping. Default: None.
     num_bs: int
         Number of bootstrap samples. Default: None. If None, then num_bs = 10 * num_times.
+    direction: {"increasing", "decreasing"}
+        Required monotonic direction. Survival curves are decreasing, while
+        cumulative distribution functions are increasing. Default: ``"decreasing"``.
 
     Returns
     -------
     survival_curves: np.ndarray
-        Survival curves with monotonicity. 2-D array of survival probabilities.
+        Monotonic probability curves with the same dimensionality as the input.
     """
-    if np.all(np.sort(times_coordinate) != times_coordinate):
+    valid_methods = {"ceil", "floor", "bootstrap", "isotonic"}
+    if method not in valid_methods:
+        raise ValueError(
+            "method must be one of ['ceil', 'floor', 'bootstrap', 'isotonic']"
+        )
+    if direction not in {"increasing", "decreasing"}:
+        raise ValueError("direction must be one of ['increasing', 'decreasing']")
+
+    survival_curves = np.asarray(survival_curves, dtype=float)
+    times_coordinate = np.asarray(times_coordinate, dtype=float)
+    if survival_curves.ndim not in (1, 2):
+        raise ValueError("survival_curves must be a 1-D or 2-D array.")
+    if times_coordinate.ndim != 1:
+        raise ValueError("times_coordinate must be a 1-D array.")
+    if survival_curves.shape[-1] != times_coordinate.size:
+        raise ValueError(
+            "survival_curves and times_coordinate must have the same number of time points."
+        )
+    if not check_monotonicity(times_coordinate, direction="increasing"):
         raise ValueError("The time coordinates must be sorted in ascending order.")
 
-    if num_bs is None:
-        # 10 times the number of time points or 1000, whichever is larger
-        num_bs = max(10 * len(times_coordinate), 1000)
+    input_was_1d = survival_curves.ndim == 1
+    curves = np.atleast_2d(np.clip(survival_curves, 0.0, 1.0))
+    if check_monotonicity(curves, direction=direction):
+        return curves[0] if input_was_1d else curves
 
-    if seed is not None:
-        np.random.seed(seed)
-
-    survival_curves = np.clip(survival_curves, 0, 1)
-    if not check_monotonicity(survival_curves):
-        if method == "ceil":
-            survival_curves = np.maximum.accumulate(survival_curves[:, ::-1], axis=1)[
-                :, ::-1
+    if method == "isotonic":
+        increasing = direction == "increasing"
+        curves = np.vstack(
+            [
+                isotonic_regression(
+                    curve,
+                    y_min=0.0,
+                    y_max=1.0,
+                    increasing=increasing,
+                )
+                for curve in curves
             ]
-        elif method == "floor":
-            survival_curves = np.minimum.accumulate(survival_curves, axis=1)
-        elif method == "bootstrap":
-            need_rearrange = np.where(
-                np.any(
-                    (np.sort(survival_curves, axis=1)[:, ::-1] != survival_curves),
-                    axis=1,
-                )
-            )[0]
-
-            for i in need_rearrange:
-                inter_lin = interp1d(
-                    survival_curves[i],
-                    times_coordinate,
-                    kind="linear",
-                    fill_value="extrapolate",
-                )
-                # Bootstrap the quantile function
-                bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
-                # Now compute the rearranged survival curve
-                # The original method is to compute a value (time) given the fixed quantile (probability)
-                # Here we compute the probability (quantile) given the fixed value (time)
-                for j, time in enumerate(times_coordinate):
-                    survival_curves[i, j] = np.mean(bootstrap_qf > time)
+        )
+    elif method == "ceil":
+        if direction == "decreasing":
+            curves = np.maximum.accumulate(curves[:, ::-1], axis=1)[:, ::-1]
         else:
-            raise ValueError("method must be one of ['ceil', 'floor', 'bootstrap']")
-    return survival_curves
+            curves = np.maximum.accumulate(curves, axis=1)
+    elif method == "floor":
+        if direction == "decreasing":
+            curves = np.minimum.accumulate(curves, axis=1)
+        else:
+            curves = np.minimum.accumulate(curves[:, ::-1], axis=1)[:, ::-1]
+    else:
+        if num_bs is None:
+            # 10 times the number of time points or 1000, whichever is larger
+            num_bs = max(10 * len(times_coordinate), 1000)
+        if num_bs <= 0:
+            raise ValueError("num_bs must be positive.")
+        if seed is not None:
+            np.random.seed(seed)
+
+        # The bootstrap rearrangement is defined for decreasing survival curves.
+        bootstrap_curves = curves.copy()
+        if direction == "increasing":
+            bootstrap_curves = 1.0 - bootstrap_curves
+
+        need_rearrange = np.where(
+            np.any(np.diff(bootstrap_curves, axis=1) > 0, axis=1)
+        )[0]
+        for i in need_rearrange:
+            inter_lin = interp1d(
+                bootstrap_curves[i],
+                times_coordinate,
+                kind="linear",
+                fill_value="extrapolate",
+            )
+            bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
+            for j, time in enumerate(times_coordinate):
+                bootstrap_curves[i, j] = np.mean(bootstrap_qf > time)
+
+        curves = (
+            1.0 - bootstrap_curves if direction == "increasing" else bootstrap_curves
+        )
+
+    return curves[0] if input_was_1d else curves
 
 
 def interpolated_curve(
@@ -283,36 +354,66 @@ def predict_multi_probs_from_curve(
     return predict_probabilities
 
 
-def _check_dim_align(
-    survival_curves: np.ndarray, times_coordinates: np.ndarray
-) -> None:
-    # check dimension alignment
-    ndim_surv = survival_curves.ndim
-    ndim_time = times_coordinates.ndim
+def align_curve_and_time_coordinates(
+    curves: NumericArrayLike,
+    time_coordinates: NumericArrayLike,
+    n_samples: int = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Validate and broadcast curve values and time coordinates to matching 2D arrays.
 
-    if ndim_surv == 1 and ndim_time == 1:
-        assert len(survival_curves) == len(
-            times_coordinates
-        ), "The length of survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 2 and ndim_time == 2:
-        assert (
-            survival_curves.shape[0] == times_coordinates.shape[0]
-        ), "The number of samples in survival_curves and times_coordinate must be the same."
-        assert (
-            survival_curves.shape[1] == times_coordinates.shape[1]
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 2 and ndim_time == 1:
-        assert survival_curves.shape[1] == len(
-            times_coordinates
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    elif ndim_surv == 1 and ndim_time == 2:
-        assert (
-            len(survival_curves) == times_coordinates.shape[1]
-        ), "The number of time points in survival_curves and times_coordinate must be the same."
-    else:
+    Either input may be 1D and shared by all samples, while a 2D input contains
+    one row per sample. When both inputs are 1D, they represent one sample unless
+    ``n_samples`` is provided.
+
+    Parameters
+    ----------
+    curves: NumericArrayLike
+        Curve values with shape ``(n_time_points,)`` or
+        ``(n_samples, n_time_points)``.
+    time_coordinates: NumericArrayLike
+        Time coordinates with shape ``(n_time_points,)`` or
+        ``(n_samples, n_time_points)``.
+    n_samples: int, optional
+        Expected number of samples. This is useful when both curve inputs are
+        shared and the sample count comes from a separate outcome array.
+
+    Returns
+    -------
+    aligned_curves: np.ndarray, shape = (n_samples, n_time_points)
+        Curve values with shared rows broadcast across samples.
+    aligned_time_coordinates: np.ndarray, shape = (n_samples, n_time_points)
+        Time coordinates with shared rows broadcast across samples.
+    """
+    curves = np.asarray(curves, dtype=float)
+    time_coordinates = np.asarray(time_coordinates, dtype=float)
+
+    if curves.ndim not in (1, 2) or time_coordinates.ndim not in (1, 2):
+        raise ValueError("curves and time_coordinates must be 1D or 2D arrays.")
+    if curves.shape[-1] != time_coordinates.shape[-1]:
         raise ValueError(
-            "The dimension of survival_curves and times_coordinate must be 1-D or 2-D."
+            "curves and time_coordinates must contain the same number of time points."
         )
+
+    inferred_sample_counts = [
+        array.shape[0] for array in (curves, time_coordinates) if array.ndim == 2
+    ]
+    if n_samples is None:
+        n_samples = inferred_sample_counts[0] if inferred_sample_counts else 1
+    elif not isinstance(n_samples, (int, np.integer)) or n_samples < 1:
+        raise ValueError("n_samples must be a positive integer.")
+
+    if any(sample_count != n_samples for sample_count in inferred_sample_counts):
+        raise ValueError("curves and time_coordinates must contain one row per sample.")
+
+    if curves.ndim == 1:
+        curves = np.broadcast_to(curves, (n_samples, curves.shape[0]))
+    if time_coordinates.ndim == 1:
+        time_coordinates = np.broadcast_to(
+            time_coordinates, (n_samples, time_coordinates.shape[0])
+        )
+
+    return curves, time_coordinates
 
 
 def predict_rmst(
@@ -333,55 +434,41 @@ def predict_rmst(
     times_coordinates: np.ndarray
         The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
         is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
-        time coordinate of the survival curve of a single sample.
+        time coordinate shared by all survival curves.
     interpolation: str
-        The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
-        If 'Linear', use the interp1d method from scipy.interpolate.
-        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        The integration method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
+        If 'None', treat the survival curve as a left-continuous step function.
+        If 'Linear', use trapezoidal integration.
+        If 'Pchip', integrate a monotonic cubic interpolation.
 
     Returns
     -------
-    restricted_mean_survival_times: float
-        The restricted mean survival time(s).
+    restricted_mean_survival_times: float or np.ndarray
+        A float when both inputs are 1-D, otherwise one restricted mean
+        survival time per survival curve or time coordinate row.
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    scalar_output = ndim_surv == 1 and ndim_time == 1
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
     if interpolation == "None":
-        width = np.diff(times_coordinates, axis=1 if ndim_time == 2 else 0)
-        areas = (
-            width * survival_curves[:, :-1]
-            if ndim_surv == 2
-            else width * survival_curves[:-1]
-        )
+        width = np.diff(time_grids, axis=1)
+        areas = width * curves[:, :-1]
         rmst = np.sum(areas, axis=1)
     elif interpolation == "Linear":
-        rmst = trapezoid(survival_curves, times_coordinates, axis=-1)
+        rmst = trapezoid(curves, time_grids, axis=1)
     elif interpolation == "Pchip":
-        if ndim_time == 1:
-            spline = PchipInterpolator(
-                times_coordinates, survival_curves, axis=1 if ndim_surv == 2 else 0
-            )
-            rmst = spline.integrate(0, max(times_coordinates))
-        elif ndim_time == 2:
-            rmst = np.empty(survival_curves.shape[0])
-            if ndim_surv == 1:
-                for i in range(times_coordinates.shape[0]):
-                    spline = PchipInterpolator(times_coordinates[i], survival_curves)
-                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
-            elif ndim_surv == 2:
-                for i in range(times_coordinates.shape[0]):
-                    print(i)
-                    spline = PchipInterpolator(times_coordinates[i], survival_curves[i])
-                    rmst[i] = spline.integrate(0, max(times_coordinates[i]))
-        else:
-            raise ValueError("times_coordinate must be 1-D or 2-D")
+        rmst = np.empty(curves.shape[0])
+        for i in range(curves.shape[0]):
+            spline = PchipInterpolator(time_grids[i], curves[i])
+            rmst[i] = spline.integrate(0, np.max(time_grids[i]))
     else:
         raise ValueError("interpolation should be one of ['None', 'Linear', 'Pchip']")
 
-    return rmst
+    return float(rmst[0]) if scalar_output else rmst
 
 
 def predict_mean_st(
@@ -410,23 +497,27 @@ def predict_mean_st(
 
     Returns
     -------
-    median_survival_time: float
-        The median survival time(s).
+    mean_survival_times: float or np.ndarray
+        A float when both inputs are 1-D, otherwise one mean survival
+        time per survival curve or time coordinate row.
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    scalar_output = ndim_surv == 1 and ndim_time == 1
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
-    rmst = predict_rmst(survival_curves, times_coordinates, interpolation)
+    rmst = predict_rmst(curves, time_grids, interpolation)
 
-    last_prob = survival_curves[:, -1] if ndim_surv == 2 else survival_curves[-1]
-    last_time = times_coordinates[:, -1] if ndim_time == 2 else times_coordinates[-1]
+    last_prob = curves[:, -1]
+    last_time = time_grids[:, -1]
     # the residual area is calculated as the area of a triangle with height = last_prob
     # and base = extrapolation_time - last_time
     # extrapolation_time is the time point where the survival curve crosses 0 (using the linear function of [0, 1] - [last_time, last_prob])
     residual_area = 0.5 * last_prob**2 * last_time / (1 - last_prob)
-    return rmst + residual_area
+    mean_st = rmst + residual_area
+    return float(mean_st[0]) if scalar_output else mean_st
 
 
 def predict_median_st(
@@ -458,39 +549,18 @@ def predict_median_st(
     median_survival_time: float
         The median survival time(s).
     """
-    _check_dim_align(survival_curves, times_coordinates)
-
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
+    scalar_output = ndim_surv == 1 and ndim_time == 1
+    curves, time_grids = align_curve_and_time_coordinates(
+        survival_curves, times_coordinates
+    )
 
-    if ndim_surv == 1 and ndim_time == 1:
-        median_sts = predict_median_st_ind(
-            survival_curves, times_coordinates, interpolation
-        )
-    elif ndim_surv == 2 and ndim_time == 1:
-        median_sts = np.empty(survival_curves.shape[0])
-        for i in range(survival_curves.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves[i, :], times_coordinates, interpolation
-            )
-    elif ndim_surv == 1 and ndim_time == 2:
-        median_sts = np.empty(times_coordinates.shape[0])
-        for i in range(times_coordinates.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves, times_coordinates[i, :], interpolation
-            )
-    elif ndim_surv == 2 and ndim_time == 2:
-        median_sts = np.empty(survival_curves.shape[0])
-        for i in range(survival_curves.shape[0]):
-            median_sts[i] = predict_median_st_ind(
-                survival_curves[i, :], times_coordinates[i, :], interpolation
-            )
-    else:
-        raise ValueError(
-            "The dimension of survival_curves and times_coordinate must be 1-D or 2-D."
-        )
+    median_sts = np.empty(curves.shape[0])
+    for i in range(curves.shape[0]):
+        median_sts[i] = predict_median_st_ind(curves[i], time_grids[i], interpolation)
 
-    return median_sts
+    return float(median_sts[0]) if scalar_output else median_sts
 
 
 def predict_median_st_ind(
@@ -592,7 +662,9 @@ def quantile_to_survival(
 
     # sanity checks
     assert np.all(surv_pred >= 0), "Survival predictions contain negative."
-    assert check_monotonicity(surv_pred), "Survival predictions are not monotonic."
+    assert check_monotonicity(
+        surv_pred, direction="decreasing"
+    ), "Survival predictions are not nonincreasing."
     return surv_pred
 
 
@@ -624,7 +696,8 @@ def survival_to_quantile(
     Notes
     -----
     - For q beyond the maximum observed CDF value in a row, extrapolates with a
-      constant hazard tail: t ≈ q / slope, where slope = F(T_max)/T_max.
+      linear CDF tail through the origin: t ≈ q / slope, where
+      slope = F(T_max)/T_max.
     - Rows with duplicated CDF x-values are de-duplicated (keep first occurrence).
     """
     # Convert to arrays
@@ -642,13 +715,13 @@ def survival_to_quantile(
     if quantile_levels.ndim != 1:
         raise ValueError("`quantile_levels` must be 1D.")
 
-    if not check_monotonicity(surv_prob):
+    if not check_monotonicity(surv_prob, direction="decreasing"):
         raise ValueError("Each row of `surv_prob` must be nonincreasing.")
 
-    if not check_monotonicity(time_coordinates):
+    if np.any(np.diff(time_coordinates, axis=1) <= 0):
         raise ValueError("Each row of `time_coordinates` must be strictly increasing.")
 
-    if not check_monotonicity(quantile_levels):
+    if not check_monotonicity(quantile_levels, direction="increasing"):
         raise ValueError("`quantile_levels` must be in increasing order.")
 
     if np.any(quantile_levels < 0) or np.any(quantile_levels >= 1):
@@ -713,7 +786,7 @@ def survival_to_quantile(
     # Sanity checks
     if np.any(qpred < 0):
         raise RuntimeError("Quantile predictions contain negative values.")
-    if not check_monotonicity(qpred):
+    if not check_monotonicity(qpred, direction="increasing"):
         raise RuntimeError(
             "Quantile predictions are not nondecreasing across quantile levels per row."
         )
@@ -781,7 +854,7 @@ def zero_padding(pred_survs, time_coordinates):
     ndim_time = time_coordinates.ndim
     ndim_surv = pred_survs.ndim
     zero_pad_msg = (
-        "The first time coordinate is not 0. A authentic survival curve should start from 0 "
+        "The first time coordinate is not 0. An authentic survival curve should start from 0 "
         "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
         "and 1 to the beginning of the predicted curves."
     )
@@ -802,8 +875,16 @@ def zero_padding(pred_survs, time_coordinates):
             _pred_survs = pred_survs
             _time_coordinates = time_coordinates
     elif ndim_time == 2:
+        starts_at_zero = np.isclose(time_coordinates[:, 0], 0.0)
+        if np.any(starts_at_zero) and not np.all(starts_at_zero):
+            raise ValueError(
+                "All rows of 2D time_coordinates must either start at 0 or "
+                "all require zero-padding."
+            )
+
+        needs_padding = not np.all(starts_at_zero)
         if ndim_surv == 1:
-            if pred_survs[0] != 1:
+            if needs_padding:
                 warnings.warn(zero_pad_msg)
                 _pred_survs = np.empty(pred_survs.shape[0] + 1)
                 _pred_survs[1:] = pred_survs
@@ -817,7 +898,7 @@ def zero_padding(pred_survs, time_coordinates):
                 _pred_survs = pred_survs
                 _time_coordinates = time_coordinates
         elif ndim_surv == 2:
-            if np.any(pred_survs[:, 0] != 1):
+            if needs_padding:
                 warnings.warn(zero_pad_msg)
                 _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
                 _pred_survs[:, 1:] = pred_survs

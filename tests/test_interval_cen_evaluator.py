@@ -5,6 +5,8 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
+from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimator
 
@@ -23,6 +25,23 @@ def _midpoint_times(interval_df: pd.DataFrame):
     times = np.where(is_finite, (left + right) / 2.0, left)
     indicators = is_finite.astype(int)
     return times, indicators
+
+
+def test_h_statistic_interval_one_calibration_includes_prediction_one():
+    p_value, statistic, observed, expected = one_cal_ic(
+        preds=np.array([0.1, 0.4, 0.7, 1.0]),
+        left_limits=np.full(4, 2.0),
+        right_limits=np.full(4, 2.0),
+        target_time=1.0,
+        num_bins=3,
+        binning_strategy="H",
+        method="MidPoint",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isfinite(statistic)
+    np.testing.assert_allclose(observed, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
 
 
 @pytest.fixture(scope="module")
@@ -68,14 +87,19 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
     assert "predicted_event_times" not in evaluator.__dict__
     assert evaluator.predicted_event_times.shape == predicted_times.shape
 
-    c_prob, num_prob, den_prob = evaluator.concordance(method="probabilistic")
+    c_prob, num_prob, den_prob = evaluator.concordance(method="probability")
     assert np.isfinite(c_prob)
     assert np.isfinite(num_prob)
     assert np.isfinite(den_prob)
+    assert np.isscalar(num_prob)
+    assert np.isscalar(den_prob)
 
     c_mid, num_mid, den_mid = evaluator.concordance(method="midpoint")
     assert np.isfinite(c_mid)
-    assert num_mid.shape == den_mid.shape
+    assert np.isfinite(num_mid)
+    assert np.isfinite(den_mid)
+    assert np.isscalar(num_mid)
+    assert np.isscalar(den_mid)
 
     target_time = float(time_coords[min(3, len(time_coords) - 1)])
     brier = evaluator.brier_score(
@@ -129,3 +153,59 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
     assert np.isfinite(coverage)
     assert np.isfinite(cov_gap)
     assert np.isfinite(avg_width)
+
+
+def test_interval_evaluator_rejects_negative_left_limits():
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        IntervalCenEvaluator(
+            pred_survs=np.array(
+                [
+                    [1.0, 0.8, 0.4, 0.1],
+                    [1.0, 0.5, 0.2, 0.1],
+                ]
+            ),
+            time_coordinates=np.array([0.0, 1.0, 2.0, 3.0]),
+            left_limits=np.array([-1.0, 1.0]),
+            right_limits=np.array([1.0, np.inf]),
+        )
+
+
+def test_exact_intervals_treat_matching_predictions_as_inside():
+    left = np.array([2.0, 2.0])
+    right = np.array([2.0, 2.0])
+    predicted = np.array([2.0, 3.0])
+
+    assert inclusion_rate(left, right, predicted) == 0.5
+    assert mean_error_ic(left, right, predicted, error_type="absolute") == 0.5
+    assert mean_error_ic(left, right, predicted, error_type="squared") == 0.5
+
+
+def test_exact_interval_matching_uses_numerical_tolerance():
+    exact_time = np.array([2.0])
+    predicted = np.array([2.0 + 1e-10])
+
+    assert inclusion_rate(exact_time, exact_time, predicted) == 1.0
+    assert (
+        mean_error_ic(exact_time, exact_time, predicted, error_type="absolute") == 0.0
+    )
+
+
+def test_uncensored_brier_score_without_training_data():
+    evaluator = IntervalCenEvaluator(
+        pred_survs=np.array(
+            [
+                [1.0, 0.8, 0.4, 0.1],
+                [1.0, 0.6, 0.3, 0.05],
+                [1.0, 0.9, 0.5, 0.2],
+            ]
+        ),
+        time_coordinates=np.array([0.0, 1.0, 2.0, 3.0]),
+        left_limits=np.array([0.5, 1.0, 2.0]),
+        right_limits=np.array([1.5, 2.0, np.inf]),
+    )
+
+    brier = evaluator.brier_score(target_time=None, method="uncensored")
+
+    assert np.isfinite(brier)
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        evaluator.brier_score(target_time=None, method="Tsouprou-marginal")

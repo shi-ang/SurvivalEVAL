@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-06-08: Version 0.6.2
+
+1. Improve survival-curve and time-coordinate validation, broadcasting, zero-padding, and monotonicity correction, including isotonic regression support.
+2. Fix calibration edge cases for probability-one predictions, uncensored bin sizes, interval-specific limits, and arbitrary D-calibration bin counts.
+3. Fix concordance, Brier score, RMST, coefficient of variation, and survival AUPRC behavior for interval-censored data and boundary cases.
+4. Correct nonparametric estimator baselines and exact-event handling for Kaplan-Meier, Nelson-Aalen, Copula Graphic, Turnbull, and Fiducial estimators.
+5. Improve evaluator input validation and defaults for prediction intervals, missing training data, duplicated time coordinates, and scikit-survival probability curves.
+6. Clarify event-indicator terminology, API documentation, and code comments throughout the package.
+7. Add regression tests for the corrected metrics, evaluators, utility functions, and nonparametric estimators.
+
 ## 2026-01-22: Version 0.6.1
 
 1. Add a version of Concordance index for interval censoring based on comparable pairs only, just like Harrell's C for right censoring.

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional, Tuple
 
 import numpy as np
@@ -27,11 +29,13 @@ def concordance(
     event_times: np.ndarray, shape = (n_samples,)
         The true survival times.
     event_indicators: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples,)
         The true survival times of the training set.
     train_event_indicators: np.ndarray, shape = (n_train_samples,)
-        The event indicators of the true survival times of the training set.
+        Binary training-set event indicators: 1 denotes an observed event and
+        0 denotes a censored observation.
     method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
         "Harrell": the pairs are constructed by comparing the predicted survival time of each sample with the
@@ -43,7 +47,7 @@ def concordance(
         will be calculated and used to construct the pairs.
     ties: str, optional (default="Risk")
         A string indicating the way ties should be handled.
-        Options: "None" (default), "Time", "Risk", or "All"
+        Options: "None", "Time", "Risk" (default), or "All"
         "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
         "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
         "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
@@ -164,7 +168,8 @@ def _estimate_concordance_index(
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
     estimate: np.ndarray, shape = (n_samples,)
@@ -175,7 +180,7 @@ def _estimate_concordance_index(
     partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
         The partial weights for the censored samples.
     tied_tol: float, optional (default=1e-8)
-        The tolerance for considering two times as tied.
+        The tolerance for considering two estimated risk scores as tied.
 
     Returns
     -------
@@ -269,7 +274,8 @@ def _get_comparable(
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        The event indicators of the true survival times.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     event_time: np.ndarray, shape = (n_samples,)
         The true survival times.
     order: np.ndarray, shape = (n_samples,)
@@ -327,7 +333,12 @@ def _get_comparable_ic(
     tol: float = 0.0,
 ) -> np.ndarray:
     """
-    comparable[i, j] = True iff the intervals for i and j are disjoint.
+    Return the directed comparability relation for interval-censored outcomes.
+
+    ``comparable[i, j]`` is True when interval ``i`` lies entirely before
+    interval ``j``, so the event for sample ``i`` is known to precede the event
+    for sample ``j``. For a disjoint pair, exactly one of ``[i, j]`` and
+    ``[j, i]`` is True; this matrix is intentionally not symmetric.
 
     By default, intervals are left-open, right-closed -- aka (l, r].
     Exact-time events are represented by left == right -- [t, t].
@@ -341,7 +352,8 @@ def _get_comparable_ic(
 
     Returns
     -------
-    comparable : (n, n) bool array with False diagonal
+    comparable : (n, n) bool array
+        Directed precedence matrix with a False diagonal.
     """
     if left.size == 0:
         return np.zeros((0, 0), dtype=bool)
@@ -380,11 +392,8 @@ def _get_comparable_ic(
     # last step: i before j
     before_ij = (Ri < Lj) | is_not_equal_inclusive
 
-    # comparable if i before j OR j before i
-    comparable = before_ij #| before_ij.T
-
-    np.fill_diagonal(comparable, False)
-    return comparable
+    np.fill_diagonal(before_ij, False)
+    return before_ij
 
 
 def _pairwise_w(S_Li, S_Ri, eps=1e-12):
@@ -572,13 +581,19 @@ def impute_times_midpoint(
     right: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    according to (left, right] intervals, construct (t, delta) via "endpoint/midpoint imputation".
+    Construct (t, delta) from (left, right] intervals using endpoint/midpoint
+    imputation.
 
-    rules:
+    Rules:
       - Interval censoring: both L and R finite => t = (L+R)/2, delta=1
       - Right censor: L finite, R non-finite => t = L, delta= 0
-      - Left censor: L non-finite, R finite => t = R, delta= 1
-      - Other (both non-finite) => discard
+
+    Parameters
+    ----------
+    left, right : np.ndarray
+        Left and right interval endpoints. Left endpoints must be finite and
+        non-negative. Use a left endpoint of 0 for left-censored observations
+        and a right endpoint of ``np.inf`` for right-censored observations.
 
     Returns
     -------
@@ -588,34 +603,29 @@ def impute_times_midpoint(
     left = np.asarray(left, dtype=float)
     right = np.asarray(right, dtype=float)
 
-    is_L_finite = np.isfinite(left)
+    if left.shape != right.shape:
+        raise ValueError("left and right must have the same shape.")
+    if np.any(~np.isfinite(left)) or np.any(left < 0):
+        raise ValueError("Left endpoints must be finite and non-negative.")
+    if np.any(left > right):
+        raise ValueError(
+            "Left endpoints must be less than or equal to right endpoints."
+        )
+
     is_R_finite = np.isfinite(right)
 
     n = left.shape[0]
     t = np.empty(n, dtype=float)
     delta = np.empty(n, dtype=int)
 
-    # interval censoring：L limited, R limited -> use midpoint as event time
-    mask_interval = is_L_finite & is_R_finite
+    # Interval censoring: use midpoint as event time.
+    mask_interval = is_R_finite
     t[mask_interval] = 0.5 * (left[mask_interval] + right[mask_interval])
     delta[mask_interval] = 1
 
-    # left censor: L non-finite, R finite -> use R as event time
-    mask_left_cens = (~is_L_finite) & is_R_finite
-    t[mask_left_cens] = right[mask_left_cens]
-    delta[mask_left_cens] = 1
-
-    # right censor: L finite, R non-finite -> use L, mark as censor
-    mask_right_cens = is_L_finite & (~is_R_finite)
+    # Right censoring: use the finite left endpoint and mark as censored.
+    mask_right_cens = ~is_R_finite
     t[mask_right_cens] = left[mask_right_cens]
     delta[mask_right_cens] = 0
 
-    # other: both non-finite -> discard
-    mask_bad = (~is_L_finite) & (~is_R_finite)
-    if mask_bad.any():
-        t[mask_bad] = np.nan
-        delta[mask_bad] = -1  # mark as invalid
-
-    # remove invalid entries
-    valid = ~np.isnan(t) & (delta >= 0)
-    return t[valid], delta[valid]
+    return t, delta

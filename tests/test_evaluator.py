@@ -6,7 +6,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from SurvivalEVAL import SurvivalEvaluator
+from SurvivalEVAL import ScikitSurvivalEvaluator, SurvivalEvaluator
+from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
+
+
+class _StepFunction:
+    def __init__(self, times, probabilities):
+        self.x = np.asarray(times)
+        self.y = np.asarray(probabilities)
 
 
 def _sample_interval_data(rng: np.random.Generator, n_samples: int):
@@ -77,6 +84,91 @@ def test_prediction_utilities(evaluator_data):
     assert intervals.shape == (n_test, 2)
     assert np.all(intervals[:, 0] <= intervals[:, 1])
 
+    quantile_intervals = evaluator.predict_interval(quantile_range=(0.1, 0.9))
+    np.testing.assert_allclose(quantile_intervals, intervals)
+
+
+def test_predict_interval_accepts_matching_quantile_range_and_coverage_level(
+    evaluator_data,
+):
+    evaluator = evaluator_data["evaluator"]
+
+    combined_intervals = evaluator.predict_interval(
+        quantile_range=(0.1, 0.9), cov_level=0.8
+    )
+    quantile_intervals = evaluator.predict_interval(quantile_range=(0.1, 0.9))
+
+    np.testing.assert_allclose(combined_intervals, quantile_intervals)
+
+
+def test_predict_interval_rejects_mismatched_quantile_range_and_coverage_level(
+    evaluator_data,
+):
+    evaluator = evaluator_data["evaluator"]
+
+    with pytest.raises(ValueError, match="must equal"):
+        evaluator.predict_interval(quantile_range=(0.1, 0.8), cov_level=0.8)
+
+
+def test_scikit_survival_evaluator_handles_all_one_curves():
+    curves = [
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+    ]
+
+    evaluator = ScikitSurvivalEvaluator(
+        surv=curves,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    np.testing.assert_allclose(evaluator.pred_survs[:, -1], 0.99)
+    assert np.all(np.isfinite(evaluator.predicted_event_times))
+
+
+def test_scikit_survival_evaluator_preserves_mixed_batch_repair():
+    curves = [
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 0.9, 0.8]),
+        _StepFunction([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+    ]
+
+    evaluator = ScikitSurvivalEvaluator(
+        surv=curves,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    assert np.isclose(evaluator.pred_survs[0, -1], 0.8)
+    assert np.isclose(evaluator.pred_survs[1, -1], 0.99)
+
+
+def test_pchip_with_2d_zero_based_grids_does_not_get_duplicate_zeros():
+    time_coordinates = np.array(
+        [
+            [0.0, 1.0, 2.0, 3.0],
+            [0.0, 1.5, 2.5, 4.0],
+        ]
+    )
+    pred_survs = np.array(
+        [
+            [0.9, 0.7, 0.4, 0.1],
+            [0.8, 0.6, 0.3, 0.1],
+        ]
+    )
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+        predict_time_method="Mean",
+        interpolation="Pchip",
+    )
+
+    np.testing.assert_allclose(evaluator.time_coordinates, time_coordinates)
+    assert np.all(np.diff(evaluator.time_coordinates, axis=1) > 0)
+    assert np.all(np.isfinite(evaluator.predicted_event_times))
+
 
 def test_concordance_variants(evaluator_data):
     evaluator = evaluator_data["evaluator"]
@@ -111,6 +203,38 @@ def test_brier_scores(evaluator_data):
     )
     assert brier_mp.shape == times.shape
     assert np.all(np.isfinite(brier_mp))
+
+
+def test_default_brier_score_without_training_data():
+    time_grid = np.array([0.0, 1.0, 2.0, 4.0])
+    pred_survs = np.array(
+        [
+            [1.0, 0.8, 0.5, 0.2],
+            [1.0, 0.7, 0.4, 0.1],
+            [1.0, 0.9, 0.6, 0.3],
+        ]
+    )
+    event_times = np.array([1.0, 2.0, 3.0])
+
+    censored_evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=event_times,
+        event_indicators=np.array([1, 0, 1]),
+    )
+    uncensored_evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=event_times,
+        event_indicators=np.ones(event_times.shape[0]),
+    )
+
+    assert np.isfinite(
+        censored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
+    )
+    assert np.isfinite(uncensored_evaluator.brier_score(target_time=None))
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        censored_evaluator.brier_score(target_time=None, IPCW_weighted=True)
 
 
 def test_integrated_brier_score(evaluator_data):
@@ -181,6 +305,39 @@ def test_calibration_metrics(evaluator_data):
     plt.close(ksd_fig)
 
 
+def test_uncensored_one_calibration_uses_filtered_bin_size():
+    p_value, statistic, observed, expected = one_calibration(
+        preds=np.array([0.9, 0.8, 0.6, 0.5, 0.3, 0.2]),
+        event_time=np.array([1.0, 0.5, 3.0, 4.0, 5.0, 6.0]),
+        event_indicator=np.array([1, 0, 1, 1, 1, 1]),
+        target_time=2.0,
+        num_bins=3,
+        method="Uncensored",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isclose(statistic, 29 / 9)
+    np.testing.assert_allclose(observed, [1.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.9, 0.55, 0.25])
+
+
+def test_h_statistic_one_calibration_includes_prediction_one():
+    p_value, statistic, observed, expected = one_calibration(
+        preds=np.array([0.1, 0.4, 0.7, 1.0]),
+        event_time=np.full(4, 2.0),
+        event_indicator=np.ones(4, dtype=int),
+        target_time=1.0,
+        num_bins=3,
+        binning_strategy="H",
+        method="Uncensored",
+    )
+
+    assert np.isfinite(p_value)
+    assert np.isfinite(statistic)
+    np.testing.assert_allclose(observed, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
+
+
 def test_residuals_and_km_calibration(evaluator_data):
     evaluator = evaluator_data["evaluator"]
 
@@ -189,6 +346,41 @@ def test_residuals_and_km_calibration(evaluator_data):
 
     km_cal = evaluator.km_calibration(draw_figure=False)
     assert np.isfinite(km_cal)
+
+
+def test_calibration_metrics_support_shared_curve_with_per_sample_grids():
+    shared_curve = np.array([1.0, 0.8, 0.45, 0.1])
+    per_sample_grids = np.array(
+        [
+            [0.0, 1.0, 2.0, 4.0],
+            [0.0, 0.5, 2.5, 5.0],
+            [0.0, 1.5, 3.0, 6.0],
+            [0.0, 0.75, 1.75, 3.5],
+        ]
+    )
+    event_times = np.array([1.2, 2.0, 3.5, 2.7])
+    event_indicators = np.array([1, 0, 1, 1])
+
+    shared_curve_evaluator = SurvivalEvaluator(
+        pred_survs=shared_curve,
+        time_coordinates=per_sample_grids,
+        event_times=event_times,
+        event_indicators=event_indicators,
+    )
+    expanded_curve_evaluator = SurvivalEvaluator(
+        pred_survs=np.tile(shared_curve, (event_times.size, 1)),
+        time_coordinates=per_sample_grids,
+        event_times=event_times,
+        event_indicators=event_indicators,
+    )
+
+    shared_km_cal = shared_curve_evaluator.km_calibration()
+    shared_auprc = shared_curve_evaluator.auprc(n_quad=64)
+
+    assert np.isfinite(shared_km_cal)
+    assert 0.0 <= shared_auprc <= 1.0
+    assert np.isclose(shared_km_cal, expanded_curve_evaluator.km_calibration())
+    assert np.isclose(shared_auprc, expanded_curve_evaluator.auprc(n_quad=64))
 
 
 def test_log_rank_and_auprc(evaluator_data):

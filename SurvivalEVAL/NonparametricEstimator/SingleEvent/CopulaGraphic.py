@@ -1,8 +1,12 @@
-from dataclasses import dataclass, InitVar, field
+from __future__ import annotations
+
+from dataclasses import InitVar, dataclass, field
 
 import numpy as np
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import infer_survival_probabilities
+from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    infer_survival_probabilities,
+)
 
 
 @dataclass
@@ -90,6 +94,16 @@ class CopulaGraphic:
                 raise ValueError(
                     f"Unknown copula type: {type}. Supported types are 'Clayton', 'Gumbel', and 'Frank'."
                 )
+
+        # Add the pre-event baseline explicitly and keep all fitted arrays aligned.
+        # An observed time zero is left untouched because it contains a real update.
+        if self.survival_times[0] > 0:
+            self.survival_times = np.insert(self.survival_times, 0, 0.0)
+            self.population_count = np.insert(
+                self.population_count, 0, len(event_indicators)
+            )
+            self.events = np.insert(self.events, 0, 0)
+            self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
 
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))

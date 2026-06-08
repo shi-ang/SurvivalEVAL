@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
@@ -23,7 +25,8 @@ def d_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     num_bins: int
         The number of bins to use for the D-Calibration score.
 
@@ -83,7 +86,7 @@ def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
     censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
         if prob == 1:
-            censor_binning += 0.1
+            censor_binning += 1 / num_bins
             break
         elif quantile[i] > prob >= quantile[i + 1]:
             first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
@@ -159,7 +162,8 @@ def ksd_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     return_details: bool
         Whether to return the detailed information including the empirical distribution and the figure.
 
@@ -390,7 +394,8 @@ def residuals(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     method: str
         The method to calculate residuals. Options are "CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2",
         "Martingale", "Deviance".
@@ -500,7 +505,11 @@ def km_calibration(
     event_times: np.ndarray
         The event time of the test data.
     event_indicators: np.ndarray
-        The event indicator of the test data.\
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
+    interpolation_method: str, default "Linear"
+        Interpolation method for evaluating the average survival curve.
+        Options are "Linear" and "Pchip".
     draw_figure: bool
         Whether to visualize the comparison of the KM curve and average curve.
 
@@ -511,7 +520,7 @@ def km_calibration(
     fig: tuple(plt.Figure, plt.Axes)
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
         is True.
-    
+
     References
     ----------
     [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
@@ -606,6 +615,8 @@ def coverage_ic(
         Method to compute the coverage.
         - "Turnbull": use the empirical distribution (Turnbull estimator) of censoring intervals from the training data.
         - "linear": use linear interpolation between the left and right bounds of the censoring intervals.
+    eps : float, default 1e-12
+        Numerical tolerance for treating the conditional coverage denominator as zero.
 
     Returns
     -------

@@ -27,7 +27,10 @@ pmf = predictions / predictions.sum(axis=1)[:, None]
 survival_curves = 1 - np.cumsum(pmf, axis=1)
 # clip the survival curves to be between 0 and 1
 survival_curves = np.clip(survival_curves, 0.0, 1.0)
-print("Monotonicity of survival curves:", check_monotonicity(survival_curves))
+print(
+    "Monotonicity of survival curves:",
+    check_monotonicity(survival_curves, direction="decreasing"),
+)
 
 left, right = right_censor_to_interval(
     event_indicators=event_indicators,

@@ -1,46 +1,79 @@
-from dataclasses import dataclass, field, InitVar
+from __future__ import annotations
+
+from dataclasses import InitVar, dataclass, field
 from typing import Optional
 
 import numpy as np
 from lifelines import KaplanMeierFitter
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import infer_survival_probabilities
+from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    infer_survival_probabilities,
+)
 
 
-def initialise_p(tau: np.ndarray) -> np.ndarray:
+def create_support_intervals(tau: np.ndarray, exact_times: np.ndarray) -> np.ndarray:
     """
-    Initialize the interval masses p uniformly for every interval (tau[j], tau[j+1]].
+    Create the support cells used by the Turnbull EM algorithm.
+
+    The first cells represent the ranges between adjacent tau values. Exact
+    observations add singleton cells {t}; those cells own their endpoints so
+    they remain distinct from the adjacent ranges.
     """
-    m = len(tau)
-    if m < 2:
-        raise ValueError("tau must contain at least two unique points.")
-    return np.full(m - 1, 1.0 / (m - 1), dtype=float)
+    adjacent_intervals = np.column_stack((tau[:-1], tau[1:]))
+    exact_intervals = np.column_stack((exact_times, exact_times))
+    return np.concatenate((adjacent_intervals, exact_intervals), axis=0)
 
 
-def build_alphas(left: np.ndarray, right: np.ndarray, tau: np.ndarray) -> np.ndarray:
+def initialise_p(support_intervals: np.ndarray) -> np.ndarray:
+    """Initialize masses uniformly over the support cells."""
+    num_intervals = len(support_intervals)
+    if num_intervals == 0:
+        raise ValueError("At least one support interval is required.")
+    return np.full(num_intervals, 1.0 / num_intervals, dtype=float)
+
+
+def build_alphas(
+    left: np.ndarray, right: np.ndarray, support_intervals: np.ndarray
+) -> np.ndarray:
     """
-    For i-th sample, and j-th unique time (tau):
-    alpha[i, j] = 1 if (tau[j], tau[j+1]] lies within [left_i, right_i].
-    Rows with all zeros are removed.
+    Build the incidence matrix between observations and support cells.
+
+    Non-exact observations use (left_i, right_i]. Exact observations use the
+    singleton {right_i}, represented by left_i == right_i.
     """
     left = left[:, None]  # shape (n, 1)
     right = right[:, None]  # shape (n, 1)
 
-    tau_lo = tau[:-1][None, :]  # shape (1, m-1)
-    tau_hi = tau[1:][None, :]  # shape (1, m-1)
+    interval_left = support_intervals[:, 0][None, :]
+    interval_right = support_intervals[:, 1][None, :]
+    observation_is_exact = left == right
+    interval_is_exact = interval_left == interval_right
 
-    A = ((tau_lo >= left) & (tau_hi <= right)).astype(float)  # (n, m-1)
+    exact_contains = (
+        observation_is_exact & interval_is_exact & (interval_right == right)
+    )
+    lower_is_contained = np.where(
+        interval_is_exact,
+        interval_left > left,
+        interval_left >= left,
+    )
+    interval_contains = (
+        (~observation_is_exact) & lower_is_contained & (interval_right <= right)
+    )
+    alphas = (exact_contains | interval_contains).astype(float)
 
-    # Drop rows that are all zeros
-    keep = ~np.all(A == 0.0, axis=1)
-    A = A[keep, :]
-    return A
+    if np.any(np.all(alphas == 0.0, axis=1)):
+        raise ValueError("Each observation must contain at least one support interval.")
+    return alphas
 
 
 @dataclass
 class TurnbullEstimator:
     """
     Turnbull non-parametric estimator for interval-censored survival data.
+
+    Non-exact observations use left-open, right-closed intervals (left, right].
+    Observations with left == right are treated as exact event times.
 
     https://www.ms.uky.edu/~mai/splus/icensem.pdf
     """
@@ -53,7 +86,7 @@ class TurnbullEstimator:
     tau_: Optional[np.ndarray] = field(init=False, default=None)
     probability_dens_: Optional[np.ndarray] = field(
         init=False, default=None
-    )  # interval masses, length m-1
+    )  # masses for adjacent tau intervals, followed by exact-time atoms
     survival_times_: Optional[np.ndarray] = field(
         init=False, default=None
     )  # plotting x (tau possibly truncated)
@@ -75,32 +108,39 @@ class TurnbullEstimator:
         Parameters
         ----------
         left : np.ndarray
-            Left limits of intervals.
+            Left limits of intervals. For exact events, use the event time in
+            both left and right.
         right : np.ndarray
             Right limits of intervals. Can contain np.inf for right-censored.
         tau : np.ndarray, optional
-            Unique time points for the survival function.
-            If None, it is constructed as the unique sorted union of left and right (excluding np.inf).
+            Unique time points for the survival function. If None, it is
+            constructed as the unique sorted union of left and right,
+            including np.inf when present.
         p_init : np.ndarray, optional
-            Initial interval masses for the intervals defined by tau.
-            If None, it is initialized uniformly across intervals.
+            Initial masses for adjacent tau intervals, followed by one mass
+            for each unique exact event time. If None, masses are initialized
+            uniformly.
         """
+        exact_times = np.unique(left[left == right])
         if tau is None:
             tau_vals = np.concatenate([left, right])
             tau = np.unique(np.sort(tau_vals))
         else:
             tau = np.asarray(tau, dtype=float).copy()
+            if exact_times.size:
+                tau = np.unique(np.sort(np.concatenate([tau, exact_times])))
 
-        alphas = build_alphas(left, right, tau)
-        n, m_minus_1 = alphas.shape
+        support_intervals = create_support_intervals(tau, exact_times)
+        alphas = build_alphas(left, right, support_intervals)
+        n, num_intervals = alphas.shape
 
         # Initialize the density p
         if p_init is None:
-            p = initialise_p(tau)
+            p = initialise_p(support_intervals)
         else:
             p = np.asarray(p_init, dtype=float).copy()
-            if p.shape[0] != m_minus_1:
-                raise ValueError("p_init must have length len(tau)-1.")
+            if p.shape[0] != num_intervals:
+                raise ValueError("p_init must have one mass per support interval.")
             if (p <= 0).any():
                 raise ValueError("p_init must be strictly positive.")
             p = p / p.sum()
@@ -134,16 +174,12 @@ class TurnbullEstimator:
                 raise RuntimeError("p collapsed to zero measure.")
             p /= s
 
-        # Compute survival step function: surv = [1] + 1 - cumsum(p)
-        surv_full = np.concatenate([[1.0], 1.0 - np.cumsum(p)])
-        # Possibly truncate at the max finite time
-        finite_mask = np.isfinite(tau)
-        if finite_mask.sum() < len(tau):
-            time_out = tau[finite_mask]
-            surv_out = surv_full[finite_mask]
-        else:
-            time_out = tau
-            surv_out = surv_full
+        # Place each support cell's mass at its right endpoint. This preserves
+        # the original step-function convention while allowing exact atoms.
+        time_out = tau[np.isfinite(tau)]
+        interval_ends = support_intervals[:, 1]
+        cumulative_dens = (interval_ends[None, :] <= time_out[:, None]) @ p
+        surv_out = np.clip(1.0 - cumulative_dens, 0.0, 1.0)
 
         # Add a point at time 0 if not present
         if time_out[0] > 0:
