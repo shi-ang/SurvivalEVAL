@@ -57,6 +57,8 @@ version = { attr = "SurvivalEVAL.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["SurvivalEVAL*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 addopts = ["--ignore=tests/private"]

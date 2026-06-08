@@ -24,7 +24,7 @@ def read_version():
 setup(
     name="SurvivalEVAL",
     version=read_version(),
-    packages=find_packages(),
+    packages=find_packages(include=["SurvivalEVAL", "SurvivalEVAL.*"]),
     author="Shi-ang Qi, Weijie Sun",
     author_email="shiang@ualberta.ca, weijie2@ualberta.ca",
     description="The most comprehensive Python package for evaluating survival analysis models.",
