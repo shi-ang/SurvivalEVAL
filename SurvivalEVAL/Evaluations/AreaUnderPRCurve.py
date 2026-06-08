@@ -49,9 +49,7 @@ def auprc_uncensored_grid(
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(
-        time_grid, direction="increasing"
-    ), "time_grid must be non-decreasing"
+    assert np.all(np.diff(time_grid, axis=1) > 0), "time_grid must be strictly increasing"
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
@@ -247,9 +245,7 @@ def auprc_ic(
     assert check_monotonicity(
         pred_cdf, direction="increasing"
     ), "predictions_cdf must be non-decreasing over time"
-    assert check_monotonicity(
-        time_grid, direction="increasing"
-    ), "time_grid must be non-decreasing"
+    assert np.all(np.diff(time_grid, axis=1) > 0), "time_grid must be strictly increasing"
 
     # Midpoint quadrature over (0, 1]
     ts = np.linspace(0.0, 1.0, n_quad + 1)
