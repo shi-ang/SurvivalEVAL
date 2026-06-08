@@ -13,6 +13,8 @@ import osqp
 from scipy import sparse
 from scipy.optimize import minimize, Bounds
 
+from SurvivalEVAL.Evaluations.util import make_monotonic
+
 
 # Numerical constants
 _EPS = 1e-8  # Small epsilon for numerical stability
@@ -451,48 +453,6 @@ def _rank_resample(u: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     return temp_sorted[ranks]
 
 
-def _isotonic_regression(y: np.ndarray) -> np.ndarray:
-    """
-    Pool Adjacent Violators Algorithm (PAVA) for isotonic regression.
-    
-    Finds the non-decreasing sequence closest to y in L2 sense.
-    Useful for enforcing monotonicity in CDF estimates.
-    
-    Parameters
-    ----------
-    y : np.ndarray
-        Input array (possibly non-monotonic)
-    
-    Returns
-    -------
-    y_iso : np.ndarray
-        Isotonic (non-decreasing) approximation
-    """
-    n = len(y)
-    y_iso = y.copy()
-    
-    # PAVA algorithm
-    i = 0
-    while i < n - 1:
-        if y_iso[i] > y_iso[i + 1]:
-            # Pool adjacent blocks
-            j = i + 1
-            while j < n and y_iso[j] < y_iso[i]:
-                j += 1
-            # Average the pooled block
-            pool_mean = np.mean(y_iso[i:j])
-            y_iso[i:j] = pool_mean
-            # Go back to check for new violations
-            i = max(0, i - 1)
-        else:
-            i += 1
-    
-    # Clip to [0, 1] for CDF
-    y_iso = np.clip(y_iso, 0.0, 1.0)
-    
-    return y_iso
-
-
 def fit_fiducial_interval_censor(
     l: np.ndarray,
     r: np.ndarray,
@@ -710,7 +670,12 @@ def fit_fiducial_interval_censor(
         
         # Optionally enforce monotonicity via isotonic regression
         if enforce_monotonicity:
-            F_interp = _isotonic_regression(F_interp)
+            F_interp = make_monotonic(
+                F_interp,
+                testgrid,
+                method="isotonic",
+                direction="increasing",
+            )
         
         # Store fiducial sample
         FiducialMidLine[j - mburn, :] = F_interp

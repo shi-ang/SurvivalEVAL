@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
+from sklearn.isotonic import isotonic_regression
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
@@ -128,72 +129,119 @@ def make_monotonic(
     method: str = "ceil",
     seed: int = None,
     num_bs: int = None,
+    direction: str = "decreasing",
 ):
     """
-    Make the survival curves monotonic.
+    Make curves monotonic along the time axis.
 
     Parameters
     ----------
     survival_curves: np.ndarray
-        Survival curves. 2-D array of survival probabilities. The first dimension is the number of samples. The second
-        dimension is the number of time points.
+        One- or two-dimensional probability curves. For a 2-D array, rows are
+        samples and columns are time points.
     times_coordinate: np.ndarray
         Time points corresponding to the survival curves. 1-D array of time points.
     method: str
-        The method to make the survival curves monotonic. One of ['ceil', 'floor', 'bootstrap']. Default: 'ceil'.
+        Correction method. One of ``"ceil"``, ``"floor"``, ``"bootstrap"``,
+        or ``"isotonic"``. Isotonic regression gives the L2-optimal monotonic
+        approximation. Default: ``"ceil"``.
     seed: int
         Random seed for bootstrapping. Default: None.
     num_bs: int
         Number of bootstrap samples. Default: None. If None, then num_bs = 10 * num_times.
+    direction: {"increasing", "decreasing"}
+        Required monotonic direction. Survival curves are decreasing, while
+        cumulative distribution functions are increasing. Default: ``"decreasing"``.
 
     Returns
     -------
     survival_curves: np.ndarray
-        Survival curves with monotonicity. 2-D array of survival probabilities.
+        Monotonic probability curves with the same dimensionality as the input.
     """
+    valid_methods = {"ceil", "floor", "bootstrap", "isotonic"}
+    if method not in valid_methods:
+        raise ValueError(
+            "method must be one of ['ceil', 'floor', 'bootstrap', 'isotonic']"
+        )
+    if direction not in {"increasing", "decreasing"}:
+        raise ValueError("direction must be one of ['increasing', 'decreasing']")
+
+    survival_curves = np.asarray(survival_curves, dtype=float)
+    times_coordinate = np.asarray(times_coordinate, dtype=float)
+    if survival_curves.ndim not in (1, 2):
+        raise ValueError("survival_curves must be a 1-D or 2-D array.")
+    if times_coordinate.ndim != 1:
+        raise ValueError("times_coordinate must be a 1-D array.")
+    if survival_curves.shape[-1] != times_coordinate.size:
+        raise ValueError(
+            "survival_curves and times_coordinate must have the same number of time points."
+        )
     if not check_monotonicity(times_coordinate, direction="increasing"):
         raise ValueError("The time coordinates must be sorted in ascending order.")
 
-    if num_bs is None:
-        # 10 times the number of time points or 1000, whichever is larger
-        num_bs = max(10 * len(times_coordinate), 1000)
+    input_was_1d = survival_curves.ndim == 1
+    curves = np.atleast_2d(np.clip(survival_curves, 0.0, 1.0))
+    if check_monotonicity(curves, direction=direction):
+        return curves[0] if input_was_1d else curves
 
-    if seed is not None:
-        np.random.seed(seed)
-
-    survival_curves = np.clip(survival_curves, 0, 1)
-    if not check_monotonicity(survival_curves, direction="decreasing"):
-        if method == "ceil":
-            survival_curves = np.maximum.accumulate(survival_curves[:, ::-1], axis=1)[
-                :, ::-1
+    if method == "isotonic":
+        increasing = direction == "increasing"
+        curves = np.vstack(
+            [
+                isotonic_regression(
+                    curve,
+                    y_min=0.0,
+                    y_max=1.0,
+                    increasing=increasing,
+                )
+                for curve in curves
             ]
-        elif method == "floor":
-            survival_curves = np.minimum.accumulate(survival_curves, axis=1)
-        elif method == "bootstrap":
-            need_rearrange = np.where(
-                np.any(
-                    (np.sort(survival_curves, axis=1)[:, ::-1] != survival_curves),
-                    axis=1,
-                )
-            )[0]
-
-            for i in need_rearrange:
-                inter_lin = interp1d(
-                    survival_curves[i],
-                    times_coordinate,
-                    kind="linear",
-                    fill_value="extrapolate",
-                )
-                # Bootstrap the quantile function
-                bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
-                # Now compute the rearranged survival curve
-                # The original method is to compute a value (time) given the fixed quantile (probability)
-                # Here we compute the probability (quantile) given the fixed value (time)
-                for j, time in enumerate(times_coordinate):
-                    survival_curves[i, j] = np.mean(bootstrap_qf > time)
+        )
+    elif method == "ceil":
+        if direction == "decreasing":
+            curves = np.maximum.accumulate(curves[:, ::-1], axis=1)[:, ::-1]
         else:
-            raise ValueError("method must be one of ['ceil', 'floor', 'bootstrap']")
-    return survival_curves
+            curves = np.maximum.accumulate(curves, axis=1)
+    elif method == "floor":
+        if direction == "decreasing":
+            curves = np.minimum.accumulate(curves, axis=1)
+        else:
+            curves = np.minimum.accumulate(curves[:, ::-1], axis=1)[:, ::-1]
+    else:
+        if num_bs is None:
+            # 10 times the number of time points or 1000, whichever is larger
+            num_bs = max(10 * len(times_coordinate), 1000)
+        if num_bs <= 0:
+            raise ValueError("num_bs must be positive.")
+        if seed is not None:
+            np.random.seed(seed)
+
+        # The bootstrap rearrangement is defined for decreasing survival curves.
+        bootstrap_curves = curves.copy()
+        if direction == "increasing":
+            bootstrap_curves = 1.0 - bootstrap_curves
+
+        need_rearrange = np.where(
+            np.any(np.diff(bootstrap_curves, axis=1) > 0, axis=1)
+        )[0]
+        for i in need_rearrange:
+            inter_lin = interp1d(
+                bootstrap_curves[i],
+                times_coordinate,
+                kind="linear",
+                fill_value="extrapolate",
+            )
+            bootstrap_qf = inter_lin(np.random.uniform(0, 1, num_bs))
+            for j, time in enumerate(times_coordinate):
+                bootstrap_curves[i, j] = np.mean(bootstrap_qf > time)
+
+        curves = (
+            1.0 - bootstrap_curves
+            if direction == "increasing"
+            else bootstrap_curves
+        )
+
+    return curves[0] if input_was_1d else curves
 
 
 def interpolated_curve(

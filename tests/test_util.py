@@ -128,6 +128,127 @@ def test_make_monotonic_corrects_increasing_survival_curve():
     np.testing.assert_allclose(result, [[0.2, 0.2, 0.2]])
 
 
+def test_make_monotonic_isotonic_is_l2_optimal_for_increasing_curve():
+    result = make_monotonic(
+        np.array([0.45, 0.13, 0.40]),
+        np.array([0.0, 1.0, 2.0]),
+        method="isotonic",
+        direction="increasing",
+    )
+
+    assert result.ndim == 1
+    np.testing.assert_allclose(result, [0.29, 0.29, 0.40])
+
+
+def test_make_monotonic_isotonic_supports_2d_decreasing_curves():
+    curves = np.array([
+        [0.60, 0.20, 0.40],
+        [0.90, 0.50, 0.10],
+    ])
+
+    result = make_monotonic(
+        curves,
+        np.array([0.0, 1.0, 2.0]),
+        method="isotonic",
+    )
+
+    assert result.shape == curves.shape
+    np.testing.assert_allclose(
+        result,
+        [
+            [0.60, 0.30, 0.30],
+            [0.90, 0.50, 0.10],
+        ],
+    )
+
+
+def test_make_monotonic_ceil_preserves_legacy_default_behavior():
+    result = make_monotonic(
+        np.array([[0.90, 0.70, 0.80]]),
+        np.array([0.0, 1.0, 2.0]),
+    )
+
+    np.testing.assert_allclose(result, [[0.90, 0.80, 0.80]])
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("ceil", [0.10, 0.50, 0.50]),
+        ("floor", [0.10, 0.30, 0.30]),
+    ],
+)
+def test_make_monotonic_accumulators_support_increasing_curves(method, expected):
+    result = make_monotonic(
+        np.array([0.10, 0.50, 0.30]),
+        np.array([0.0, 1.0, 2.0]),
+        method=method,
+        direction="increasing",
+    )
+
+    np.testing.assert_allclose(result, expected)
+
+
+def test_make_monotonic_bootstrap_supports_increasing_cdf():
+    result = make_monotonic(
+        np.array([0.20, 0.60, 0.40]),
+        np.array([0.0, 1.0, 2.0]),
+        method="bootstrap",
+        direction="increasing",
+        seed=0,
+        num_bs=100,
+    )
+
+    assert result.ndim == 1
+    assert check_monotonicity(result, direction="increasing")
+
+
+@pytest.mark.parametrize(
+    ("curves", "times", "kwargs", "message"),
+    [
+        (
+            np.array([0.9, 0.5, 0.1]),
+            np.array([0.0, 1.0, 2.0]),
+            {"method": "unknown"},
+            "method",
+        ),
+        (
+            np.array([0.9, 0.5, 0.1]),
+            np.array([0.0, 1.0, 2.0]),
+            {"direction": "sideways"},
+            "direction",
+        ),
+        (
+            np.ones((1, 1, 3)),
+            np.array([0.0, 1.0, 2.0]),
+            {},
+            "1-D or 2-D",
+        ),
+        (
+            np.array([0.9, 0.5, 0.1]),
+            np.array([[0.0, 1.0, 2.0]]),
+            {},
+            "times_coordinate must be a 1-D",
+        ),
+        (
+            np.array([0.9, 0.5, 0.1]),
+            np.array([0.0, 1.0]),
+            {},
+            "same number of time points",
+        ),
+        (
+            np.array([0.9, 0.5, 0.1]),
+            np.array([0.0, 2.0, 1.0]),
+            {},
+            "sorted in ascending order",
+        ),
+    ],
+)
+def test_make_monotonic_rejects_invalid_inputs(curves, times, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        make_monotonic(curves, times, **kwargs)
+
+
 def test_survival_to_quantile_rejects_increasing_survival_probabilities():
     with pytest.raises(ValueError, match="nonincreasing"):
         survival_to_quantile(
