@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, InitVar, field
+from dataclasses import InitVar, dataclass, field
 
 import numpy as np
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import infer_survival_probabilities
+from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    infer_survival_probabilities,
+)
 
 
 @dataclass
@@ -101,9 +103,7 @@ class CopulaGraphic:
                 self.population_count, 0, len(event_indicators)
             )
             self.events = np.insert(self.events, 0, 0)
-            self.survival_probabilities = np.insert(
-                self.survival_probabilities, 0, 1.0
-            )
+            self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
 
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))

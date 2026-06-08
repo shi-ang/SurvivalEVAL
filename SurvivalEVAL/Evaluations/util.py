@@ -236,9 +236,7 @@ def make_monotonic(
                 bootstrap_curves[i, j] = np.mean(bootstrap_qf > time)
 
         curves = (
-            1.0 - bootstrap_curves
-            if direction == "increasing"
-            else bootstrap_curves
+            1.0 - bootstrap_curves if direction == "increasing" else bootstrap_curves
         )
 
     return curves[0] if input_was_1d else curves

@@ -258,7 +258,9 @@ def cov(
     probability_mass = np.clip(cdf_increments, 0.0, None)
     represented_mass = np.sum(probability_mass, axis=1)
     if np.any(represented_mass <= tolerance):
-        raise ValueError("Each CDF must contain positive probability mass on the time grid.")
+        raise ValueError(
+            "Each CDF must contain positive probability mass on the time grid."
+        )
     probability_mass = probability_mass / represented_mass[:, None]
 
     time_midpoints = 0.5 * (t_grid[1:] + t_grid[:-1])

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from typing import Optional
 
 import numpy as np
 from lifelines import KaplanMeierFitter
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import infer_survival_probabilities
+from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    infer_survival_probabilities,
+)
 
 
-def create_support_intervals(
-    tau: np.ndarray, exact_times: np.ndarray
-) -> np.ndarray:
+def create_support_intervals(tau: np.ndarray, exact_times: np.ndarray) -> np.ndarray:
     """
     Create the support cells used by the Turnbull EM algorithm.
 
@@ -50,9 +50,7 @@ def build_alphas(
     interval_is_exact = interval_left == interval_right
 
     exact_contains = (
-        observation_is_exact
-        & interval_is_exact
-        & (interval_right == right)
+        observation_is_exact & interval_is_exact & (interval_right == right)
     )
     lower_is_contained = np.where(
         interval_is_exact,
@@ -60,16 +58,12 @@ def build_alphas(
         interval_left >= left,
     )
     interval_contains = (
-        (~observation_is_exact)
-        & lower_is_contained
-        & (interval_right <= right)
+        (~observation_is_exact) & lower_is_contained & (interval_right <= right)
     )
     alphas = (exact_contains | interval_contains).astype(float)
 
     if np.any(np.all(alphas == 0.0, axis=1)):
-        raise ValueError(
-            "Each observation must contain at least one support interval."
-        )
+        raise ValueError("Each observation must contain at least one support interval.")
     return alphas
 
 
@@ -146,9 +140,7 @@ class TurnbullEstimator:
         else:
             p = np.asarray(p_init, dtype=float).copy()
             if p.shape[0] != num_intervals:
-                raise ValueError(
-                    "p_init must have one mass per support interval."
-                )
+                raise ValueError("p_init must have one mass per support interval.")
             if (p <= 0).any():
                 raise ValueError("p_init must be strictly positive.")
             p = p / p.sum()

@@ -21,9 +21,7 @@ def _h_statistic_bin_masks(preds: np.ndarray, num_bins: int) -> list[np.ndarray]
     bin_masks = []
     for i in range(num_bins):
         upper_mask = (
-            preds <= bin_edges[i + 1]
-            if i == num_bins - 1
-            else preds < bin_edges[i + 1]
+            preds <= bin_edges[i + 1] if i == num_bins - 1 else preds < bin_edges[i + 1]
         )
         bin_masks.append((preds >= bin_edges[i]) & upper_mask)
     return bin_masks
@@ -126,9 +124,7 @@ def one_calibration(
             mean_prob = np.mean(filtered_predictions)
             event_count = np.sum(filtered_event_times < target_time)
             event_probability = event_count / retained_bin_size
-            hl_statistics += (
-                event_count - retained_bin_size * mean_prob
-            ) ** 2 / (
+            hl_statistics += (event_count - retained_bin_size * mean_prob) ** 2 / (
                 retained_bin_size * mean_prob * (1 - mean_prob)
             )
         elif method == "DN":

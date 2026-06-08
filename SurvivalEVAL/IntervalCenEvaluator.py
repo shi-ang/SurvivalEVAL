@@ -95,9 +95,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
         if np.any(~np.isfinite(left_limits)) or np.any(left_limits < 0):
-            raise ValueError(
-                "Testing left limits must be finite and non-negative."
-            )
+            raise ValueError("Testing left limits must be finite and non-negative.")
         if np.any(left_limits > right_limits):
             raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
@@ -107,9 +105,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             train_left_limits, train_right_limits = check_and_convert(
                 train_left_limits, train_right_limits
             )
-            if np.any(~np.isfinite(train_left_limits)) or np.any(
-                train_left_limits < 0
-            ):
+            if np.any(~np.isfinite(train_left_limits)) or np.any(train_left_limits < 0):
                 raise ValueError(
                     "Training left limits must be finite and non-negative."
                 )
@@ -259,9 +255,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 time_arrays.extend(
                     [
                         self.train_left_limits,
-                        self.train_right_limits[
-                            np.isfinite(self.train_right_limits)
-                        ],
+                        self.train_right_limits[np.isfinite(self.train_right_limits)],
                     ]
                 )
             tau_vals = np.concatenate(time_arrays)
@@ -955,6 +949,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             self.right_limits,
             self.train_left_limits,
             self.train_right_limits,
-            cov_level=cov_level if cov_level is not None else (quantile_range[1] - quantile_range[0]),
+            cov_level=(
+                cov_level
+                if cov_level is not None
+                else (quantile_range[1] - quantile_range[0])
+            ),
             method=method,
         )

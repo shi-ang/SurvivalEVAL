@@ -186,10 +186,7 @@ def test_exact_interval_matching_uses_numerical_tolerance():
 
     assert inclusion_rate(exact_time, exact_time, predicted) == 1.0
     assert (
-        mean_error_ic(
-            exact_time, exact_time, predicted, error_type="absolute"
-        )
-        == 0.0
+        mean_error_ic(exact_time, exact_time, predicted, error_type="absolute") == 0.0
     )
 
 

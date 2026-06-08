@@ -9,11 +9,13 @@ def test_get_comparable_ic_returns_directed_precedence_relation():
 
     comparable = _get_comparable_ic(left, right)
 
-    expected = np.array([
-        [False, True, True],
-        [False, False, True],
-        [False, False, False],
-    ])
+    expected = np.array(
+        [
+            [False, True, True],
+            [False, False, True],
+            [False, False, False],
+        ]
+    )
     np.testing.assert_array_equal(comparable, expected)
 
 

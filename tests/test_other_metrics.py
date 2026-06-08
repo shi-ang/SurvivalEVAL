@@ -5,10 +5,12 @@ from SurvivalEVAL.Evaluations.OtherMetrics import cov
 
 
 def test_cov_computes_event_time_coefficient_of_variation():
-    cdf = np.array([
-        [0.0, 0.5, 1.0],
-        [0.0, 1.0, 1.0],
-    ])
+    cdf = np.array(
+        [
+            [0.0, 0.5, 1.0],
+            [0.0, 1.0, 1.0],
+        ]
+    )
     time_grid = np.array([0.0, 2.0, 4.0])
 
     mean_cov, cov_values = cov(cdf, time_grid, return_details=True)

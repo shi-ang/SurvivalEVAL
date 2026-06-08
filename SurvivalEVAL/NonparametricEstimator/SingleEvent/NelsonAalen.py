@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, InitVar, field
+from dataclasses import InitVar, dataclass, field
 
 import numpy as np
 
@@ -51,9 +51,7 @@ class NelsonAalen:
             self.events = np.insert(self.events, 0, 0)
             self.hazard = np.insert(self.hazard, 0, 0.0)
             self.cumulative_hazard = np.insert(self.cumulative_hazard, 0, 0.0)
-            self.survival_probabilities = np.insert(
-                self.survival_probabilities, 0, 1.0
-            )
+            self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
 
     def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
         """
@@ -75,9 +73,9 @@ class NelsonAalen:
 
         # Nelson-Aalen is a right-continuous step function: use the latest
         # cumulative hazard whose fitted time is not greater than the query.
-        indices = np.searchsorted(
-            self.survival_times, prediction_times, side="right"
-        ) - 1
+        indices = (
+            np.searchsorted(self.survival_times, prediction_times, side="right") - 1
+        )
         indices = np.clip(indices, 0, self.survival_times.size - 1)
         cumulative_hazard = self.cumulative_hazard[indices].astype(float, copy=True)
 

@@ -120,9 +120,7 @@ def test_check_monotonicity_rejects_unknown_direction():
 def test_make_monotonic_corrects_increasing_survival_curve():
     survival_curves = np.array([[0.2, 0.5, 0.8]])
 
-    result = make_monotonic(
-        survival_curves, np.array([0.0, 1.0, 2.0]), method="floor"
-    )
+    result = make_monotonic(survival_curves, np.array([0.0, 1.0, 2.0]), method="floor")
 
     assert check_monotonicity(result, direction="decreasing")
     np.testing.assert_allclose(result, [[0.2, 0.2, 0.2]])
@@ -141,10 +139,12 @@ def test_make_monotonic_isotonic_is_l2_optimal_for_increasing_curve():
 
 
 def test_make_monotonic_isotonic_supports_2d_decreasing_curves():
-    curves = np.array([
-        [0.60, 0.20, 0.40],
-        [0.90, 0.50, 0.10],
-    ])
+    curves = np.array(
+        [
+            [0.60, 0.20, 0.40],
+            [0.90, 0.50, 0.10],
+        ]
+    )
 
     result = make_monotonic(
         curves,

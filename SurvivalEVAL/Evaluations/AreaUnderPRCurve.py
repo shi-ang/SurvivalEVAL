@@ -279,9 +279,7 @@ def auprc_ic(
         # For a left-censored interval, L=0 makes this term F(0).
         if li == 0.0:
             left_boundary = (
-                0.0
-                if left_extrapolation_value is None
-                else left_extrapolation_value
+                0.0 if left_extrapolation_value is None else left_extrapolation_value
             )
             Fi_left = np.full_like(ts_mid, left_boundary)
         else:

@@ -3,10 +3,7 @@ import numpy as np
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
 
 
-def km_mean(
-        times: np.ndarray,
-        survival_probabilities: np.ndarray
-) -> float:
+def km_mean(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
     """
     Calculate the mean of the Kaplan-Meier curve.
 
@@ -44,9 +41,7 @@ def km_mean(
 
 
 def infer_survival_probabilities(
-        prediction_times,
-        survival_times,
-        survival_probabilities
+    prediction_times, survival_times, survival_probabilities
 ):
     indices = np.searchsorted(survival_times, prediction_times, side="right") - 1
     # Index -1 denotes the pre-observation baseline, where survival is still 1.

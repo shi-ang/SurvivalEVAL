@@ -357,9 +357,7 @@ class SurvivalEvaluator:
         if (quantile_range is not None) and (cov_level is not None):
             lower_quantile, upper_quantile = quantile_range
             if not 0 < lower_quantile < upper_quantile < 1:
-                raise ValueError(
-                    "Quantiles must be between 0 and 1 and lower < upper."
-                )
+                raise ValueError("Quantiles must be between 0 and 1 and lower < upper.")
             if not 0 < cov_level < 1:
                 raise ValueError("Coverage level must be between 0 and 1.")
             if not np.isclose(upper_quantile - lower_quantile, cov_level):
@@ -370,9 +368,7 @@ class SurvivalEvaluator:
         elif (quantile_range is not None) and (cov_level is None):
             lower_quantile, upper_quantile = quantile_range
             if not 0 < lower_quantile < upper_quantile < 1:
-                raise ValueError(
-                    "Quantiles must be between 0 and 1 and lower < upper."
-                )
+                raise ValueError("Quantiles must be between 0 and 1 and lower < upper.")
         elif (quantile_range is None) and (cov_level is not None):
             if not 0 < cov_level < 1:
                 raise ValueError("Coverage level must be between 0 and 1.")
@@ -1603,9 +1599,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
                 replacement_probability = 0.99
             else:
                 max_prob_at_end = np.max(reference_end_probabilities)
-                replacement_probability = max(
-                    0.1 * max_prob_at_end + 0.9, 0.99
-                )
+                replacement_probability = max(0.1 * max_prob_at_end + 0.9, 0.99)
             predicted_curves[idx_need_fix, -1] = replacement_probability
         super(ScikitSurvivalEvaluator, self).__init__(
             predicted_curves,

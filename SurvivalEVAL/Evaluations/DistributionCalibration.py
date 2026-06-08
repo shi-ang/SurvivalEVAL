@@ -520,7 +520,7 @@ def km_calibration(
     fig: tuple(plt.Figure, plt.Axes)
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
         is True.
-    
+
     References
     ----------
     [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
