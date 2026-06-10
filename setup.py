@@ -51,7 +51,7 @@ setup(
     ],
     python_requires=">=3.9",
     keywords="survival analysis, evaluation, metrics, survivaleval",
-    license="MIT",
+    license="GPLv3",
     install_requires=read("requirements.txt").splitlines(),
 )
 
