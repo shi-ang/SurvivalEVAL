@@ -338,8 +338,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
-
-            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+            If unsorted, values are sorted ascending with a warning. You are
+            responsible for making sure they lie within the support of the model.
 
         method: str, default: "uncensored"
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
@@ -423,7 +423,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                     "to perform numerical integration."
                 )
 
-            # We assume caller gave sorted points. If not, sort them.
+            # Sort explicit target times if needed, preserving the integration range.
             if not np.all(np.diff(target_times) >= 0):
                 warnings.warn("`target_times` is not sorted; sorting it now.")
                 target_times = np.sort(target_times)
@@ -529,8 +529,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
-
-            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+            If unsorted, values are sorted ascending with a warning. You are
+            responsible for making sure they lie within the support of the model.
 
         Returns
         -------
