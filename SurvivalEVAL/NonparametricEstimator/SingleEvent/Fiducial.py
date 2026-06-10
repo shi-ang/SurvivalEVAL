@@ -210,6 +210,7 @@ def _linear_interpolation_qp(
     q[-1] = -lam * wEnd
 
     # Try OSQP first, fall back to scipy on failure
+    solver = solver.lower()
     if solver == "osqp":
         return _solve_qp_osqp(Q, q, fid_lower, fid_upper, osqp_solver)
     else:

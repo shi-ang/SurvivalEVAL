@@ -370,11 +370,11 @@ def create_interval_c_hist(
 
 
 _residual_names = {
-    "CoxSnell": "Cox-Snell Residuals",
-    "Modified CoxSnell-v1": "Cox-Snell Residuals",
-    "Modified CoxSnell-v2": "Cox-Snell Residuals",
-    "Martingale": "Martingale Residuals",
-    "Deviance": "Deviance Residuals",
+    "coxsnell": "Cox-Snell Residuals",
+    "modified coxsnell-v1": "Cox-Snell Residuals",
+    "modified coxsnell-v2": "Cox-Snell Residuals",
+    "martingale": "Martingale Residuals",
+    "deviance": "Deviance Residuals",
 }
 
 
@@ -407,20 +407,21 @@ def residuals(
         The calculated residuals.
     """
     cox_residuals = -np.log(pred_probs)
+    method = method.lower()
 
-    if method == "CoxSnell":
+    if method == "coxsnell":
         residuals = cox_residuals
-    elif method == "Modified CoxSnell-v1" or method == "Modified CoxSnell-v2":
+    elif method in ["modified coxsnell-v1", "modified coxsnell-v2"]:
         # Compare with standard CoxSnell residuals, this method adds an 'excess residual' for censored instances.
         # The excess residual should also follow a unit exponential distribution, based on the lack of memory property.
         # There are two choices of excess residuals:
         # (1) use the mean of the unit exponential distribution, which is 1,
         # or (2) use the median of the unit exponential distribution, which is ln(2).
-        excess_residual = 1 if method == "Modified CoxSnell-v1" else np.log(2)
+        excess_residual = 1 if method == "modified coxsnell-v1" else np.log(2)
         residuals = cox_residuals + excess_residual * (1 - event_indicators)
-    elif method == "Martingale":
+    elif method == "martingale":
         residuals = event_indicators - cox_residuals
-    elif method == "Deviance":
+    elif method == "deviance":
 
         def safe_log(x):
             return np.log(x + 1e-8)
@@ -636,6 +637,7 @@ def coverage_ic(
             "pred_l, pred_r, obs_l, and obs_r must contain the same number of samples."
         )
 
+    method = method.lower()
     if method == "linear":
         # Linear interpolation method, assumes uniform distribution within each censoring interval
         overlap_left = np.maximum(obs_l, pred_l)
@@ -643,7 +645,7 @@ def coverage_ic(
 
         denom = obs_r - obs_l
         numer = np.maximum(0.0, overlap_right - overlap_left)
-    elif method == "Turnbull":
+    elif method == "turnbull":
         # error if training is None
         if obs_l_train is None or obs_r_train is None:
             raise ValueError(

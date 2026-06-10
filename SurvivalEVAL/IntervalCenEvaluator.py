@@ -116,11 +116,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.train_left_limits = train_left_limits
         self.train_right_limits = train_right_limits
 
-        if predict_time_method == "Median":
+        predict_time_method = predict_time_method.lower()
+        if predict_time_method == "median":
             self.predict_time_method = predict_median_st
-        elif predict_time_method == "Mean":
+        elif predict_time_method == "mean":
             self.predict_time_method = predict_mean_st
-        elif predict_time_method == "RMST":
+        elif predict_time_method == "rmst":
             self.predict_time_method = predict_rmst
         else:
             error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
@@ -174,11 +175,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         pred_times = self.predict_time_method(
             self._pred_survs, self._time_coordinates, interpolation=self.interpolation
         )
+        method = method.lower()
+        ties = ties.lower()
+
         if method == "midpoint":
             imp_times, imp_indicators = impute_times_midpoint(
                 self.left_limits, self.right_limits
             )
-            ties = "None" if ties == "skip" else "Risk"
+            ties = "none" if ties == "skip" else "risk"
             c_index, num, den = concordance(
                 predicted_times=pred_times,
                 event_times=imp_times,
@@ -232,12 +236,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The Brier score at the given time point.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou Brier score")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -284,12 +289,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         x_train: Optional[np.ndarray] = None,
     ):
         # Check if there is no censored instance, if so, naive Brier score is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou Brier score")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -365,12 +371,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
         # Check if there is no censored instance, if so, naive method is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou IBS")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -475,6 +482,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 bs_dict[time_point] = b_score
             print("Brier scores for multiple time points are:\n", bs_dict)
 
+        integration_method = integration_method.lower()
         if integration_method == "trapz":
             integral_value = trapezoid(b_scores, target_times)
         elif integration_method == "simpson":

@@ -74,11 +74,14 @@ def concordance(
         len(predicted_times) == len(event_times) == len(event_indicators)
     ), "The lengths of the predicted times and labels must be the same."
 
-    if method == "Harrell":
+    method = method.lower()
+    ties = ties.lower()
+
+    if method == "harrell":
         risks = -1 * predicted_times
         partial_weights = None
         bg_event_times = None
-    elif method == "Margin":
+    elif method == "margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)
@@ -125,19 +128,19 @@ def concordance(
         bg_event_time=bg_event_times,
         partial_weights=partial_weights,
     )
-    if ties == "None":
+    if ties == "none":
         total_pairs = concordant_pairs + discordant_pairs
         c_index = concordant_pairs / total_pairs
-    elif ties == "Time":
+    elif ties == "time":
         total_pairs = concordant_pairs + discordant_pairs + time_ties
         concordant_pairs = concordant_pairs + 0.5 * time_ties
         c_index = concordant_pairs / total_pairs
-    elif ties == "Risk":
+    elif ties == "risk":
         # This should be the same as original outputted c_index from above
         total_pairs = concordant_pairs + discordant_pairs + risk_ties
         concordant_pairs = concordant_pairs + 0.5 * risk_ties
         c_index = concordant_pairs / total_pairs
-    elif ties == "All":
+    elif ties == "all":
         total_pairs = concordant_pairs + discordant_pairs + risk_ties + time_ties
         concordant_pairs = concordant_pairs + 0.5 * (risk_ties + time_ties)
         c_index = concordant_pairs / total_pairs
@@ -533,6 +536,9 @@ def concordance_ic(
     # Basic sanity
     if np.any(l > r):
         raise ValueError("Found an interval with left > right in testing data.")
+
+    method = method.lower()
+    ties = ties.lower()
 
     if method == "probability":
         if left_train is None or right_train is None:

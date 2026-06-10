@@ -152,6 +152,8 @@ def brier_score_ic(
         tau = np.unique(np.sort(tau_vals))
         target_time = np.median(tau)
 
+    method = method.lower()
+
     if method == "uncensored":
         # If the target time lies within the censoring interval, the event status
         # is ambiguous and the sample is excluded.
@@ -162,7 +164,7 @@ def brier_score_ic(
         # if the right limit is less than or equal to the target time, then the event has occurred, so 0
         survival_status = (left_limits > target_time).astype(float)
         brier_score = (np.square(preds - survival_status) * weight).sum() / weight.sum()
-    elif "Tsouprou" in method:
+    elif method in {"tsouprou-marginal", "tsouprou-conditional"}:
         # method based on Sofia Tsouprou's thesis
         # Measures of discrimination and predictive accuracy for interval censored survival data
         # https://studenttheses.universiteitleiden.nl/access/item:3597164/view
@@ -173,7 +175,7 @@ def brier_score_ic(
         if train_left_limits is None or train_right_limits is None:
             raise ValueError("Training data must be provided for Tsouprou methods.")
 
-        if method == "Tsouprou-marginal":
+        if method == "tsouprou-marginal":
             marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
@@ -182,7 +184,7 @@ def brier_score_ic(
             left_probs = marginal_estimator.predict(left_limits)
             right_probs = marginal_estimator.predict(right_limits)
             target_probs = marginal_estimator.predict(target_time)
-        elif method == "Tsouprou-conditional":
+        elif method == "tsouprou-conditional":
             if x is None or x_train is None:
                 raise ValueError(
                     "Features for both training and testing data must be provided for "
@@ -425,6 +427,8 @@ def brier_multiple_points_ic(
     # ============================================================
     # Case 1: 'uncensored' (naive treating intervals like exact-ish)
     # ============================================================
+    method = method.lower()
+
     if method == "uncensored":
         # For each (i,j), define survival_status_ij in {0,1}:
         #   if t_j < L_i  -> alive -> 1
@@ -464,14 +468,14 @@ def brier_multiple_points_ic(
     # ============================================================
     # Case 2/3: Tsouprou-based, which creates fractional "status"
     # ============================================================
-    if "Tsouprou" in method:
+    if method in {"tsouprou-marginal", "tsouprou-conditional"}:
         if train_left_limits is None or train_right_limits is None:
             raise ValueError("Training data must be provided for Tsouprou methods.")
 
         # --------------------------------------------------------
         # 2A. Fit marginal or conditional model on training data
         # --------------------------------------------------------
-        if method == "Tsouprou-marginal":
+        if method == "tsouprou-marginal":
             marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
@@ -491,7 +495,7 @@ def brier_multiple_points_ic(
                 target_probs_vec.reshape(1, -1), n_samples, axis=0
             )
 
-        elif method == "Tsouprou-conditional":
+        elif method == "tsouprou-conditional":
             if x is None or x_train is None:
                 raise ValueError(
                     "x and x_train must be provided for Tsouprou-conditional."

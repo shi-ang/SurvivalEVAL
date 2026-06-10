@@ -111,11 +111,12 @@ class SurvivalEvaluator:
         self.train_event_times = train_event_times
         self.train_event_indicators = train_event_indicators
 
-        if predict_time_method == "Median":
+        predict_time_method = predict_time_method.lower()
+        if predict_time_method == "median":
             self.predict_time_method = predict_median_st
-        elif predict_time_method == "Mean":
+        elif predict_time_method == "mean":
             self.predict_time_method = predict_mean_st
-        elif predict_time_method == "RMST":
+        elif predict_time_method == "rmst":
             self.predict_time_method = predict_rmst
         else:
             error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
@@ -569,10 +570,11 @@ class SurvivalEvaluator:
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Harrell"
+            method = "harrell"
 
-        if method == "Margin":
+        if method == "margin":
             self._error_trainset("margin concordance")
 
         return concordance(
@@ -844,6 +846,7 @@ class SurvivalEvaluator:
                 bs_dict[time_point] = b_score
             print("Brier scores for multiple time points are:\n", bs_dict)
 
+        integration_method = integration_method.lower()
         if integration_method == "trapz":
             integral_value = trapezoid(b_scores, target_times)
         elif integration_method == "simpson":
@@ -915,11 +918,12 @@ class SurvivalEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -966,11 +970,12 @@ class SurvivalEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -1329,11 +1334,12 @@ class SurvivalEvaluator:
         residuals: np.ndarray
             The residuals calculated from the predicted survival curve.
         """
+        method = method.lower()
         if self._NO_CENSOR:
             method = (
-                "CoxSnell"
+                "coxsnell"
                 if method
-                in ["CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2"]
+                in ["coxsnell", "modified coxsnell-v1", "modified coxsnell-v2"]
                 else method
             )
 
@@ -1717,10 +1723,11 @@ class PointEvaluator:
             The total number of comparable pairs considered in the concordance calculation.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Harrell"
+            method = "harrell"
 
-        if method == "Margin":
+        if method == "margin":
             self._error_trainset("margin concordance")
 
         return concordance(
@@ -1764,11 +1771,12 @@ class PointEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self._pred_times,
@@ -1815,11 +1823,12 @@ class PointEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self._pred_times,

@@ -119,6 +119,7 @@ def check_monotonicity(
 
     if direction is None:
         return is_increasing or is_decreasing
+    direction = direction.lower()
     if direction == "increasing":
         return is_increasing
     if direction == "decreasing":
@@ -162,6 +163,9 @@ def make_monotonic(
     survival_curves: np.ndarray
         Monotonic probability curves with the same dimensionality as the input.
     """
+    method = method.lower()
+    direction = direction.lower()
+
     valid_methods = {"ceil", "floor", "bootstrap", "isotonic"}
     if method not in valid_methods:
         raise ValueError(
@@ -249,11 +253,12 @@ def make_monotonic(
 def interpolated_curve(
     times_coordinate: np.ndarray, curve: np.ndarray, interpolation: str = "Linear"
 ) -> Union[interp1d, PchipInterpolator]:
-    if interpolation == "Linear":
+    interpolation = interpolation.lower()
+    if interpolation == "linear":
         spline = interp1d(
             times_coordinate, curve, kind="linear", fill_value="extrapolate"
         )
-    elif interpolation == "Pchip":
+    elif interpolation == "pchip":
         spline = PchipInterpolator(times_coordinate, curve)
     else:
         raise ValueError("interpolation must be one of ['Linear', 'Pchip']")
@@ -482,13 +487,14 @@ def predict_rmst(
         survival_curves, times_coordinates
     )
 
-    if interpolation == "None":
+    interpolation = interpolation.lower()
+    if interpolation == "none":
         width = np.diff(time_grids, axis=1)
         areas = width * curves[:, :-1]
         rmst = np.sum(areas, axis=1)
-    elif interpolation == "Linear":
+    elif interpolation == "linear":
         rmst = trapezoid(curves, time_grids, axis=1)
-    elif interpolation == "Pchip":
+    elif interpolation == "pchip":
         rmst = np.empty(curves.shape[0])
         for i in range(curves.shape[0]):
             spline = PchipInterpolator(time_grids[i], curves[i])
@@ -632,6 +638,8 @@ def predict_median_st_ind(
 
     min_prob = min(survival_curve)
 
+    interpolation = interpolation.lower()
+
     if min_prob <= 0.5:
         idx_arr = np.where(survival_curve <= 0.5)[0]
 
@@ -643,14 +651,14 @@ def predict_median_st_ind(
                 times_coordinate[idx_after_median - 1],
                 times_coordinate[idx_after_median],
             )
-            if interpolation == "Linear":
+            if interpolation == "linear":
                 # linear interpolation to find the median time
                 p1, p2 = (
                     survival_curve[idx_after_median - 1],
                     survival_curve[idx_after_median],
                 )
                 median_st = t1 + (0.5 - p1) * (t2 - t1) / (p2 - p1)
-            elif interpolation == "Pchip":
+            elif interpolation == "pchip":
                 # reverse the array because the PchipInterpolator requires the x to be strictly increasing
                 spline = interpolated_curve(
                     times_coordinate, survival_curve, interpolation
@@ -755,9 +763,10 @@ def survival_to_quantile(
     if np.any(quantile_levels < 0) or np.any(quantile_levels >= 1):
         raise ValueError("`quantile_levels` must be in [0, 1).")
 
-    if interpolate == "Linear":
+    interpolate = interpolate.lower()
+    if interpolate == "linear":
         Interpolator = interp1d
-    elif interpolate == "Pchip":
+    elif interpolate == "pchip":
         Interpolator = PchipInterpolator
     else:
         raise ValueError(f"Unknown interpolation method: {interpolate}")
