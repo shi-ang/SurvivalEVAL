@@ -88,6 +88,32 @@ def test_prediction_utilities(evaluator_data):
     np.testing.assert_allclose(quantile_intervals, intervals)
 
 
+def test_survival_evaluator_rejects_prediction_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        SurvivalEvaluator(
+            pred_survs=np.ones((3, 3)),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            event_times=np.array([1.0, 2.0]),
+            event_indicators=np.array([1, 0]),
+        )
+
+
+def test_survival_evaluator_rejects_time_coordinate_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        SurvivalEvaluator(
+            pred_survs=np.array([1.0, 0.8, 0.5]),
+            time_coordinates=np.array(
+                [
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.5, 3.0],
+                    [0.0, 2.0, 4.0],
+                ]
+            ),
+            event_times=np.array([1.0, 2.0]),
+            event_indicators=np.array([1, 0]),
+        )
+
+
 def test_predict_interval_accepts_matching_quantile_range_and_coverage_level(
     evaluator_data,
 ):

@@ -96,11 +96,15 @@ class SurvivalEvaluator:
                 "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
             )
 
+        event_times, event_indicators = check_and_convert(event_times, event_indicators)
+        self._validate_prediction_sample_count(
+            pred_survs, time_coordinates, event_times.shape[0]
+        )
+
         self._pred_survs, self._time_coordinates = zero_padding(
             pred_survs, time_coordinates
         )
 
-        event_times, event_indicators = check_and_convert(event_times, event_indicators)
         self.event_times = event_times
         self.event_indicators = event_indicators
 
@@ -131,6 +135,30 @@ class SurvivalEvaluator:
             raise TypeError(
                 "Train set information is missing. "
                 "Evaluator cannot perform {} evaluation.".format(method_name)
+            )
+
+    @staticmethod
+    def _validate_prediction_sample_count(
+        pred_survs: np.ndarray,
+        time_coordinates: np.ndarray,
+        n_samples: int,
+    ):
+        sample_counts = {}
+        if pred_survs.ndim == 2:
+            sample_counts["pred_survs"] = pred_survs.shape[0]
+        if time_coordinates.ndim == 2:
+            sample_counts["time_coordinates"] = time_coordinates.shape[0]
+
+        mismatched_counts = {
+            name: count for name, count in sample_counts.items() if count != n_samples
+        }
+        if mismatched_counts:
+            count_details = ", ".join(
+                f"{name} has {count}" for name, count in mismatched_counts.items()
+            )
+            raise ValueError(
+                "The number of prediction rows must match the number of testing "
+                f"samples ({n_samples}); {count_details}."
             )
 
     @property

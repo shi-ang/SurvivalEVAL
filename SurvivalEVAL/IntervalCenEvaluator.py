@@ -89,11 +89,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
             )
 
+        left_limits, right_limits = check_and_convert(left_limits, right_limits)
+        self._validate_prediction_sample_count(
+            pred_survs, time_coordinates, left_limits.shape[0]
+        )
+
         self._pred_survs, self._time_coordinates = zero_padding(
             pred_survs, time_coordinates
         )
 
-        left_limits, right_limits = check_and_convert(left_limits, right_limits)
         if np.any(~np.isfinite(left_limits)) or np.any(left_limits < 0):
             raise ValueError("Testing left limits must be finite and non-negative.")
         if np.any(left_limits > right_limits):

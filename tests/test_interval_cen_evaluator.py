@@ -44,6 +44,32 @@ def test_h_statistic_interval_one_calibration_includes_prediction_one():
     np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
 
 
+def test_interval_cen_evaluator_rejects_prediction_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        IntervalCenEvaluator(
+            pred_survs=np.ones((3, 3)),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            left_limits=np.array([0.5, 1.5]),
+            right_limits=np.array([1.0, 2.0]),
+        )
+
+
+def test_interval_cen_evaluator_rejects_time_coordinate_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        IntervalCenEvaluator(
+            pred_survs=np.array([1.0, 0.8, 0.5]),
+            time_coordinates=np.array(
+                [
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.5, 3.0],
+                    [0.0, 2.0, 4.0],
+                ]
+            ),
+            left_limits=np.array([0.5, 1.5]),
+            right_limits=np.array([1.0, 2.0]),
+        )
+
+
 @pytest.fixture(scope="module")
 def interval_evaluator():
     df = _load_breast_data()
