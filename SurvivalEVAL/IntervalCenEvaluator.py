@@ -79,31 +79,16 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         interpolation: str, default: "Linear"
             Interpolation method for the survival curve. Options are "Linear" or "Pchip".
         """
-        pred_survs = check_and_convert(pred_survs)
-        time_coordinates = check_and_convert(time_coordinates)
-
-        self.ndim_time = time_coordinates.ndim
-        self.ndim_surv = pred_survs.ndim
-        if self.ndim_time == 1 and self.ndim_surv == 1:
-            raise TypeError(
-                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
-            )
-
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
-        self._validate_prediction_sample_count(
-            pred_survs, time_coordinates, left_limits.shape[0]
-        )
-
-        self._pred_survs, self._time_coordinates = zero_padding(
-            pred_survs, time_coordinates
-        )
-
         if np.any(~np.isfinite(left_limits)) or np.any(left_limits < 0):
             raise ValueError("Testing left limits must be finite and non-negative.")
         if np.any(left_limits > right_limits):
             raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
         self.right_limits = right_limits
+        self.set_prediction_inputs(
+            pred_survs=pred_survs, time_coordinates=time_coordinates
+        )
 
         if (train_left_limits is not None) and (train_right_limits is not None):
             train_left_limits, train_right_limits = check_and_convert(

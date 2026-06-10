@@ -86,27 +86,12 @@ class SurvivalEvaluator:
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
-        pred_survs = check_and_convert(pred_survs)
-        time_coordinates = check_and_convert(time_coordinates)
-
-        self.ndim_time = time_coordinates.ndim
-        self.ndim_surv = pred_survs.ndim
-        if self.ndim_time == 1 and self.ndim_surv == 1:
-            raise TypeError(
-                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
-            )
-
         event_times, event_indicators = check_and_convert(event_times, event_indicators)
-        self._validate_prediction_sample_count(
-            pred_survs, time_coordinates, event_times.shape[0]
-        )
-
-        self._pred_survs, self._time_coordinates = zero_padding(
-            pred_survs, time_coordinates
-        )
-
         self.event_times = event_times
         self.event_indicators = event_indicators
+        self.set_prediction_inputs(
+            pred_survs=pred_survs, time_coordinates=time_coordinates
+        )
 
         if (train_event_times is not None) and (train_event_indicators is not None):
             train_event_times, train_event_indicators = check_and_convert(
@@ -161,6 +146,54 @@ class SurvivalEvaluator:
                 f"samples ({n_samples}); {count_details}."
             )
 
+    def _testing_sample_count(self) -> int:
+        if hasattr(self, "left_limits"):
+            return self.left_limits.shape[0]
+        return self.event_times.shape[0]
+
+    def set_prediction_inputs(
+        self,
+        pred_survs: Optional[NumericArrayLike] = None,
+        time_coordinates: Optional[NumericArrayLike] = None,
+    ):
+        """
+        Reset predicted survival curves and/or their time coordinates.
+
+        Prefer this method when updating both inputs together, because the
+        pair is validated, zero-padded, and cached-property invalidated once.
+        Property setters remain available for changing only one input.
+        """
+        if pred_survs is None and time_coordinates is None:
+            raise ValueError(
+                "Please provide at least one of 'pred_survs' or 'time_coordinates'."
+            )
+
+        pred_survs = (
+            self._pred_survs if pred_survs is None else check_and_convert(pred_survs)
+        )
+        time_coordinates = (
+            self._time_coordinates
+            if time_coordinates is None
+            else check_and_convert(time_coordinates)
+        )
+
+        ndim_surv = pred_survs.ndim
+        ndim_time = time_coordinates.ndim
+        if ndim_time == 1 and ndim_surv == 1:
+            raise TypeError(
+                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
+            )
+
+        self._validate_prediction_sample_count(
+            pred_survs, time_coordinates, self._testing_sample_count()
+        )
+        self._pred_survs, self._time_coordinates = zero_padding(
+            pred_survs, time_coordinates
+        )
+        self.ndim_surv = self._pred_survs.ndim
+        self.ndim_time = self._time_coordinates.ndim
+        self._clear_cache()
+
     @property
     def pred_survs(self):
         return self._pred_survs
@@ -168,8 +201,7 @@ class SurvivalEvaluator:
     @pred_survs.setter
     def pred_survs(self, val: NumericArrayLike):
         print("Setter called. Resetting predicted curves for this evaluator.")
-        self._pred_survs = check_and_convert(val)
-        self._clear_cache()
+        self.set_prediction_inputs(pred_survs=val)
 
     @property
     def time_coordinates(self):
@@ -178,8 +210,7 @@ class SurvivalEvaluator:
     @time_coordinates.setter
     def time_coordinates(self, val: NumericArrayLike):
         print("Setter called. Resetting time coordinates for this evaluator.")
-        self._time_coordinates = check_and_convert(val)
-        self._clear_cache()
+        self.set_prediction_inputs(time_coordinates=val)
 
     @cached_property
     def predicted_event_times(self):
