@@ -110,9 +110,12 @@ def check_monotonicity(
     if array.ndim not in (1, 2):
         raise ValueError("The input array must be 1-D or 2-D.")
 
-    differences = np.diff(array, axis=-1)
-    is_increasing = bool(np.all(differences >= 0))
-    is_decreasing = bool(np.all(differences <= 0))
+    # Direct adjacent comparisons handle repeated infinities; np.diff would
+    # turn inf - inf into nan and falsely reject monotonic arrays.
+    adjacent_left = array[..., :-1]
+    adjacent_right = array[..., 1:]
+    is_increasing = bool(np.all(adjacent_right >= adjacent_left))
+    is_decreasing = bool(np.all(adjacent_right <= adjacent_left))
 
     if direction is None:
         return is_increasing or is_decreasing
@@ -776,6 +779,13 @@ def survival_to_quantile(
         # Build monotone x for interpolator: unique CDF values (keep first)
         cdf_i_unique, keep_idx = np.unique(cdf_i, return_index=True)
         t_i_unique = t_i[keep_idx]
+        max_cdf = cdf_i_unique[-1]
+
+        if max_cdf <= 0:
+            # No observed CDF increase: F(t)=0 on the supplied grid, so only
+            # q=0 is reached at the origin; positive quantiles are undefined.
+            qpred[i, :] = np.where(quantile_levels == 0.0, 0.0, np.inf)
+            continue
 
         # If the first CDF value is >0, prepend (0, 0) to allow interpolation near q≈0
         if cdf_i_unique[0] > 0.0:
@@ -799,14 +809,9 @@ def survival_to_quantile(
         # Interpolate for all qs, then handle tail beyond observed max CDF
         qpred[i, :] = interp(quantile_levels)
 
-        max_cdf = cdf_i_unique[-1]
-        if max_cdf <= 0:
-            # degenerate case: no events observed; fall back to linear tail from origin
-            qpred[i, :] = quantile_levels / slope[i]
-        else:
-            beyond = np.where(quantile_levels > max_cdf)[0]
-            if beyond.size > 0:
-                qpred[i, beyond] = quantile_levels[beyond] / slope[i]
+        beyond = np.where(quantile_levels > max_cdf)[0]
+        if beyond.size > 0:
+            qpred[i, beyond] = quantile_levels[beyond] / slope[i]
 
     # Sanity checks
     if np.any(qpred < 0):

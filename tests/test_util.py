@@ -176,6 +176,15 @@ def test_check_monotonicity_checks_each_row_and_preserves_legacy_default():
     assert not check_monotonicity(increasing, direction="decreasing")
 
 
+def test_check_monotonicity_handles_repeated_infinities():
+    increasing = np.array([[0.0, np.inf, np.inf], [1.0, 2.0, np.inf]])
+    decreasing = np.array([[np.inf, np.inf, 2.0], [np.inf, 1.0, 1.0]])
+
+    assert check_monotonicity(increasing, direction="increasing")
+    assert check_monotonicity(decreasing, direction="decreasing")
+    assert not check_monotonicity(increasing, direction="decreasing")
+
+
 def test_check_monotonicity_rejects_unknown_direction():
     with pytest.raises(ValueError, match="direction"):
         check_monotonicity([0.0, 1.0], direction="sideways")
@@ -406,6 +415,16 @@ def test_survival_to_quantile_rejects_decreasing_quantile_levels():
             time_coordinates=[[0.0, 1.0, 2.0]],
             quantile_levels=[0.5, 0.25],
         )
+
+
+def test_survival_to_quantile_handles_all_one_survival_curve_with_pchip():
+    result = survival_to_quantile(
+        surv_prob=[[1.0, 1.0, 1.0]],
+        time_coordinates=[[0.0, 1.0, 2.0]],
+        quantile_levels=[0.0, 0.25, 0.5],
+    )
+
+    np.testing.assert_allclose(result, [[0.0, np.inf, np.inf]])
 
 
 def test_auprc_rejects_decreasing_cdf():
