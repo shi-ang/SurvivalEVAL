@@ -148,7 +148,8 @@ def make_monotonic(
     seed: int
         Random seed for bootstrapping. Default: None.
     num_bs: int
-        Number of bootstrap samples. Default: None. If None, then num_bs = 10 * num_times.
+        Number of bootstrap samples. Default: None. If None, then
+        ``num_bs = max(10 * num_times, 1000)``.
     direction: {"increasing", "decreasing"}
         Required monotonic direction. Survival curves are decreasing, while
         cumulative distribution functions are increasing. Default: ``"decreasing"``.
@@ -816,41 +817,6 @@ def survival_to_quantile(
         )
 
     return qpred
-
-
-def stratified_folds_survival(
-    dataset: pd.DataFrame,
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-    number_folds: int = 5,
-):
-    event_times, event_indicators = event_times.tolist(), event_indicators.tolist()
-    assert len(event_indicators) == len(event_times)
-
-    indicators_and_times = list(zip(event_indicators, event_times))
-    sorted_idx = [
-        i[0]
-        for i in sorted(
-            enumerate(indicators_and_times), key=lambda v: (v[1][0], v[1][1])
-        )
-    ]
-
-    folds = [
-        [sorted_idx[0]],
-        [sorted_idx[1]],
-        [sorted_idx[2]],
-        [sorted_idx[3]],
-        [sorted_idx[4]],
-    ]
-    for i in range(5, len(sorted_idx)):
-        fold_number = i % number_folds
-        folds[fold_number].append(sorted_idx[i])
-
-    training_sets = [dataset.drop(folds[i], axis=0) for i in range(number_folds)]
-    testing_sets = [dataset.iloc[folds[i], :] for i in range(number_folds)]
-
-    cross_validation_set = list(zip(training_sets, testing_sets))
-    return cross_validation_set
 
 
 def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> float:

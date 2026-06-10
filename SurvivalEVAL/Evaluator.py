@@ -2216,6 +2216,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
+        quantile_levels = check_and_convert(quantile_levels)
         survival_level = 1 - quantile_levels
         super(QuantileRegEvaluator, self).__init__(
             survival_level,

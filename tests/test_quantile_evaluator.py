@@ -78,6 +78,17 @@ def test_quantile_prediction_utilities(quantile_evaluator):
     assert np.all(intervals[:, 0] <= intervals[:, 1])
 
 
+def test_quantile_evaluator_accepts_list_quantile_levels():
+    evaluator = QuantileRegEvaluator(
+        pred_regs=np.array([[0.0, 2.0], [0.0, 3.0]]),
+        quantile_levels=[0.25, 0.5],
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    np.testing.assert_allclose(evaluator.pred_survs, [0.75, 0.5])
+
+
 def test_quantile_concordance_and_auc(quantile_evaluator):
     evaluator = quantile_evaluator["evaluator"]
 
