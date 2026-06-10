@@ -229,12 +229,13 @@ def brier_score_ic(
         else:
             raise ValueError(f"Method {method} is not supported.")
         # exam on non-bad indices
-        # bad indices are those (1) the target time is within the interval and (2) the left and right survival
+        # bad indices are those (1) the target time is strictly inside the
+        # interval and (2) the left and right survival
         # probabilities are the same, which leads to zeros in both numerator and denominator in survival_status
         bad = (
             (left_probs == right_probs)
             & (left_limits < target_time)
-            & (target_time <= right_limits)
+            & (target_time < right_limits)
         )
         if np.sum(bad) > 0:
             left_limits = left_limits[~bad]
@@ -248,8 +249,10 @@ def brier_score_ic(
         # supress warnings for divide by zero
         with np.errstate(divide="ignore", invalid="ignore"):
             survival_status = (target_probs - right_probs) / (left_probs - right_probs)
-        survival_status[right_limits < target_time] = 0
+        # Intervals are left-open, right-closed: (left, right].
+        # At t <= left the subject is alive; at t >= right the event has occurred.
         survival_status[left_limits >= target_time] = 1
+        survival_status[right_limits <= target_time] = 0
 
         if np.any((survival_status < 0) | (survival_status > 1)):
             raise ValueError(
@@ -544,15 +547,15 @@ def brier_multiple_points_ic(
         # --------------------------------------------------------
         # 2B. Build Y_mat (fractional survival status) for every (i,j)
         # --------------------------------------------------------
-        # We'll follow your single-time logic:
+        # We'll follow the single-time logic:
         # survival_status = (S(t) - S(R)) / (S(L) - S(R))
-        # Then override based on position of t relative to [L,R].
+        # Then override based on position of t relative to (L,R].
         #
         # Edge cases:
-        # - If denominator is 0 *and* t is strictly inside (L,R], we can't define status. We'll drop those cells.
+        # - If denominator is 0 *and* t is strictly inside (L,R), we can't define status. We'll drop those cells.
         # - After override:
-        #       if t_j > R_i  -> 0
         #       if t_j <= L_i -> 1
+        #       if t_j >= R_i -> 0
         # This guarantees values in [0,1].
 
         denom = left_probs_mat - right_probs_mat
@@ -560,15 +563,16 @@ def brier_multiple_points_ic(
         with np.errstate(divide="ignore", invalid="ignore"):
             survival_status_mat = (target_probs_mat - right_probs_mat) / denom
 
-        # Apply boundary overrides
-        after_right_mask = time_mat > right_mat
+        # Intervals are left-open, right-closed: (left, right].
+        # Apply the right boundary last so exact intervals are dead at t == right.
+        at_or_after_right_mask = time_mat >= right_mat
         before_left_mask = time_mat <= left_mat
-        survival_status_mat[after_right_mask] = 0.0
         survival_status_mat[before_left_mask] = 1.0
+        survival_status_mat[at_or_after_right_mask] = 0.0
 
         # Identify "bad" cells:
-        # bad if denom == 0 AND t_j is within (L_i, R_i] (i.e. genuinely ambiguous)
-        inside_mask = (time_mat > left_mat) & (time_mat <= right_mat)
+        # bad if denom == 0 AND t_j is within (L_i, R_i) (i.e. genuinely ambiguous)
+        inside_mask = (time_mat > left_mat) & (time_mat < right_mat)
         bad_mask = (denom == 0.0) & inside_mask
 
         # sanity check: any out-of-range due to numerical issues?

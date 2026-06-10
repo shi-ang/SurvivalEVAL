@@ -90,3 +90,37 @@ def test_brier_multiple_points_ic_matches_single_uncensored() -> None:
     np.testing.assert_allclose(
         multi_scores, single_scores, rtol=1e-6, atol=1e-8, equal_nan=True
     )
+
+
+def test_brier_score_ic_tsouprou_treats_exact_event_time_as_dead() -> None:
+    train_left_limits = np.array([0.5, 1.0, 2.0])
+    train_right_limits = np.array([0.5, 1.0, 2.0])
+
+    score = brier_score_ic(
+        preds=np.array([0.0]),
+        left_limits=np.array([1.0]),
+        right_limits=np.array([1.0]),
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+        target_time=1.0,
+        method="Tsouprou-marginal",
+    )
+
+    assert score == pytest.approx(0.0)
+
+
+def test_brier_multiple_points_ic_tsouprou_uses_open_closed_interval() -> None:
+    train_left_limits = np.array([0.5, 1.0, 2.0])
+    train_right_limits = np.array([0.5, 1.0, 2.0])
+
+    scores = brier_multiple_points_ic(
+        pred_mat=np.array([[1.0, 0.0, 0.0]]),
+        left_limits=np.array([1.0]),
+        right_limits=np.array([1.0]),
+        target_times=np.array([0.5, 1.0, 1.5]),
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+        method="Tsouprou-marginal",
+    )
+
+    np.testing.assert_allclose(scores, [0.0, 0.0, 0.0])
