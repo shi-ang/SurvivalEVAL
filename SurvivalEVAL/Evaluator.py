@@ -684,12 +684,15 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        target_times: np.ndarray, default: None
+        target_times: np.ndarray
             The specific time points for which to estimate the Brier scores.
         IPCW_weighted: bool, default = True
             Whether to use IPCW weighting for the Brier score.
-        :return:
-            Values of multiple Brier scores.
+
+        Returns
+        -------
+        brier_scores: np.ndarray
+            Values of multiple Brier scores, in the same order as `target_times`.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
         if self._NO_CENSOR:
