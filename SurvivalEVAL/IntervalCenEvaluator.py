@@ -360,11 +360,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         Returns
         -------
         ibs: float
-            The Integrated Brier Score.
-        figure: plt.Figure
-            The figure object containing the Brier score curve.
-        axes: plt.Axes
-            The axes object containing the Brier score curve.
+            The Integrated Brier Score when `draw_figure` is False.
+        result: tuple[float, tuple[plt.Figure, plt.Axes]]
+            When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
         # Check if there is no censored instance, if so, naive method is applied
         if self._NO_CENSOR:

@@ -752,7 +752,9 @@ class SurvivalEvaluator:
         Returns
         -------
         ibs: float
-            The integrated Brier score.
+            The integrated Brier score when `draw_figure` is False.
+        result: tuple[float, tuple[plt.Figure, plt.Axes]]
+            When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
         if self._NO_CENSOR:
