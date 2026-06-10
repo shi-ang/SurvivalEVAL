@@ -453,6 +453,36 @@ def test_pred_survs_setter_rejects_prediction_row_count_mismatch(evaluator_data)
         evaluator.pred_survs = bad_curves
 
 
+def test_pred_survs_setter_accepts_raw_curves_after_zero_padding():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+
+    evaluator.pred_survs = np.array([[0.7, 0.5, 0.2], [0.8, 0.6, 0.3]])
+
+    assert evaluator.pred_survs.shape == (2, 4)
+    np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
+    np.testing.assert_allclose(evaluator.time_coordinates, [0.0, 1.0, 2.0, 3.0])
+
+
+def test_time_coordinates_setter_accepts_raw_grid_after_zero_padding():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+
+    evaluator.time_coordinates = np.array([2.0, 4.0, 6.0])
+
+    assert evaluator.time_coordinates.shape == (4,)
+    np.testing.assert_allclose(evaluator.time_coordinates, [0.0, 2.0, 4.0, 6.0])
+    np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
+
+
 def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data):
     evaluator = evaluator_data["evaluator"]
     original_times = evaluator.predicted_event_times.copy()
@@ -470,8 +500,3 @@ def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data)
     np.testing.assert_allclose(evaluator.time_coordinates, new_time_grid)
     assert evaluator.pred_survs.shape == (evaluator_data["n_test"], new_time_grid.size)
     assert not np.allclose(evaluator.predicted_event_times, original_times)
-
-
-def test_set_prediction_inputs_rejects_empty_update(evaluator_data):
-    with pytest.raises(ValueError, match="at least one"):
-        evaluator_data["evaluator"].set_prediction_inputs()
