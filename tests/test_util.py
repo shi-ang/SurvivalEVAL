@@ -10,6 +10,8 @@ from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_monotonicity,
     make_monotonic,
+    predict_multi_probs_from_curve,
+    predict_prob_from_curve,
     survival_to_quantile,
     zero_padding,
 )
@@ -51,6 +53,64 @@ def test_align_curve_and_time_coordinates_accepts_external_sample_count():
     )
 
     assert curves.shape == times.shape == (2, 3)
+
+
+def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
+    curve = np.array([0.8, 0.5, 0.1])
+    time_coordinates = np.array([1.0, 2.0, 3.0])
+
+    with pytest.warns(UserWarning, match="first time coordinate"):
+        padded_curve, padded_times = zero_padding(curve, time_coordinates)
+
+    np.testing.assert_allclose(padded_curve, [1.0, 0.8, 0.5, 0.1])
+    np.testing.assert_allclose(padded_times, [0.0, 1.0, 2.0, 3.0])
+    assert isinstance(padded_curve, np.ndarray)
+    assert isinstance(padded_times, np.ndarray)
+    assert padded_curve.ndim == 1
+
+
+@pytest.mark.parametrize(
+    ("pred_survs", "time_coordinates", "message"),
+    [
+        ([0.8, 0.5, 0.1], np.array([1.0, 2.0, 3.0]), "pred_survs"),
+        (np.array([0.8, 0.5, 0.1]), [1.0, 2.0, 3.0], "time_coordinates"),
+        (
+            np.array(["0.8", "0.5", "0.1"]),
+            np.array([1.0, 2.0, 3.0]),
+            "pred_survs",
+        ),
+        (
+            np.array([0.8, 0.5, 0.1]),
+            np.array(["1.0", "2.0", "3.0"]),
+            "time_coordinates",
+        ),
+    ],
+)
+def test_zero_padding_rejects_invalid_input_datatypes(
+    pred_survs, time_coordinates, message
+):
+    with pytest.raises(TypeError, match=message):
+        zero_padding(pred_survs, time_coordinates)
+
+
+def test_zero_padding_rejects_empty_inputs():
+    with pytest.raises(ValueError, match="non-empty"):
+        zero_padding(np.array([]), np.array([]))
+
+
+def test_zero_padding_rejects_negative_time_coordinates():
+    with pytest.raises(ValueError, match="non-negative"):
+        zero_padding(np.array([1.0, 0.8, 0.5]), np.array([-1.0, 1.0, 2.0]))
+
+
+def test_zero_padding_preserves_1d_curve_that_already_starts_at_zero():
+    curve = np.array([0.8, 0.5, 0.1])
+    time_coordinates = np.array([0.0, 2.0, 3.0])
+
+    padded_curve, padded_times = zero_padding(curve, time_coordinates)
+
+    np.testing.assert_allclose(padded_curve, curve)
+    np.testing.assert_allclose(padded_times, time_coordinates)
 
 
 @pytest.mark.parametrize(
@@ -251,6 +311,65 @@ def test_make_monotonic_bootstrap_supports_increasing_cdf():
 def test_make_monotonic_rejects_invalid_inputs(curves, times, kwargs, message):
     with pytest.raises(ValueError, match=message):
         make_monotonic(curves, times, **kwargs)
+
+
+def test_predict_prob_from_curve_pads_time_grid_starting_after_zero():
+    with pytest.warns(UserWarning, match="first time coordinate"):
+        prob = predict_prob_from_curve(
+            survival_curve=np.array([0.8, 0.5, 0.2]),
+            times_coordinate=np.array([1.0, 2.0, 3.0]),
+            target_time=0.5,
+        )
+
+    assert prob == pytest.approx(0.9)
+
+
+def test_predict_prob_from_curve_accepts_curve_below_one_at_origin():
+    prob = predict_prob_from_curve(
+        survival_curve=np.array([0.9, 0.8, 0.5]),
+        times_coordinate=np.array([0.0, 1.0, 2.0]),
+        target_time=1.0,
+    )
+
+    assert prob == pytest.approx(0.8)
+
+
+def test_predict_prob_from_curve_rejects_negative_target_time():
+    with pytest.raises(ValueError, match="non-negative"):
+        predict_prob_from_curve(
+            survival_curve=np.array([1.0, 0.8, 0.5]),
+            times_coordinate=np.array([0.0, 1.0, 2.0]),
+            target_time=-0.1,
+        )
+
+
+def test_predict_prob_from_curve_rejects_negative_time_coordinates():
+    with pytest.raises(ValueError, match="non-negative"):
+        predict_prob_from_curve(
+            survival_curve=np.array([1.0, 0.8, 0.5]),
+            times_coordinate=np.array([-1.0, 1.0, 2.0]),
+            target_time=1.0,
+        )
+
+
+def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
+    with pytest.warns(UserWarning, match="first time coordinate"):
+        probs = predict_multi_probs_from_curve(
+            survival_curve=np.array([0.8, 0.5, 0.2]),
+            times_coordinate=np.array([1.0, 2.0, 3.0]),
+            target_times=np.array([0.0, 0.5, 1.0]),
+        )
+
+    np.testing.assert_allclose(probs, [1.0, 0.9, 0.8])
+
+
+def test_predict_multi_probs_from_curve_rejects_negative_target_times():
+    with pytest.raises(ValueError, match="non-negative"):
+        predict_multi_probs_from_curve(
+            survival_curve=np.array([1.0, 0.8, 0.5]),
+            times_coordinate=np.array([0.0, 1.0, 2.0]),
+            target_times=np.array([0.5, -0.1]),
+        )
 
 
 def test_survival_to_quantile_rejects_increasing_survival_probabilities():
