@@ -362,7 +362,6 @@ def predict_multi_probs_from_curve(
         raise ValueError("target_times must be a 1-D array.")
     if np.any(target_times < 0):
         raise ValueError("target_times must be non-negative.")
-    target_times = target_times.tolist()
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
@@ -375,9 +374,10 @@ def predict_multi_probs_from_curve(
     # Above the fitted time grid, use the survival tail fit described above;
     # otherwise use the configured interpolator.
     predict_probabilities = np.array(spline(target_times))
-    for i, target_time in enumerate(target_times):
-        if target_time > max_time:
-            predict_probabilities[i] = max(slope * target_time + 1, 0)
+    after_grid = target_times > max_time
+    predict_probabilities[after_grid] = np.maximum(
+        slope * target_times[after_grid] + 1, 0
+    )
 
     return predict_probabilities
 
