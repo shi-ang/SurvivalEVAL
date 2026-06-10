@@ -332,8 +332,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             across train + test.
 
             If both `num_points` and `target_times` are None:
-            - We try to infer `target_times` from the unique censoring times in the *test* set.
-            (This matches your old behavior.)
+            - We infer `target_times` from the unique finite left and right interval
+              endpoints in the test set.
 
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
@@ -444,7 +444,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             target_times = np.linspace(0.0, max_target_time, num_points)
             time_range = max_target_time  # because we started at 0
 
-        # Case 3: neither provided → infer from the left/right limits of censored test samples, excluding infs
+        # Case 3: neither provided -> infer from finite test interval endpoints.
         else:
             target_times = np.unique(
                 np.concatenate(
@@ -456,7 +456,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
             if target_times.size < 2:
-                # (old behavior raised if no censor data at all)
                 raise ValueError(
                     "Could not infer `target_times` from testing samples "
                     "(e.g., no/too-few test points). "
@@ -524,8 +523,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             across train + test.
 
             If both `num_points` and `target_times` are None:
-            - We try to infer `target_times` from the unique censoring times in the *test* set.
-            (This matches your old behavior.)
+            - We infer `target_times` from the unique finite left and right interval
+              endpoints in the test set.
 
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
