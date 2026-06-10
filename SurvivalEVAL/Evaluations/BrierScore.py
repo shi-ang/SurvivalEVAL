@@ -52,6 +52,10 @@ def single_brier_score(
 
     event_indicators = event_indicators.astype(bool)
     # train_event_indicators = train_event_indicators.astype(bool)
+    event_before_or_at_target = (event_times <= target_time) & event_indicators
+    event_free_at_target = (event_times > target_time) | (
+        (event_times == target_time) & ~event_indicators
+    )
 
     if ipcw:
         inverse_train_event_indicators = 1 - train_event_indicators
@@ -62,17 +66,20 @@ def single_brier_score(
         ipc_pred[ipc_pred == 0] = np.inf
         # Category one calculates IPCW weight at observed time point.
         # Category one is individuals with event time lower than the time of interest and were NOT censored.
-        weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
+        weight_cat1 = event_before_or_at_target / ipc_pred
         # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
         # contain both censored and uncensored individuals.
-        weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
+        ipc_target_pred = ipc_model.predict(target_time)
+        if ipc_target_pred == 0:
+            ipc_target_pred = np.inf
+        weight_cat2 = event_free_at_target / ipc_target_pred
         # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = (event_times <= target_time) & event_indicators
-        weight_cat2 = event_times > target_time
+        weight_cat1 = event_before_or_at_target
+        weight_cat2 = event_free_at_target
 
     b_score = (
         np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
@@ -319,6 +326,12 @@ def brier_multiple_points(
         event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1
     )
     event_indicators_mat = event_indicators_mat.astype(bool)
+    event_before_or_at_target = (
+        event_times_mat <= target_times_mat
+    ) & event_indicators_mat
+    event_free_at_target = (event_times_mat > target_times_mat) | (
+        (event_times_mat == target_times_mat) & ~event_indicators_mat
+    )
 
     if ipcw:
         if train_event_times is None or train_event_indicators is None:
@@ -335,9 +348,7 @@ def brier_multiple_points(
         ipc_pred = ipc_model.predict(event_times_mat)
         # Catch if denominator is 0.
         ipc_pred[ipc_pred == 0] = np.inf
-        weight_cat1 = (
-            (event_times_mat <= target_times_mat) & event_indicators_mat
-        ) / ipc_pred
+        weight_cat1 = event_before_or_at_target / ipc_pred
         # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
@@ -345,12 +356,12 @@ def brier_multiple_points(
         ipc_target_pred = ipc_model.predict(target_times_mat)
         # Catch if denominator is 0.
         ipc_target_pred[ipc_target_pred == 0] = np.inf
-        weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
+        weight_cat2 = event_free_at_target / ipc_target_pred
         # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = (event_times_mat <= target_times_mat) & event_indicators_mat
-        weight_cat2 = event_times_mat > target_times_mat
+        weight_cat1 = event_before_or_at_target
+        weight_cat2 = event_free_at_target
 
     ipcw_square_error_mat = (
         np.square(pred_mat) * weight_cat1 + np.square(1 - pred_mat) * weight_cat2

@@ -10,6 +10,40 @@ from SurvivalEVAL.Evaluations.BrierScore import (
 
 
 @pytest.mark.parametrize("ipcw", [True, False])
+def test_single_brier_score_treats_censored_at_target_time_as_event_free(
+    ipcw: bool,
+) -> None:
+    score = single_brier_score(
+        preds=np.array([0.2, 0.8, 0.9]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.array([1, 0, 0]),
+        train_event_times=np.array([4.0, 5.0, 6.0]),
+        train_event_indicators=np.array([1, 1, 1]),
+        target_time=2.0,
+        ipcw=ipcw,
+    )
+
+    assert score == pytest.approx(0.03)
+
+
+@pytest.mark.parametrize("ipcw", [True, False])
+def test_brier_multiple_points_treats_censored_at_target_time_as_event_free(
+    ipcw: bool,
+) -> None:
+    scores = brier_multiple_points(
+        pred_mat=np.array([[0.2], [0.8], [0.9]]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.array([1, 0, 0]),
+        train_event_times=np.array([4.0, 5.0, 6.0]),
+        train_event_indicators=np.array([1, 1, 1]),
+        target_times=np.array([2.0]),
+        ipcw=ipcw,
+    )
+
+    np.testing.assert_allclose(scores, [0.03])
+
+
+@pytest.mark.parametrize("ipcw", [True, False])
 def test_brier_multiple_points_matches_single(ipcw: bool) -> None:
     pred_mat = np.array(
         [
