@@ -60,18 +60,19 @@ class CopulaGraphic:
         ]
 
         event_diff = self.population_count - self.events
+        type = type.lower()
 
         with np.errstate(divide="ignore"):
             # ignore division by zero warnings,
             # such warnings are expected when the last time point has an event so the event_diff is 0.
             # but we will set the last point to 0 anyway.
-            if type == "Clayton":
+            if type == "clayton":
                 diff_ = (event_diff / self.n_samples) ** (-alpha) - (
                     self.population_count / self.n_samples
                 ) ** (-alpha)
                 diff_[-1] = 0
                 self.survival_probabilities = (1.0 + np.cumsum(diff_)) ** (-1.0 / alpha)
-            elif type == "Gumbel":
+            elif type == "gumbel":
                 diff_ = (-np.log(event_diff / self.n_samples)) ** (alpha + 1) - (
                     -np.log(self.population_count / self.n_samples)
                 ) ** (alpha + 1)
@@ -79,7 +80,7 @@ class CopulaGraphic:
                 self.survival_probabilities = np.exp(
                     -np.cumsum(diff_) ** (1 / (1 + alpha))
                 )
-            elif type == "Frank":
+            elif type == "frank":
                 log_diff_ = np.log(
                     (np.exp(-alpha * event_diff / self.n_samples) - 1)
                     / (np.exp(-alpha * self.population_count / self.n_samples) - 1)

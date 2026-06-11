@@ -86,23 +86,12 @@ class SurvivalEvaluator:
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
-        pred_survs = check_and_convert(pred_survs)
-        time_coordinates = check_and_convert(time_coordinates)
-
-        self.ndim_time = time_coordinates.ndim
-        self.ndim_surv = pred_survs.ndim
-        if self.ndim_time == 1 and self.ndim_surv == 1:
-            raise TypeError(
-                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
-            )
-
-        self._pred_survs, self._time_coordinates = zero_padding(
-            pred_survs, time_coordinates
-        )
-
         event_times, event_indicators = check_and_convert(event_times, event_indicators)
         self.event_times = event_times
         self.event_indicators = event_indicators
+        self.set_prediction_inputs(
+            pred_survs=pred_survs, time_coordinates=time_coordinates
+        )
 
         if (train_event_times is not None) and (train_event_indicators is not None):
             train_event_times, train_event_indicators = check_and_convert(
@@ -111,11 +100,12 @@ class SurvivalEvaluator:
         self.train_event_times = train_event_times
         self.train_event_indicators = train_event_indicators
 
-        if predict_time_method == "Median":
+        predict_time_method = predict_time_method.lower()
+        if predict_time_method == "median":
             self.predict_time_method = predict_median_st
-        elif predict_time_method == "Mean":
+        elif predict_time_method == "mean":
             self.predict_time_method = predict_mean_st
-        elif predict_time_method == "RMST":
+        elif predict_time_method == "rmst":
             self.predict_time_method = predict_rmst
         else:
             error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
@@ -132,6 +122,67 @@ class SurvivalEvaluator:
                 "Evaluator cannot perform {} evaluation.".format(method_name)
             )
 
+    @staticmethod
+    def _validate_prediction_sample_count(
+        pred_survs: np.ndarray,
+        time_coordinates: np.ndarray,
+        n_samples: int,
+    ):
+        sample_counts = {}
+        if pred_survs.ndim == 2:
+            sample_counts["pred_survs"] = pred_survs.shape[0]
+        if time_coordinates.ndim == 2:
+            sample_counts["time_coordinates"] = time_coordinates.shape[0]
+
+        mismatched_counts = {
+            name: count for name, count in sample_counts.items() if count != n_samples
+        }
+        if mismatched_counts:
+            count_details = ", ".join(
+                f"{name} has {count}" for name, count in mismatched_counts.items()
+            )
+            raise ValueError(
+                "The number of prediction rows must match the number of testing "
+                f"samples ({n_samples}); {count_details}."
+            )
+
+    def _testing_sample_count(self) -> int:
+        if hasattr(self, "left_limits"):
+            return self.left_limits.shape[0]
+        return self.event_times.shape[0]
+
+    def set_prediction_inputs(
+        self,
+        pred_survs: NumericArrayLike,
+        time_coordinates: NumericArrayLike,
+    ):
+        """
+        Reset predicted survival curves and their time coordinates together.
+
+        Prefer this method when updating both inputs together, because the
+        pair is validated, zero-padded, and cached-property invalidated once.
+        Property setters remain available for changing only one input.
+        """
+        pred_survs = check_and_convert(pred_survs)
+        time_coordinates = check_and_convert(time_coordinates)
+
+        ndim_surv = pred_survs.ndim
+        ndim_time = time_coordinates.ndim
+        if ndim_time == 1 and ndim_surv == 1:
+            raise TypeError(
+                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
+            )
+
+        self._validate_prediction_sample_count(
+            pred_survs, time_coordinates, self._testing_sample_count()
+        )
+        self._pred_survs, self._time_coordinates = zero_padding(
+            pred_survs, time_coordinates
+        )
+        self.ndim_surv = self._pred_survs.ndim
+        self.ndim_time = self._time_coordinates.ndim
+        self._clear_cache()
+
     @property
     def pred_survs(self):
         return self._pred_survs
@@ -139,8 +190,18 @@ class SurvivalEvaluator:
     @pred_survs.setter
     def pred_survs(self, val: NumericArrayLike):
         print("Setter called. Resetting predicted curves for this evaluator.")
-        self._pred_survs = check_and_convert(val)
-        self._clear_cache()
+        pred_survs = check_and_convert(val)
+        # The stored grid may already include a zero-time column inserted by
+        # zero_padding. Accept raw replacement curves by adding the matching
+        # survival-at-zero column before validating curve/grid lengths.
+        if (
+            self._time_coordinates.shape[-1] == pred_survs.shape[-1] + 1
+            and np.all(np.isclose(self._time_coordinates[..., 0], 0.0))
+        ):
+            pred_survs = np.concatenate(
+                (np.ones((*pred_survs.shape[:-1], 1)), pred_survs), axis=-1
+            )
+        self.set_prediction_inputs(pred_survs, self._time_coordinates)
 
     @property
     def time_coordinates(self):
@@ -149,8 +210,19 @@ class SurvivalEvaluator:
     @time_coordinates.setter
     def time_coordinates(self, val: NumericArrayLike):
         print("Setter called. Resetting time coordinates for this evaluator.")
-        self._time_coordinates = check_and_convert(val)
-        self._clear_cache()
+        time_coordinates = check_and_convert(val)
+        # Symmetric one-sided update: if curves are already zero-padded and
+        # the replacement grid is raw, prepend time zero so the pair remains
+        # aligned before the shared validation path runs.
+        if (
+            self._pred_survs.shape[-1] == time_coordinates.shape[-1] + 1
+            and not np.all(np.isclose(time_coordinates[..., 0], 0.0))
+        ):
+            time_coordinates = np.concatenate(
+                (np.zeros((*time_coordinates.shape[:-1], 1)), time_coordinates),
+                axis=-1,
+            )
+        self.set_prediction_inputs(self._pred_survs, time_coordinates)
 
     @cached_property
     def predicted_event_times(self):
@@ -569,10 +641,11 @@ class SurvivalEvaluator:
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Harrell"
+            method = "harrell"
 
-        if method == "Margin":
+        if method == "margin":
             self._error_trainset("margin concordance")
 
         return concordance(
@@ -684,12 +757,15 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        target_times: np.ndarray, default: None
+        target_times: np.ndarray
             The specific time points for which to estimate the Brier scores.
         IPCW_weighted: bool, default = True
             Whether to use IPCW weighting for the Brier score.
-        :return:
-            Values of multiple Brier scores.
+
+        Returns
+        -------
+        brier_scores: np.ndarray
+            Values of multiple Brier scores, in the same order as `target_times`.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
         if self._NO_CENSOR:
@@ -737,8 +813,8 @@ class SurvivalEvaluator:
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
-
-            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+            If unsorted, values are sorted ascending with a warning. You are
+            responsible for making sure they lie within the support of the model.
 
         IPCW_weighted: bool, default = True
             Whether to use IPCW weighting for the Brier score.
@@ -752,7 +828,9 @@ class SurvivalEvaluator:
         Returns
         -------
         ibs: float
-            The integrated Brier score.
+            The integrated Brier score when `draw_figure` is False.
+        result: tuple[float, tuple[plt.Figure, plt.Axes]]
+            When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
         if self._NO_CENSOR:
@@ -789,7 +867,7 @@ class SurvivalEvaluator:
                     "to perform numerical integration."
                 )
 
-            # We assume caller gave sorted points. If not, sort them.
+            # Sort explicit target times if needed, preserving the integration range.
             if not np.all(np.diff(target_times) >= 0):
                 warnings.warn("`target_times` is not sorted; sorting it now.")
                 target_times = np.sort(target_times)
@@ -839,6 +917,7 @@ class SurvivalEvaluator:
                 bs_dict[time_point] = b_score
             print("Brier scores for multiple time points are:\n", bs_dict)
 
+        integration_method = integration_method.lower()
         if integration_method == "trapz":
             integral_value = trapezoid(b_scores, target_times)
         elif integration_method == "simpson":
@@ -910,11 +989,12 @@ class SurvivalEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -961,11 +1041,12 @@ class SurvivalEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self.predicted_event_times,
@@ -1324,11 +1405,12 @@ class SurvivalEvaluator:
         residuals: np.ndarray
             The residuals calculated from the predicted survival curve.
         """
+        method = method.lower()
         if self._NO_CENSOR:
             method = (
-                "CoxSnell"
+                "coxsnell"
                 if method
-                in ["CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2"]
+                in ["coxsnell", "modified coxsnell-v1", "modified coxsnell-v2"]
                 else method
             )
 
@@ -1712,10 +1794,11 @@ class PointEvaluator:
             The total number of comparable pairs considered in the concordance calculation.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Harrell"
+            method = "harrell"
 
-        if method == "Margin":
+        if method == "margin":
             self._error_trainset("margin concordance")
 
         return concordance(
@@ -1759,11 +1842,12 @@ class PointEvaluator:
         mae_score: float
             The MAE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self._pred_times,
@@ -1810,11 +1894,12 @@ class PointEvaluator:
         mse_score: float
             The MSE score for the test set.
         """
+        method = method.lower()
         if self._NO_CENSOR:
-            method = "Uncensored"
+            method = "uncensored"
 
         if weighted is None:
-            weighted = method not in ("Uncensored", "Hinge")
+            weighted = method not in ("uncensored", "hinge")
 
         return mean_error(
             predicted_times=self._pred_times,
@@ -2211,6 +2296,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
+        quantile_levels = check_and_convert(quantile_levels)
         survival_level = 1 - quantile_levels
         super(QuantileRegEvaluator, self).__init__(
             survival_level,

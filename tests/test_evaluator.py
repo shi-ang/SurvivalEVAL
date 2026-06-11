@@ -88,6 +88,32 @@ def test_prediction_utilities(evaluator_data):
     np.testing.assert_allclose(quantile_intervals, intervals)
 
 
+def test_survival_evaluator_rejects_prediction_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        SurvivalEvaluator(
+            pred_survs=np.ones((3, 3)),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            event_times=np.array([1.0, 2.0]),
+            event_indicators=np.array([1, 0]),
+        )
+
+
+def test_survival_evaluator_rejects_time_coordinate_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        SurvivalEvaluator(
+            pred_survs=np.array([1.0, 0.8, 0.5]),
+            time_coordinates=np.array(
+                [
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.5, 3.0],
+                    [0.0, 2.0, 4.0],
+                ]
+            ),
+            event_times=np.array([1.0, 2.0]),
+            event_indicators=np.array([1, 0]),
+        )
+
+
 def test_predict_interval_accepts_matching_quantile_range_and_coverage_level(
     evaluator_data,
 ):
@@ -401,3 +427,76 @@ def test_pred_survs_setter_resets_cache(evaluator_data):
     evaluator.pred_survs = updated_curves
     refreshed_times = evaluator.predicted_event_times
     assert not np.allclose(refreshed_times, original_times)
+
+
+def test_time_coordinates_setter_refreshes_dimension_metadata(evaluator_data):
+    evaluator = evaluator_data["evaluator"]
+    per_sample_grid = np.tile(
+        evaluator.time_coordinates, (evaluator_data["n_test"], 1)
+    )
+
+    evaluator.time_coordinates = per_sample_grid
+
+    assert evaluator.ndim_time == 2
+    assert evaluator.predict_probability_from_curve(8.0).shape == (
+        evaluator_data["n_test"],
+    )
+
+
+def test_pred_survs_setter_rejects_prediction_row_count_mismatch(evaluator_data):
+    evaluator = evaluator_data["evaluator"]
+    bad_curves = np.ones(
+        (evaluator_data["n_test"] + 1, evaluator.time_coordinates.shape[-1])
+    )
+
+    with pytest.raises(ValueError, match="prediction rows"):
+        evaluator.pred_survs = bad_curves
+
+
+def test_pred_survs_setter_accepts_raw_curves_after_zero_padding():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+
+    evaluator.pred_survs = np.array([[0.7, 0.5, 0.2], [0.8, 0.6, 0.3]])
+
+    assert evaluator.pred_survs.shape == (2, 4)
+    np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
+    np.testing.assert_allclose(evaluator.time_coordinates, [0.0, 1.0, 2.0, 3.0])
+
+
+def test_time_coordinates_setter_accepts_raw_grid_after_zero_padding():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+
+    evaluator.time_coordinates = np.array([2.0, 4.0, 6.0])
+
+    assert evaluator.time_coordinates.shape == (4,)
+    np.testing.assert_allclose(evaluator.time_coordinates, [0.0, 2.0, 4.0, 6.0])
+    np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
+
+
+def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data):
+    evaluator = evaluator_data["evaluator"]
+    original_times = evaluator.predicted_event_times.copy()
+    new_time_grid = np.array([0.0, 1.0, 3.0, 7.0])
+    new_curves = np.exp(
+        -0.25 * np.outer(np.ones(evaluator_data["n_test"]), new_time_grid)
+    )
+
+    evaluator.set_prediction_inputs(
+        pred_survs=new_curves, time_coordinates=new_time_grid
+    )
+
+    assert evaluator.ndim_surv == 2
+    assert evaluator.ndim_time == 1
+    np.testing.assert_allclose(evaluator.time_coordinates, new_time_grid)
+    assert evaluator.pred_survs.shape == (evaluator_data["n_test"], new_time_grid.size)
+    assert not np.allclose(evaluator.predicted_event_times, original_times)

@@ -110,12 +110,16 @@ def check_monotonicity(
     if array.ndim not in (1, 2):
         raise ValueError("The input array must be 1-D or 2-D.")
 
-    differences = np.diff(array, axis=-1)
-    is_increasing = bool(np.all(differences >= 0))
-    is_decreasing = bool(np.all(differences <= 0))
+    # Direct adjacent comparisons handle repeated infinities; np.diff would
+    # turn inf - inf into nan and falsely reject monotonic arrays.
+    adjacent_left = array[..., :-1]
+    adjacent_right = array[..., 1:]
+    is_increasing = bool(np.all(adjacent_right >= adjacent_left))
+    is_decreasing = bool(np.all(adjacent_right <= adjacent_left))
 
     if direction is None:
         return is_increasing or is_decreasing
+    direction = direction.lower()
     if direction == "increasing":
         return is_increasing
     if direction == "decreasing":
@@ -148,7 +152,8 @@ def make_monotonic(
     seed: int
         Random seed for bootstrapping. Default: None.
     num_bs: int
-        Number of bootstrap samples. Default: None. If None, then num_bs = 10 * num_times.
+        Number of bootstrap samples. Default: None. If None, then
+        ``num_bs = max(10 * num_times, 1000)``.
     direction: {"increasing", "decreasing"}
         Required monotonic direction. Survival curves are decreasing, while
         cumulative distribution functions are increasing. Default: ``"decreasing"``.
@@ -158,6 +163,9 @@ def make_monotonic(
     survival_curves: np.ndarray
         Monotonic probability curves with the same dimensionality as the input.
     """
+    method = method.lower()
+    direction = direction.lower()
+
     valid_methods = {"ceil", "floor", "bootstrap", "isotonic"}
     if method not in valid_methods:
         raise ValueError(
@@ -245,11 +253,12 @@ def make_monotonic(
 def interpolated_curve(
     times_coordinate: np.ndarray, curve: np.ndarray, interpolation: str = "Linear"
 ) -> Union[interp1d, PchipInterpolator]:
-    if interpolation == "Linear":
+    interpolation = interpolation.lower()
+    if interpolation == "linear":
         spline = interp1d(
             times_coordinate, curve, kind="linear", fill_value="extrapolate"
         )
-    elif interpolation == "Pchip":
+    elif interpolation == "pchip":
         spline = PchipInterpolator(times_coordinate, curve)
     else:
         raise ValueError("interpolation must be one of ['Linear', 'Pchip']")
@@ -264,18 +273,22 @@ def predict_prob_from_curve(
 ) -> float:
     """
     Predict the probability of survival at a given time point from the survival curve. The survival curve is
-    interpolated using the specified interpolation method ('Linear' or 'Pchip'). If the target time is outside the
-    range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time
-    point.
+    interpolated using the specified interpolation method ('Linear' or 'Pchip').
+    If the input time grid does not start at 0, a time-zero point with survival
+    probability 1 is prepended before interpolation.
+    If the target time is greater than the largest time coordinate, the probability
+    is extrapolated by the linear function through (0, 1) and the last grid point.
 
     Parameters
     ----------
     survival_curve: np.ndarray
         Survival curve. 1-D array of survival probabilities.
     times_coordinate: np.ndarray
-        Time points corresponding to the survival curve. 1-D array of time points.
+        Time points corresponding to the survival curve. 1-D array of time
+        points. Values must be non-negative. If the first value is greater than
+        0, `(0, 1)` is prepended to the curve.
     target_time: float
-        Time point at which to predict the probability of survival.
+        Non-negative time point at which to predict the probability of survival.
     interpolation: str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
@@ -286,6 +299,13 @@ def predict_prob_from_curve(
     predict_probability: float
         Predicted probability of survival at the target time point.
     """
+    survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
+    if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
+        raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
+    target_time = float(target_time)
+    if target_time < 0:
+        raise ValueError("target_time must be non-negative.")
+
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
     # predicting boundary
@@ -294,8 +314,8 @@ def predict_prob_from_curve(
     # simply calculate the slope by using the [0, 1] - [max_time, S(t|x)]
     slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
 
-    # If the true event time is out of predicting boundary, then use the linear fit mentioned above;
-    # Else if the true event time is in the boundary, then use the spline
+    # Above the fitted time grid, use the survival tail fit described above;
+    # otherwise use the configured interpolator.
     if target_time > max_time:
         # func: y = slope * x + 1, the minimum prob should be 0
         predict_probability = max(slope * target_time + 1, 0)
@@ -313,17 +333,22 @@ def predict_multi_probs_from_curve(
 ) -> np.ndarray:
     """
     Predict the probability of survival at multiple time points from the survival curve. The survival curve is
-    interpolated using the specified interpolation method ('Linear' or 'Pchip'). If the target time is outside the
-    range of the survival curve, the probability is extrapolated by the linear function of (0, 1) and the last time.
+    interpolated using the specified interpolation method ('Linear' or 'Pchip').
+    If the input time grid does not start at 0, a time-zero point with survival
+    probability 1 is prepended before interpolation.
+    If a target time is greater than the largest time coordinate, the probability
+    is extrapolated by the linear function through (0, 1) and the last grid point.
 
     Parameters
     ----------
     survival_curve: np.ndarray
         Survival curve. 1-D array of survival probabilities.
     times_coordinate: np.ndarray
-        Time points corresponding to the survival curve. 1-D array of time points.
+        Time points corresponding to the survival curve. 1-D array of time
+        points. Values must be non-negative. If the first value is greater than
+        0, `(0, 1)` is prepended to the curve.
     target_times: NumericArrayLike
-        Time points at which to predict the probability of survival.
+        Non-negative time points at which to predict the probability of survival.
     interpolation: str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
@@ -334,7 +359,14 @@ def predict_multi_probs_from_curve(
     predict_probabilities: np.ndarray
         Predicted probabilities of survival at the target time points.
     """
-    target_times = check_and_convert(target_times).astype(float).tolist()
+    survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
+    if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
+        raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
+    target_times = check_and_convert(target_times).astype(float)
+    if target_times.ndim != 1:
+        raise ValueError("target_times must be a 1-D array.")
+    if np.any(target_times < 0):
+        raise ValueError("target_times must be non-negative.")
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
@@ -344,12 +376,13 @@ def predict_multi_probs_from_curve(
     # simply calculate the slope by using the [0, 1] - [maxtime, S(t|x)]
     slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
 
-    # If the true event time is out of predicting boundary, then use the linear fit mentioned above;
-    # Else if the true event time is in the boundary, then use the spline
+    # Above the fitted time grid, use the survival tail fit described above;
+    # otherwise use the configured interpolator.
     predict_probabilities = np.array(spline(target_times))
-    for i, target_time in enumerate(target_times):
-        if target_time > max_time:
-            predict_probabilities[i] = max(slope * target_time + 1, 0)
+    after_grid = target_times > max_time
+    predict_probabilities[after_grid] = np.maximum(
+        slope * target_times[after_grid] + 1, 0
+    )
 
     return predict_probabilities
 
@@ -454,13 +487,14 @@ def predict_rmst(
         survival_curves, times_coordinates
     )
 
-    if interpolation == "None":
+    interpolation = interpolation.lower()
+    if interpolation == "none":
         width = np.diff(time_grids, axis=1)
         areas = width * curves[:, :-1]
         rmst = np.sum(areas, axis=1)
-    elif interpolation == "Linear":
+    elif interpolation == "linear":
         rmst = trapezoid(curves, time_grids, axis=1)
-    elif interpolation == "Pchip":
+    elif interpolation == "pchip":
         rmst = np.empty(curves.shape[0])
         for i in range(curves.shape[0]):
             spline = PchipInterpolator(time_grids[i], curves[i])
@@ -604,6 +638,8 @@ def predict_median_st_ind(
 
     min_prob = min(survival_curve)
 
+    interpolation = interpolation.lower()
+
     if min_prob <= 0.5:
         idx_arr = np.where(survival_curve <= 0.5)[0]
 
@@ -615,14 +651,14 @@ def predict_median_st_ind(
                 times_coordinate[idx_after_median - 1],
                 times_coordinate[idx_after_median],
             )
-            if interpolation == "Linear":
+            if interpolation == "linear":
                 # linear interpolation to find the median time
                 p1, p2 = (
                     survival_curve[idx_after_median - 1],
                     survival_curve[idx_after_median],
                 )
                 median_st = t1 + (0.5 - p1) * (t2 - t1) / (p2 - p1)
-            elif interpolation == "Pchip":
+            elif interpolation == "pchip":
                 # reverse the array because the PchipInterpolator requires the x to be strictly increasing
                 spline = interpolated_curve(
                     times_coordinate, survival_curve, interpolation
@@ -727,9 +763,10 @@ def survival_to_quantile(
     if np.any(quantile_levels < 0) or np.any(quantile_levels >= 1):
         raise ValueError("`quantile_levels` must be in [0, 1).")
 
-    if interpolate == "Linear":
+    interpolate = interpolate.lower()
+    if interpolate == "linear":
         Interpolator = interp1d
-    elif interpolate == "Pchip":
+    elif interpolate == "pchip":
         Interpolator = PchipInterpolator
     else:
         raise ValueError(f"Unknown interpolation method: {interpolate}")
@@ -751,6 +788,13 @@ def survival_to_quantile(
         # Build monotone x for interpolator: unique CDF values (keep first)
         cdf_i_unique, keep_idx = np.unique(cdf_i, return_index=True)
         t_i_unique = t_i[keep_idx]
+        max_cdf = cdf_i_unique[-1]
+
+        if max_cdf <= 0:
+            # No observed CDF increase: F(t)=0 on the supplied grid, so only
+            # q=0 is reached at the origin; positive quantiles are undefined.
+            qpred[i, :] = np.where(quantile_levels == 0.0, 0.0, np.inf)
+            continue
 
         # If the first CDF value is >0, prepend (0, 0) to allow interpolation near q≈0
         if cdf_i_unique[0] > 0.0:
@@ -774,14 +818,9 @@ def survival_to_quantile(
         # Interpolate for all qs, then handle tail beyond observed max CDF
         qpred[i, :] = interp(quantile_levels)
 
-        max_cdf = cdf_i_unique[-1]
-        if max_cdf <= 0:
-            # degenerate case: no events observed; fall back to linear tail from origin
-            qpred[i, :] = quantile_levels / slope[i]
-        else:
-            beyond = np.where(quantile_levels > max_cdf)[0]
-            if beyond.size > 0:
-                qpred[i, beyond] = quantile_levels[beyond] / slope[i]
+        beyond = np.where(quantile_levels > max_cdf)[0]
+        if beyond.size > 0:
+            qpred[i, beyond] = quantile_levels[beyond] / slope[i]
 
     # Sanity checks
     if np.any(qpred < 0):
@@ -792,41 +831,6 @@ def survival_to_quantile(
         )
 
     return qpred
-
-
-def stratified_folds_survival(
-    dataset: pd.DataFrame,
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-    number_folds: int = 5,
-):
-    event_times, event_indicators = event_times.tolist(), event_indicators.tolist()
-    assert len(event_indicators) == len(event_times)
-
-    indicators_and_times = list(zip(event_indicators, event_times))
-    sorted_idx = [
-        i[0]
-        for i in sorted(
-            enumerate(indicators_and_times), key=lambda v: (v[1][0], v[1][1])
-        )
-    ]
-
-    folds = [
-        [sorted_idx[0]],
-        [sorted_idx[1]],
-        [sorted_idx[2]],
-        [sorted_idx[3]],
-        [sorted_idx[4]],
-    ]
-    for i in range(5, len(sorted_idx)):
-        fold_number = i % number_folds
-        folds[fold_number].append(sorted_idx[i])
-
-    training_sets = [dataset.drop(folds[i], axis=0) for i in range(number_folds)]
-    testing_sets = [dataset.iloc[folds[i], :] for i in range(number_folds)]
-
-    cross_validation_set = list(zip(training_sets, testing_sets))
-    return cross_validation_set
 
 
 def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
@@ -850,7 +854,106 @@ def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> f
     return probability
 
 
-def zero_padding(pred_survs, time_coordinates):
+def _prepend_origin(
+    pred_survs: np.ndarray, 
+    time_coordinates: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Prepend survival probability 1 and time 0 while preserving input ranks.
+
+    Supports the shape combinations accepted by `zero_padding`: a shared 1-D
+    curve or 2-D sample-by-time curves, paired with a 1-D shared time grid or
+    2-D sample-specific time grids.
+    """
+    # Preserve whether the survival input represents one curve or many rows.
+    if pred_survs.ndim == 1:
+        padded_survs = np.concatenate(([1.0], pred_survs))
+    elif pred_survs.ndim == 2:
+        padded_survs = np.concatenate(
+            (np.ones((pred_survs.shape[0], 1)), pred_survs), axis=1
+        )
+    else:
+        error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
+            pred_survs.ndim
+        )
+        raise TypeError(error)
+
+    # Preserve whether time coordinates are shared or sample-specific.
+    if time_coordinates.ndim == 1:
+        padded_times = np.concatenate(([0.0], time_coordinates))
+    elif time_coordinates.ndim == 2:
+        padded_times = np.concatenate(
+            (np.zeros((time_coordinates.shape[0], 1)), time_coordinates), axis=1
+        )
+    else:
+        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
+            time_coordinates.ndim
+        )
+        raise TypeError(error)
+
+    return padded_survs, padded_times
+
+
+def zero_padding(
+    pred_survs: np.ndarray, 
+    time_coordinates: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Prepend a time-zero survival anchor when a curve grid does not start at 0.
+
+    This helper normalizes survival curve grids to include the conventional
+    origin point ``(time=0, survival=1)``. When the first time coordinate is
+    already 0, the original arrays are returned unchanged. When the grid starts
+    elsewhere, the function prepends 0 to ``time_coordinates`` and 1 to
+    ``pred_survs`` while preserving each input's dimensionality. For 2-D time
+    grids, all rows must either already start at 0 or all require padding.
+
+    Parameters
+    ----------
+    pred_survs: np.ndarray, shape = (n_time_points,) or (n_samples, n_time_points)
+        Predicted survival probabilities. A 1-D array represents a single
+        curve or a shared curve, while a 2-D array represents one curve per
+        sample.
+    time_coordinates: np.ndarray, shape = (n_time_points,) or (n_samples, n_time_points)
+        Time coordinates corresponding to ``pred_survs``. A 1-D array is a
+        shared time grid, while a 2-D array contains sample-specific time
+        grids. Values must be non-negative, and the last dimension must have
+        the same length as
+        ``pred_survs``.
+
+    Returns
+    -------
+    padded_survs: np.ndarray
+        Survival probabilities with an origin point prepended when needed. The
+        dimensionality of ``pred_survs`` is preserved.
+    padded_times: np.ndarray
+        Time coordinates with 0 prepended when needed. The dimensionality of
+        ``time_coordinates`` is preserved.
+
+    Raises
+    ------
+    TypeError
+        If either input is not a numeric numpy array, or if either input is
+        not a 1-D or 2-D array.
+    ValueError
+        If the inputs are empty, have different numbers of time points, contain
+        negative time coordinates, or if a 2-D time grid mixes rows that start
+        at 0 with rows that require padding.
+
+    Warns
+    -----
+    UserWarning
+        If an origin point is prepended.
+    """
+    if not isinstance(pred_survs, np.ndarray):
+        raise TypeError("pred_survs must be a numpy array.")
+    if not isinstance(time_coordinates, np.ndarray):
+        raise TypeError("time_coordinates must be a numpy array.")
+    if not np.issubdtype(pred_survs.dtype, np.number):
+        raise TypeError("pred_survs must contain numeric values.")
+    if not np.issubdtype(time_coordinates.dtype, np.number):
+        raise TypeError("time_coordinates must contain numeric values.")
+
     ndim_time = time_coordinates.ndim
     ndim_surv = pred_survs.ndim
     zero_pad_msg = (
@@ -858,69 +961,44 @@ def zero_padding(pred_survs, time_coordinates):
         "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
         "and 1 to the beginning of the predicted curves."
     )
-    if ndim_time == 1:
-        assert ndim_surv == 2, (
-            "Either predicted_survival_curves or time_coordinates "
-            "must be a 2D array, got {} and {}".format(ndim_surv, ndim_time)
+
+    if ndim_surv not in (1, 2):
+        error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
+            ndim_surv
         )
-        if time_coordinates[0] != 0:
-            warnings.warn(zero_pad_msg)
-            _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
-            _pred_survs[:, 1:] = pred_survs
-            _pred_survs[:, 0] = 1.0
-            _time_coordinates = np.empty(time_coordinates.shape[0] + 1)
-            _time_coordinates[1:] = time_coordinates
-            _time_coordinates[0] = 0
-        else:
-            _pred_survs = pred_survs
-            _time_coordinates = time_coordinates
-    elif ndim_time == 2:
+        raise TypeError(error)
+    if ndim_time not in (1, 2):
+        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
+            ndim_time
+        )
+        raise TypeError(error)
+    if pred_survs.shape[-1] == 0 or time_coordinates.shape[-1] == 0:
+        raise ValueError("pred_survs and time_coordinates must be non-empty.")
+    if pred_survs.shape[-1] != time_coordinates.shape[-1]:
+        raise ValueError(
+            "Predicted survival curves and time coordinates must have "
+            "the same number of time points."
+        )
+    if np.any(time_coordinates < 0):
+        raise ValueError("time_coordinates must be non-negative.")
+
+    if ndim_time == 1:
+        needs_padding = not np.isclose(time_coordinates[0], 0.0)
+    else:
         starts_at_zero = np.isclose(time_coordinates[:, 0], 0.0)
         if np.any(starts_at_zero) and not np.all(starts_at_zero):
             raise ValueError(
                 "All rows of 2D time_coordinates must either start at 0 or "
                 "all require zero-padding."
             )
-
         needs_padding = not np.all(starts_at_zero)
-        if ndim_surv == 1:
-            if needs_padding:
-                warnings.warn(zero_pad_msg)
-                _pred_survs = np.empty(pred_survs.shape[0] + 1)
-                _pred_survs[1:] = pred_survs
-                _pred_survs[0] = 1.0
-                _time_coordinates = np.empty(
-                    (time_coordinates.shape[0], time_coordinates.shape[1] + 1)
-                )
-                _time_coordinates[:, 1:] = time_coordinates
-                _time_coordinates[:, 0] = 0
-            else:
-                _pred_survs = pred_survs
-                _time_coordinates = time_coordinates
-        elif ndim_surv == 2:
-            if needs_padding:
-                warnings.warn(zero_pad_msg)
-                _pred_survs = np.empty((pred_survs.shape[0], pred_survs.shape[1] + 1))
-                _pred_survs[:, 1:] = pred_survs
-                _pred_survs[:, 0] = 1.0
-                _time_coordinates = np.empty(
-                    (time_coordinates.shape[0], time_coordinates.shape[1] + 1)
-                )
-                _time_coordinates[:, 1:] = time_coordinates
-                _time_coordinates[:, 0] = 0.0
-            else:
-                _pred_survs = pred_survs
-                _time_coordinates = time_coordinates
-        else:
-            error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-                ndim_surv
-            )
-            raise TypeError(error)
+
+    if needs_padding:
+        warnings.warn(zero_pad_msg)
+        _pred_survs, _time_coordinates = _prepend_origin(pred_survs, time_coordinates)
     else:
-        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
-            ndim_time
-        )
-        raise TypeError(error)
+        _pred_survs = pred_survs
+        _time_coordinates = time_coordinates
 
     return _pred_survs, _time_coordinates
 

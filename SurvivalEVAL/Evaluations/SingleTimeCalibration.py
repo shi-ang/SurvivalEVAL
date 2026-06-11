@@ -74,7 +74,10 @@ def one_calibration(
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    if binning_strategy == "C":
+    binning_strategy = binning_strategy.lower()
+    method = method.lower()
+
+    if binning_strategy == "c":
         sorted_idx = np.argsort(-preds)
         sorted_predictions = preds[sorted_idx]
         sorted_event_time = event_time[sorted_idx]
@@ -83,7 +86,7 @@ def one_calibration(
         binned_event_time = np.array_split(sorted_event_time, num_bins)
         binned_event_indicator = np.array_split(sorted_event_indicator, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "H":
+    elif binning_strategy == "h":
         binned_event_time = []
         binned_event_indicator = []
         binned_predictions = []
@@ -111,7 +114,7 @@ def one_calibration(
 
         # For Uncensored method, we simply remove the censored patients,
         # for D'Agostina-Nam method, we will use 1-KM(t) as the observed probability.
-        if method == "Uncensored":
+        if method == "uncensored":
             filter_idx = ~(
                 (binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0)
             )
@@ -127,7 +130,7 @@ def one_calibration(
             hl_statistics += (event_count - retained_bin_size * mean_prob) ** 2 / (
                 retained_bin_size * mean_prob * (1 - mean_prob)
             )
-        elif method == "DN":
+        elif method == "dn":
             mean_prob = np.mean(binned_predictions[b])
             km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
             event_probability = 1 - km_model.predict(target_time)
@@ -143,7 +146,7 @@ def one_calibration(
     # recalculate the number of bins as the number of bins with data
     num_bins = len(observed_probabilities)
     degree_of_freedom = (
-        num_bins - 1 if (num_bins <= 15 and method == "DN") else num_bins - 2
+        num_bins - 1 if (num_bins <= 15 and method == "dn") else num_bins - 2
     )
     if degree_of_freedom <= 0:
         raise ValueError(
@@ -199,7 +202,10 @@ def one_cal_ic(
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    if binning_strategy == "C":
+    binning_strategy = binning_strategy.lower()
+    method = method.lower()
+
+    if binning_strategy == "c":
         sorted_idx = np.argsort(-preds)
         sorted_predictions = preds[sorted_idx]
         sorted_left = left_limits[sorted_idx]
@@ -208,7 +214,7 @@ def one_cal_ic(
         binned_left = np.array_split(sorted_left, num_bins)
         binned_right = np.array_split(sorted_right, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "H":
+    elif binning_strategy == "h":
         binned_left = []
         binned_right = []
         binned_predictions = []
@@ -237,7 +243,7 @@ def one_cal_ic(
         r_limits = np.array(binned_right[b])
         mean_prob = np.mean(binned_predictions[b])
 
-        if method == "MidPoint":
+        if method == "midpoint":
             mid = l_limits + (r_limits - l_limits) / 2.0
             finite_mid = np.isfinite(mid)
             event_times = np.where(finite_mid, mid, l_limits)
@@ -245,7 +251,7 @@ def one_cal_ic(
 
             km_model = KaplanMeier(event_times, event_indicators)
             event_probability = 1 - km_model.predict(target_time)
-        elif method == "Turnbull":
+        elif method == "turnbull":
             tb = TurnbullEstimatorLifelines(l_limits, r_limits)
             event_probability = 1 - tb.predict(target_time)
         else:

@@ -79,20 +79,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         interpolation: str, default: "Linear"
             Interpolation method for the survival curve. Options are "Linear" or "Pchip".
         """
-        pred_survs = check_and_convert(pred_survs)
-        time_coordinates = check_and_convert(time_coordinates)
-
-        self.ndim_time = time_coordinates.ndim
-        self.ndim_surv = pred_survs.ndim
-        if self.ndim_time == 1 and self.ndim_surv == 1:
-            raise TypeError(
-                "At least one of 'pred_survs' or 'time_coordinates' must be a 2D array."
-            )
-
-        self._pred_survs, self._time_coordinates = zero_padding(
-            pred_survs, time_coordinates
-        )
-
         left_limits, right_limits = check_and_convert(left_limits, right_limits)
         if np.any(~np.isfinite(left_limits)) or np.any(left_limits < 0):
             raise ValueError("Testing left limits must be finite and non-negative.")
@@ -100,6 +86,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
         self.right_limits = right_limits
+        self.set_prediction_inputs(
+            pred_survs=pred_survs, time_coordinates=time_coordinates
+        )
 
         if (train_left_limits is not None) and (train_right_limits is not None):
             train_left_limits, train_right_limits = check_and_convert(
@@ -116,11 +105,12 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.train_left_limits = train_left_limits
         self.train_right_limits = train_right_limits
 
-        if predict_time_method == "Median":
+        predict_time_method = predict_time_method.lower()
+        if predict_time_method == "median":
             self.predict_time_method = predict_median_st
-        elif predict_time_method == "Mean":
+        elif predict_time_method == "mean":
             self.predict_time_method = predict_mean_st
-        elif predict_time_method == "RMST":
+        elif predict_time_method == "rmst":
             self.predict_time_method = predict_rmst
         else:
             error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
@@ -174,11 +164,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         pred_times = self.predict_time_method(
             self._pred_survs, self._time_coordinates, interpolation=self.interpolation
         )
+        method = method.lower()
+        ties = ties.lower()
+
         if method == "midpoint":
             imp_times, imp_indicators = impute_times_midpoint(
                 self.left_limits, self.right_limits
             )
-            ties = "None" if ties == "skip" else "Risk"
+            ties = "none" if ties == "skip" else "risk"
             c_index, num, den = concordance(
                 predicted_times=pred_times,
                 event_times=imp_times,
@@ -232,12 +225,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The Brier score at the given time point.
         """
         # Check if there is no censored instance, if so, naive Brier score is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou Brier score")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -284,12 +278,13 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         x_train: Optional[np.ndarray] = None,
     ):
         # Check if there is no censored instance, if so, naive Brier score is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou Brier score")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -332,14 +327,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             across train + test.
 
             If both `num_points` and `target_times` are None:
-            - We try to infer `target_times` from the unique censoring times in the *test* set.
-            (This matches your old behavior.)
+            - We infer `target_times` from the unique finite left and right interval
+              endpoints in the test set.
 
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
-
-            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+            If unsorted, values are sorted ascending with a warning. You are
+            responsible for making sure they lie within the support of the model.
 
         method: str, default: "uncensored"
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
@@ -360,19 +355,18 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         Returns
         -------
         ibs: float
-            The Integrated Brier Score.
-        figure: plt.Figure
-            The figure object containing the Brier score curve.
-        axes: plt.Axes
-            The axes object containing the Brier score curve.
+            The Integrated Brier Score when `draw_figure` is False.
+        result: tuple[float, tuple[plt.Figure, plt.Axes]]
+            When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
         # Check if there is no censored instance, if so, naive method is applied
+        method = method.lower()
         if self._NO_CENSOR:
             method = "uncensored"
 
-        if method in ["Tsouprou-conditional", "Tsouprou-marginal"]:
+        if method in ["tsouprou-conditional", "tsouprou-marginal"]:
             self._error_trainset("Tsouprou IBS")
-            if method == "Tsouprou-conditional":
+            if method == "tsouprou-conditional":
                 if x is None or x_train is None:
                     raise TypeError(
                         "x and x_train must be provided for Tsouprou-conditional method."
@@ -423,7 +417,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                     "to perform numerical integration."
                 )
 
-            # We assume caller gave sorted points. If not, sort them.
+            # Sort explicit target times if needed, preserving the integration range.
             if not np.all(np.diff(target_times) >= 0):
                 warnings.warn("`target_times` is not sorted; sorting it now.")
                 target_times = np.sort(target_times)
@@ -444,7 +438,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             target_times = np.linspace(0.0, max_target_time, num_points)
             time_range = max_target_time  # because we started at 0
 
-        # Case 3: neither provided → infer from the left/right limits of censored test samples, excluding infs
+        # Case 3: neither provided -> infer from finite test interval endpoints.
         else:
             target_times = np.unique(
                 np.concatenate(
@@ -456,7 +450,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             )
 
             if target_times.size < 2:
-                # (old behavior raised if no censor data at all)
                 raise ValueError(
                     "Could not infer `target_times` from testing samples "
                     "(e.g., no/too-few test points). "
@@ -478,6 +471,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 bs_dict[time_point] = b_score
             print("Brier scores for multiple time points are:\n", bs_dict)
 
+        integration_method = integration_method.lower()
         if integration_method == "trapz":
             integral_value = trapezoid(b_scores, target_times)
         elif integration_method == "simpson":
@@ -524,14 +518,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             across train + test.
 
             If both `num_points` and `target_times` are None:
-            - We try to infer `target_times` from the unique censoring times in the *test* set.
-            (This matches your old behavior.)
+            - We infer `target_times` from the unique finite left and right interval
+              endpoints in the test set.
 
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
-
-            NOTE: You are responsible for making sure these are sorted ascending and lie within the support of the model.
+            If unsorted, values are sorted ascending with a warning. You are
+            responsible for making sure they lie within the support of the model.
 
         Returns
         -------

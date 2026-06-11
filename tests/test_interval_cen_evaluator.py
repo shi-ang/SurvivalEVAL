@@ -44,6 +44,60 @@ def test_h_statistic_interval_one_calibration_includes_prediction_one():
     np.testing.assert_allclose(expected, [0.1, 0.4, 0.85])
 
 
+def test_interval_cen_evaluator_rejects_prediction_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        IntervalCenEvaluator(
+            pred_survs=np.ones((3, 3)),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            left_limits=np.array([0.5, 1.5]),
+            right_limits=np.array([1.0, 2.0]),
+        )
+
+
+def test_interval_cen_evaluator_rejects_time_coordinate_row_count_mismatch():
+    with pytest.raises(ValueError, match="prediction rows"):
+        IntervalCenEvaluator(
+            pred_survs=np.array([1.0, 0.8, 0.5]),
+            time_coordinates=np.array(
+                [
+                    [0.0, 1.0, 2.0],
+                    [0.0, 1.5, 3.0],
+                    [0.0, 2.0, 4.0],
+                ]
+            ),
+            left_limits=np.array([0.5, 1.5]),
+            right_limits=np.array([1.0, 2.0]),
+        )
+
+
+def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
+    evaluator = IntervalCenEvaluator(
+        pred_survs=np.array([[1.0, 0.8, 0.5], [1.0, 0.7, 0.4]]),
+        time_coordinates=np.array([0.0, 1.0, 2.0]),
+        left_limits=np.array([0.5, 1.5]),
+        right_limits=np.array([1.0, 2.0]),
+    )
+
+    evaluator.time_coordinates = np.array(
+        [[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]]
+    )
+
+    assert evaluator.ndim_time == 2
+    assert evaluator.predict_probability_from_curve(1.0).shape == (2,)
+
+
+def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():
+    evaluator = IntervalCenEvaluator(
+        pred_survs=np.array([[1.0, 0.8, 0.5], [1.0, 0.7, 0.4]]),
+        time_coordinates=np.array([0.0, 1.0, 2.0]),
+        left_limits=np.array([0.5, 1.5]),
+        right_limits=np.array([1.0, 2.0]),
+    )
+
+    with pytest.raises(ValueError, match="prediction rows"):
+        evaluator.pred_survs = np.ones((3, 3))
+
+
 @pytest.fixture(scope="module")
 def interval_evaluator():
     df = _load_breast_data()

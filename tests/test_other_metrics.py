@@ -1,7 +1,19 @@
 import numpy as np
 import pytest
 
+from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.OtherMetrics import cov
+
+
+def test_auc_treats_censored_at_target_time_as_event_free():
+    value = auc(
+        predict_probs=np.array([0.2, 0.1, 0.9]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.array([1, 0, 0]),
+        target_time=2.0,
+    )
+
+    assert value == pytest.approx(0.5)
 
 
 def test_cov_computes_event_time_coefficient_of_variation():
