@@ -330,16 +330,16 @@ def _compute_bounds_fast(
     Fast computation of fiducial bounds using sorting and searchsorted.
 
     For each query point s:
-        lower(s) = max{u[j] : r[j] <= s} or 0 if no such j
-        upper(s) = min{u[j] : l[j] > s} or 1 if no such j
+        lower(s) = max{u[j] : right[j] <= s} or 0 if no such j
+        upper(s) = min{u[j] : left[j] > s} or 1 if no such j
 
     Parameters
     ----------
     u : np.ndarray
         Current u values (length n)
-    l : np.ndarray
+    left : np.ndarray
         Left endpoints of intervals (length n)
-    r : np.ndarray
+    right : np.ndarray
         Right endpoints of intervals (length n)
     query_points : np.ndarray
         Points at which to evaluate bounds
@@ -351,22 +351,22 @@ def _compute_bounds_fast(
     upper : np.ndarray
         Upper bounds at query points
     """
-    # For lower bound: max u among r <= s
-    # Sort by r, then compute cumulative max of u
+    # For lower bound: max u among right <= s
+    # Sort by right endpoints, then compute cumulative max of u
     n = len(u)
     r_order = np.argsort(right)
     r_sorted = right[r_order]
     u_by_r = u[r_order]
     cummax_u = np.maximum.accumulate(u_by_r)
 
-    # For each query point s, find rightmost r <= s
+    # For each query point s, find rightmost right endpoint <= s
     # searchsorted gives index where s would be inserted to maintain order
     # So index-1 gives the rightmost element <= s
     r_indices = np.searchsorted(r_sorted, query_points, side="right") - 1
     lower = np.where(r_indices >= 0, cummax_u[r_indices], 0.0)
 
-    # For upper bound: min u among l > s
-    # Sort by l in ascending order, then compute reverse cumulative min
+    # For upper bound: min u among left > s
+    # Sort by left endpoints in ascending order, then compute reverse cumulative min
     l_order = np.argsort(left)
     l_sorted = left[l_order]
     u_by_l = u[l_order]
@@ -375,7 +375,7 @@ def _compute_bounds_fast(
     # cummin_rev[i] = min(u_by_l[i:])
     cummin_rev = np.minimum.accumulate(u_by_l[::-1])[::-1]
 
-    # searchsorted on ascending l, find first index where l > s
+    # searchsorted on ascending left endpoints, find first index where left > s
     # side='right' gives first index where l_sorted > query_points
     l_indices = np.searchsorted(l_sorted, query_points, side="right")
 
@@ -396,17 +396,17 @@ def _gibbs_step(
     One full sweep of the Gibbs sampler (Lines 6-11 in Algorithm 1).
 
     For each i:
-        u_lower = max{u[j] : j != i, r[j] <= l[i]} or 0
-        u_upper = min{u[j] : j != i, l[j] >= r[i]} or 1
+        u_lower = max{u[j] : j != i, right[j] <= left[i]} or 0
+        u_upper = min{u[j] : j != i, left[j] >= right[i]} or 1
         u[i] ~ Uniform(u_lower, u_upper)
 
     Parameters
     ----------
     u : np.ndarray
         Current u values (modified in place)
-    l : np.ndarray
+    left : np.ndarray
         Left endpoints
-    r : np.ndarray
+    right : np.ndarray
         Right endpoints
     rng : np.random.Generator
         Random number generator
@@ -427,11 +427,11 @@ def _gibbs_step(
         left_pre = left[mask]
         right_pre = right[mask]
 
-        # u_lower = max(u[j] for j != i if r[j] <= l[i]) else 0
+        # u_lower = max(u[j] for j != i if right[j] <= left[i]) else 0
         idx1 = right_pre <= left[i]
         u_lower = np.max(u_pre[idx1]) if np.any(idx1) else 0.0
 
-        # u_upper = min(u[j] for j != i if l[j] >= r[i]) else 1
+        # u_upper = min(u[j] for j != i if left[j] >= right[i]) else 1
         idx2 = left_pre >= right[i]
         u_upper = np.min(u_pre[idx2]) if np.any(idx2) else 1.0
 
