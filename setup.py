@@ -57,7 +57,7 @@ setup(
 
 """
 TODO:
-1. install setuptools 
+1. install setuptools
 
 python -m pip install --user --upgrade setuptools wheel
 

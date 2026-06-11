@@ -38,14 +38,12 @@ def check_and_convert(*args):
     result = ()
     last_length = ()
     for i, arg in enumerate(args):
-
         if len(arg) == 0:
             error = " The input is empty. "
             error += "Please provide at least 1 element in the array."
             raise IndexError(error)
 
         else:
-
             if isinstance(arg, np.ndarray):
                 x = (arg.astype(np.double),)
             elif isinstance(arg, list):
@@ -59,9 +57,10 @@ def check_and_convert(*args):
             elif isinstance(arg, torch.Tensor):
                 x = (arg.cpu().numpy().astype(np.double),)
             else:
-                error = """{arg} is not a valid data format. Only use 'list', 'tuple', 'np.ndarray', 'torch.Tensor', 
-                        'pd.Series', 'pd.DataFrame'""".format(
-                    arg=type(arg)
+                error = (
+                    f"{type(arg)} is not a valid data format. Only use "
+                    "'list', 'tuple', 'np.ndarray', 'torch.Tensor', "
+                    "'pd.Series', 'pd.DataFrame'"
                 )
                 raise TypeError(error)
 
@@ -72,11 +71,9 @@ def check_and_convert(*args):
 
             if len(args) > 1:
                 if i > 0:
-                    assert (
-                        x[0].shape == last_length
-                    ), """Shapes between {}-th input array and 
-                    {}-th input array are not consistent""".format(
-                        i - 1, i
+                    assert x[0].shape == last_length, (
+                        "Shapes between {}-th input array and "
+                        "{}-th input array are not consistent".format(i - 1, i)
                     )
                 result += x
                 last_length = x[0].shape
@@ -855,8 +852,7 @@ def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> f
 
 
 def _prepend_origin(
-    pred_survs: np.ndarray, 
-    time_coordinates: np.ndarray
+    pred_survs: np.ndarray, time_coordinates: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Prepend survival probability 1 and time 0 while preserving input ranks.
@@ -873,8 +869,10 @@ def _prepend_origin(
             (np.ones((pred_survs.shape[0], 1)), pred_survs), axis=1
         )
     else:
-        error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-            pred_survs.ndim
+        error = (
+            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
+                pred_survs.ndim
+            )
         )
         raise TypeError(error)
 
@@ -895,8 +893,7 @@ def _prepend_origin(
 
 
 def zero_padding(
-    pred_survs: np.ndarray, 
-    time_coordinates: np.ndarray
+    pred_survs: np.ndarray, time_coordinates: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Prepend a time-zero survival anchor when a curve grid does not start at 0.
@@ -963,8 +960,10 @@ def zero_padding(
     )
 
     if ndim_surv not in (1, 2):
-        error = "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-            ndim_surv
+        error = (
+            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
+                ndim_surv
+            )
         )
         raise TypeError(error)
     if ndim_time not in (1, 2):

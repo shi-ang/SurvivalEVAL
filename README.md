@@ -2,265 +2,303 @@
 
 <p align="center">
   <a href="https://github.com/shi-ang/SurvivalEVAL/">
-        <img alt="PyPI" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/logo.png" width="300" height="300"></a>
+    <img
+      alt="SurvivalEVAL logo"
+      src="https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/logo.png"
+      width="300"
+      height="300"></a>
 </p>
-
 
 -----------------
 
 <p align="center">
-    <a href="https://pypi.org/project/SurvivalEVAL/">
-        <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
-    <a href="https://pypi.org/project/SurvivalEVAL/">
-        <img alt="PyPI - Python Version" src="https://img.shields.io/badge/python-3.8+-blue.svg"></a>
-    <a href="https://opensource.org/license/gpl-3-0">
-        <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
-    <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
-        <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
+  <a href="https://pypi.org/project/SurvivalEVAL/">
+    <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
+  <a href="https://pypi.org/project/SurvivalEVAL/">
+    <img alt="Python Version" src="https://img.shields.io/badge/python-3.9%2B-blue.svg"></a>
+  <a href="https://opensource.org/license/gpl-3-0">
+    <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
+  <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
+    <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
 </p>
 
+SurvivalEVAL is a Python 3.9+ package for evaluating survival analysis predictions.
+It supports right-censored and interval-censored outcomes, predicted survival
+curves, point predictions, single-time probabilities, and quantile-regression
+outputs.
 
-This python-based package contains the most completeness evaluation methods for Survival Algorithms (see [paper](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713)). 
-These evaluation metrics can be divided into 3 categories:
-- For point prediction (first row in the figure)
-    - [Discrimination](#discrimination-for-point-prediction)
-    - [Errors](#mean-absolute-error-mean-squared-error-and-root-mean-squared-error) 
-    - [Reliability](#reliability) (missing for now)
-- For single time probability prediction (second row in the figure below)
-    - [Discrimination](#discrimination-for-single-time-probability-prediction)
-    - [Errors](#errors-between-the-predicted-probability-and-survival-status)
-    - [Calibration](#calibration-for-single-time-probability-prediction)
-- For survival distribution prediction (third row in the figure below) 
-    - [Discrimination](#discrimination-for-survival-distribution-prediction)
-    - [Errors](#errors-for-individual-survival-function-and-the-heaviside-step-function)
-    - [Calibration](#calibration-for-survival-distribution-prediction)
+The package is designed around evaluator classes:
 
-[//]: # (![Visualization of the evaluation metrics]&#40;all_metrics.png&#41;)
+- `SurvivalEvaluator`: general right-censored survival-curve predictions.
+- `LifelinesEvaluator`, `PycoxEvaluator`, and `ScikitSurvivalEvaluator`: adapters
+  for common model-output formats.
+- `IntervalCenEvaluator`: interval-censored survival-curve predictions.
+- `PointEvaluator`: point survival-time predictions.
+- `SingleTimeEvaluator`: probabilities at one target time.
+- `QuantileRegEvaluator`: predicted event-time quantiles.
 
-<p align="center">
-    <a href="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png">
-        <img alt="Visualization of the evaluation metrics" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png"></a>
-</p>
+The public tests and examples show typical model integrations. See
+[examples](examples) for notebooks covering lifelines, pycox, scikit-survival,
+quantile prediction, point prediction, interpolation choices, and monotonicity
+handling.
 
 ## Installation
-You can install the package via pip.
+
+Install from PyPI:
+
 ```bash
 pip install SurvivalEVAL
 ```
 
-Or if you want to do some modification by yourself. 
-Clone the repo, cd into it and install it in editable mode (`-e` option).
-That way, these are no more need to re-install the package after modification.
+For local development:
+
 ```bash
 git clone https://github.com/shi-ang/SurvivalEVAL.git
 cd SurvivalEVAL
-pip install -r requirements.txt
-pip install -e . 
+python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
-## Quickstart Example
+Optional development dependencies are available with:
 
+```bash
+python -m pip install -e ".[dev]"
+```
 
+## Input Conventions
 
-Install a survival analysis package, such as `lifelines`, and load the data.
-Then, you can use the following code to evaluate the model.
+For right-censored data, `event_indicators` uses:
+
+- `1`: observed event
+- `0`: right-censored observation
+
+For interval-censored data, pass finite non-negative `left_limits` and
+`right_limits`. Use `right_limits=np.inf` for right-censored observations.
+Exact events can be represented with `left_limits == right_limits`, and
+left-censored observations can use `left_limits == 0`.
+
+Predicted survival curves are passed as survival probabilities over time:
+
+- `pred_survs`: shape `(n_samples, n_time_points)` or `(n_time_points,)`
+- `time_coordinates`: shape `(n_time_points,)` or
+  `(n_samples, n_time_points)`
+
+At least one of `pred_survs` or `time_coordinates` must be two-dimensional so
+the evaluator can infer the number of testing samples. If the time grid does
+not start at zero, SurvivalEVAL prepends time zero and survival probability one.
+
+## Quickstart: Right-Censored Survival Curves
 
 ```python
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from SurvivalEVAL.Evaluator import LifelinesEvaluator
+from SurvivalEVAL import LifelinesEvaluator
 
-# Load the data
-rossi = load_rossi()
-rossi = rossi.sample(frac=1.0)
-
-# Split train/test set
+rossi = load_rossi().sample(frac=1.0, random_state=0)
 train = rossi.iloc[:300, :]
 test = rossi.iloc[300:, :]
-train_event_times = train.week.values
-train_event_indicators = train.arrest.values
-test_event_times = test.week.values
-test_event_indicators = test.arrest.values
 
-# Fit the model
 cph = CoxPHFitter()
-cph.fit(train, duration_col='week', event_col='arrest')
+cph.fit(train, duration_col="week", event_col="arrest")
 
 survival_curves = cph.predict_survival_function(test)
 
-# Make the evaluation
-evl = LifelinesEvaluator(survival_curves, test_event_times, test_event_indicators,
-                          train_event_times, train_event_indicators)
+evl = LifelinesEvaluator(
+    survival_curves,
+    test.week.values,
+    test.arrest.values,
+    train.week.values,
+    train.arrest.values,
+)
 
-cindex, _, _ = evl.concordance()
+c_index, concordant, total = evl.concordance(method="Harrell")
+mae = evl.mae(method="Pseudo_obs")
+ibs = evl.integrated_brier_score(num_points=53)
+d_cal_p, d_cal_hist = evl.d_calibration()
 
-mae_score = evl.mae(method="Pseudo_obs")
-
-mse_score = evl.mse(method="Hinge")
-
-# The largest event time is 52. So we use 53 time points (0, 1, ..., 52) to calculate the IBS
-ibs, (fig, ax) = evl.integrated_brier_score(num_points=53, draw_figure=True)
-
-d_cal, details = evl.d_calibration(return_details=True)
-
-# The target time for the single time probability prediction is set to 25
-auc_score = evl.auc(target_time=25)
-bs_score = evl.brier_score(target_time=25)
-one_cal = evl.one_calibration(target_time=25)
-
+auc = evl.auc(target_time=25)
+brier = evl.brier_score(target_time=25)
+one_cal_p, observed, expected = evl.one_calibration(target_time=25)
 ```
-See the [Examples](examples) for more usage examples.
 
+## Quickstart: Interval-Censored Survival Curves
 
+```python
+import numpy as np
 
-## Point Prediction
+from SurvivalEVAL import IntervalCenEvaluator
 
-### Discrimination for point prediction
-Concordance index (CI) identifies the “comparable” pairs of patients and calculates the percentage of correctly ranked pairs to assess a survival model’s performance. 
-Given two predicted survival curves of a paired patients, it compares the predicted median/mean survival times and marks that pair as correct if the model's prediction about who died first matches with the reality. 
+time_grid = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+pred_survs = np.array(
+    [
+        [1.0, 0.82, 0.58, 0.34, 0.12],
+        [1.0, 0.76, 0.51, 0.25, 0.08],
+        [1.0, 0.90, 0.72, 0.48, 0.22],
+    ]
+)
 
-| Metric Name  | Description                                                                                                                                                | Code                                | Paper Link                                                         |
-|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|--------------------------------------------------------------------|
-| Harrell's CI | Original Harrell's CI, using comparable pair for concordant checking.                                                                                      | `evl.concordance(method="Harrell")` | [Harrell et al.](https://pubmed.ncbi.nlm.nih.gov/8668867/)         |
-| Uno's CI     | Uno's CI adds a (squared) IPCW weighting to each comparable pair to the overall calculation.                                                               | To be implemented                   | [Uno et al.](https://pubmed.ncbi.nlm.nih.gov/21484848/)            |
-| Margin CI    | Calculate the marginal survival time (and proxy time) to substitute the censoring time for censored patients, then calculate CI as everyone is uncensored. | `eval.concordance(method="Margin")` | [Kumar et al.](https://www.nature.com/articles/s41598-022-08601-6) |
+left = np.array([0.5, 1.0, 2.5])
+right = np.array([1.5, np.inf, 3.5])
 
+train_left = np.array([0.0, 1.0, 1.5, 2.0])
+train_right = np.array([1.0, 2.0, np.inf, 3.0])
 
-### Mean Absolute Error, Mean Squared Error and Root Mean Squared Error
-One straightforward metric would be “MAE” –  the absolute difference between the actual and predicted survival times (e.g. median of a curve).
-This requires using the “actual survival time”, which is trivial for uncensored instances, but problematic for censored individuals. 
-This python package implemented MAE loss metrics using different ways of handling censored instances. Here we list three of them:
-1. `Uncensored` simply discards all the censored individuals and compute the MAE for all the uncensored instances.
-2. `Hinge` calculates the early prediction error. For a censored instance, if the predicted survival time is smaller than the censored time, then `MAE = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `MAE = 0`. Note that the standard `Hinge` method requires the `Weighted` parameter to be set to `False`.
-3. `Pseudo_obs` “de-censors” the censored patients, using pseudo-observation method (by estimating the contribution of a censored subject to the whole Kaplan-Meier distribution). Then it calculates the MAE between de-censoring time and the predicted survival time, just like the normal way. Note that the standard `Pseudo_obs` method requires the `Weighted` parameter to be set to `True`.
+evl = IntervalCenEvaluator(
+    pred_survs,
+    time_grid,
+    left,
+    right,
+    train_left_limits=train_left,
+    train_right_limits=train_right,
+)
 
-Mean squared error (MSE) is another metric to measure the difference between the actual and predicted survival times.
-Similar to MAE, mean squared error (MSE) also has multiple ways to handle censored instances, similar to MAE.
-We also have root mean squared error (RMSE) for each of the different ways.
+c_index, concordant, total = evl.concordance(method="comparable")
+brier = evl.brier_score(target_time=2.0, method="uncensored")
+ibs = evl.integrated_brier_score(
+    target_times=np.array([1.0, 2.0, 3.0]),
+    method="uncensored",
+)
 
-| Metric Name    | Description                                                                                                                                                                                                                                                                                                                                                                                      | Code                           | Paper Link                                                         |
-|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|--------------------------------------------------------------------|
-| MAE-Uncensored | Calculate MAE for uncensored instances only.                                                                                                                                                                                                                                                                                                                                                     | `evl.mae(method="Uncensored")` | N/A                                                                |
-| MAE-Hinge      | For censored instances, Hinge calculates the early prediction error. For a censored instance, if the predicted survival time is smaller than the censored time, then `MAE = censor_time - predict_time`. If the predicted survival time is equal or larger than the censored time, then `MAE = 0`. Note that the standard `Hinge` method requires the `Weighted` parameter to be set to `False`. | `evl.mae(method="Hinge")`      | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
-| MAE-Margin     | It "de-censors” the censored patients, using the margin time (mean of the conditional KM curve given the censoring time).                                                                                                                                                                                                                                                                        | `evl.mae(method="Margin")`     | [Haider et al.](https://jmlr.org/papers/v21/18-772.html)           |
-| MAE-PO         | It "de-censors” the censored patients, using pseudo-observation method.                                                                                                                                                                                                                                                                                                                          | `evl.mae(method="Pseudo_obs")` | [Qi et al.](https://proceedings.mlr.press/v202/qi23b.html)         |
-| MSE            | MSE has the same user-interface with MAE.                                                                                                                                                                                                                                                                                                                                                        | `evl.mse(method=method)`       | N/A                                                                |
-| RMSE           | RMSE has the same user-interface with MAE.                                                                                                                                                                                                                                                                                                                                                       | `evl.rmse(method=method)`      | N/A                                                                |
+one_cal_p, observed, expected = evl.one_calibration(
+    target_time=2.0,
+    method="MidPoint",
+)
+d_cal_p, d_cal_hist = evl.d_calibration()
+coverage, coverage_gap, average_width = evl.coverage(
+    cov_level=0.8,
+    method="linear",
+)
+```
 
+## Right-Censored Metrics
 
-### Reliability
-Ideally, a reliable model should produce similar predictions (in this context, similar point prediction) to the true labels.
-Here we use the log-rank test, to test whether the predicted survival times are statistically different than the observed labels (subject to censoring).
-| Metric Name    | Description                                                                                                                                                                                                                                                                                                                                                                                      | Code                           | Paper Link                                                         |
-|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|--------------------------------------------------------------------|
-| Log-rank Test  | Use log-rank test to check whether the predicted survival times are statistically different than the observed labels (subject to censoring). A model with p-value higher than 0.05 can be considered as reliable.                                                                                                                                                                              | `evl.log_rank()`    | [Mantel](https://pubmed.ncbi.nlm.nih.gov/5910392/)                     |
-|Weighted Log-rank Test| Weighted log-rank test is a generalization of the log-rank test that accounts for different weights for different time regions. This can be useful when the proportional hazard assumption is violated, or you care about specific region of the data.                                                                                                                                                                              | `evl.log_rank(weighting=["wilcoxon"/"tarone-ware"/"peto"/"fleming-harrington"])`    | [Fleming&Harrington](https://www.jstor.org/stable/2335991)                     |
+Right-censored survival-curve evaluators include `SurvivalEvaluator`,
+`LifelinesEvaluator`, `PycoxEvaluator`, `ScikitSurvivalEvaluator`, and
+`QuantileRegEvaluator`.
 
-## Single Time Probability Prediction
-### Discrimination for single time probability prediction
-Area Under the Receiver Operating Characteristic (AUROC) is a metric to measure the performance of a single time probability prediction. 
-It is the area under the receiver operating characteristic curve, which is the plot of the true positive rate against the false positive rate at various threshold settings.
-In the survival analysis, the single time probability prediction is the prediction of the survival probability at a specific time point.
-And the true label is whether the patient died at that time point.
-AUROC excludes the censored instances whose censoring time is earlier than the target time point.
+### Point Prediction Metrics
 
-| Metric Name | Description                                                              | Code              | Paper Link                                                                   |
-|-------------|--------------------------------------------------------------------------|-------------------|------------------------------------------------------------------------------|
-| AUC         | Calculate AUC/AUROC for uncensored instances only.                       | `evl.auc()`       | N/A                                                                          |
-| Uno AUC     | Uno's CI adds a IPCW weighting to each pairs to the overall calculation. | To be implemented | [Uno et al.](https://www.tandfonline.com/doi/abs/10.1198/016214507000000149) |
+These metrics compare predicted survival times with observed event/censoring
+times. Predicted times are derived from survival curves using the configured
+`predict_time_method`: `"Median"`, `"Mean"`, or `"RMST"`.
 
+- Concordance index: `evl.concordance(method="Harrell")`
+- Margin concordance: `evl.concordance(method="Margin")`
+- Mean absolute error: `evl.mae(method=...)`
+- Mean squared error: `evl.mse(method=...)`
+- Root mean squared error: `evl.rmse(method=...)`
+- Log-rank and weighted log-rank tests: `evl.log_rank(...)`
 
-### Errors between the predicted probability and survival status
-The Brier score (BS), at a specific time-point, is computed as the mean squared error between the observed event (binary indicator variable) and the predicted event probability at that time-point. 
-It is meaningful in the sense that the square root of the Brier score is the distance between the observed and predicted event on the probability scale. 
+Error methods include `"Uncensored"`, `"Hinge"`, `"Margin"`, `"IPCW-T"`,
+`"IPCW-D"`, and `"Pseudo_obs"`.
 
-| Metric Name | Description                                                                  | Code                                   | Paper Link                                               |
-|-------------|------------------------------------------------------------------------------|----------------------------------------|----------------------------------------------------------|
-| Plain BS    | Calculate BS for uncensored instances only.                                  | `evl.brier_score(IPCW_weighted=False)` | N/A                                                      |
-| IPCW BS     | Adding a IPCW weighting to uncensored instances after the target time point. | `evl.brier_score(IPCW_weighted=True)`  | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
+### Single-Time Probability Metrics
 
+These metrics evaluate survival probabilities at a specified target time:
 
-### Calibration for single time probability prediction
-Calibration measures the alignment between the predicted survival probability and the observed survival status at a specific time point.
-The most common Hosmer-Lemeshow (HL) goodness-of-fit test is used to check the calibration of a model at a specific time point.
-Models with p-value higher than 0.05 can be considered as well-calibrated model at that time.
+- AUROC/AUC: `evl.auc(target_time=...)` or `evl.auroc(target_time=...)`
+- Brier score: `evl.brier_score(target_time=..., IPCW_weighted=True)`
+- Hosmer-Lemeshow calibration: `evl.one_calibration(target_time=...)`
+- Integrated calibration index: `evl.integrated_calibration_index(...)`
 
-| Metric Name                  | Description                                                                                       | Code                                       | Paper Link                                                                            |
-|------------------------------|---------------------------------------------------------------------------------------------------|--------------------------------------------|---------------------------------------------------------------------------------------|
-| Uncensored HL test           | Standard Hosmer-Lemeshow test for uncensored part of the dataset.                                 | `evl.one_calibration(method="Uncensored")` | [Hosmer&Lemeshow](https://www.tandfonline.com/doi/abs/10.1080/03610928008827941)      |
-| DN HL test                   | DN's extension of HL test, using Kaplan-Meier estimation to approximate the observed probability. | `evl.one_calibration(method="DN")`         | [D'Agostino&Nam](https://www.sciencedirect.com/science/article/pii/S0169716103230017) |
-| Integrated Calibration Index | Use non-linear model to fit a smooth calibration curve and calculate the integrated error.        | `eval.integrated_calibration_index()`      | [Austin et al.](https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.8570)             |
+Use `SingleTimeEvaluator` when the model only outputs one survival probability
+per patient at one target time.
 
+### Survival Distribution Metrics
 
-## Survival Distribution Prediction
-### Discrimination for survival distribution prediction
-Time-dependent concordance index (td-CI) is a generalization of the concordance index to the survival distribution prediction.
-It is calculated by integrating the concordance index over times.
+These metrics evaluate the full predicted survival curve:
 
-| Metric Name | Description                                    | Code              | Paper Link                                                   |
-|-------------|------------------------------------------------|-------------------|--------------------------------------------------------------|
-| td-CI       | Calculate td-CI for uncensored instances only. | To be implemented | [Antolini et al.](https://pubmed.ncbi.nlm.nih.gov/16320281/) |
+- Integrated Brier score: `evl.integrated_brier_score(...)`
+- Survival-AUPRC: `evl.auprc()`
+- D-calibration: `evl.d_calibration()`
+- K-S D-calibration: `evl.ksd_calibration()`
+- KM calibration: `evl.km_calibration()`
+- Cox-Snell, modified Cox-Snell, Martingale, and Deviance residuals:
+  `evl.residuals(method=...)`
 
-### Errors for individual survival function and the heaviside step function
-Integrated Brier Score (IBS) measures the squared difference between the predicted survival curve with the Heaviside step function of the observed event.
-IBS can be viewed as the integration of the (single-time) Brier score across all the time points. 
-A smaller IBS value is preferred over the larger value. 
-This python implementation uses IPCW weighting to handle the censored instances. Please refer to [Assessment and Comparison of Prognostic Classification Schemes for Survival Data](https://pubmed.ncbi.nlm.nih.gov/10474158/) for the detail of IPCW weighting.
-Please also note that IBS is also similar to the [Continuous Ranked Probability Score (CRPS)](https://arxiv.org/abs/1806.08324), except (1) the IPCW weighting, and (2) squared error instead of absolute error.
+## Interval-Censored Metrics
 
-| Metric Name | Description                                                                           | Code                                              | Paper Link                                               |
-|-------------|---------------------------------------------------------------------------------------|---------------------------------------------------|----------------------------------------------------------|
-| Plain IBS   | Calculate IBS for up to the censoring time, for uncensored instances.                 | `evl.integrated_brier_score(IPCW_weighted=False)` | N/A                                                      |
-| CRPS        | Calculate integrated absolute error between survival function and heaviside function. | `evl.crps()`                                     | [Avati et al.](https://arxiv.org/abs/1806.08324)         |
-| IPCW IBS    | Adding a IPCW weighting to uncensored instances after the target time point.          | `evl.integrated_brier_score(IPCW_weighted=True)`  | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
+`IntervalCenEvaluator` evaluates predicted survival curves against interval
+endpoints. It supports exact events, left-censored observations, interval
+censoring, and right censoring within one interface.
 
+### Discrimination
 
-### Calibration for survival distribution prediction
-Calibration for the entire survival distribution is a more complex task than the single time calibration.
-Some residuals are proposed to check the calibration of the entire survival distribution.
-And [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) proposed distribution calibration (D-calibration) test for determining if a model that produces ISDs is meaningful. 
-D-calibration splits the time-axis into a fixed number of intervals and compares the actual number of events with the predicted number of events within each interval. 
-A well D-calibrated model is the one where the predicted number of events within each time interval is statistically similar to the observed number.
-Models with p-value higher than 0.05 can be considered as well-calibrated model across the survival distribution.
+- Comparable-pair interval concordance:
+  `evl.concordance(method="comparable")`
+- Probability-weighted interval concordance using a Turnbull estimator:
+  `evl.concordance(method="probability")`
+- Midpoint-imputed concordance:
+  `evl.concordance(method="midpoint")`
+- Survival-AUPRC for interval-censored outcomes: `evl.auprc()`
 
-| Metric Name                    | Description                                                                                                                        | Code                                           | Paper Link                                                                                                                           |
-|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| Cox-Snell Residual             | Calculate the cumulative hazard function at the observed time, and then fit a Nelson-Aalen estimator to check the goodness-of-fit. | `evl.residuals(method="CoxSnell")`             | [Cox&Snell](https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1968.tb00724.x)                                          |
-| Modified Cox-Snell Residual v1 | Calculate the cumulative hazard function at the observed time, add 1 for censored subjects.                                        | `evl.residuals(method="Modified CoxSnell-v1")` | [Collett, Chapter 4](https://www.taylorfrancis.com/books/mono/10.1201/b18041/modelling-survival-data-medical-research-david-collett) |
-| Modified Cox-Snell Residual v2 | Calculate the cumulative hazard function at the observed time, add ln(2) for censored subjects.                                    | `evl.residuals(method="Modified CoxSnell-v2")` | [Crowley&Hu](https://www.tandfonline.com/doi/abs/10.1080/01621459.1977.10479903)                                                     |
-| Martingale Residual            | Calculate the Martingale residual, which should have a mean of 0                                                                   | `evl.residuals(method="Martingale")`           | [Barlow&Prentice](https://academic.oup.com/biomet/article-abstract/75/1/65/352141)                                                   |
-| Deviance Residual              | Calculate the Deviance residual, which should follow a normal distribution N(0, 1).                                                | `evl.residuals(method="Deviance")`             | [Therneau et al.](https://academic.oup.com/biomet/article-abstract/77/1/147/271076)                                                  |
-| Distribution Calibration       | Check whether the survival probability at the event time follows the Uniform distribution betwen 0 and 1.                          | `eval.d_calibration()`                         | [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf)                                                                  |
-| KM Calibration                 | Check whether the averaged predicted survival distribution is aligned with KM estimator.                                           | `eval.km_calibration()`                        | [Chapfuwa et al.](https://ieeexplore.ieee.org/abstract/document/9244076/)                                                                                                                  |
+### Error And Scoring Metrics
 
+- Single-time interval Brier score:
+  `evl.brier_score(target_time=..., method=...)`
+- Multiple-time interval Brier score:
+  `evl.brier_score_multiple_points(target_times=..., method=...)`
+- Integrated Brier score:
+  `evl.integrated_brier_score(target_times=..., method=...)`
+- Continuous Ranked Probability Score:
+  `evl.crps(...)`
+- Point-prediction MAE/MSE/RMSE:
+  `evl.mae()`, `evl.mse()`, and `evl.rmse()`
+- Inclusion rate of point predictions in observed intervals:
+  `evl.inclusion_rate()`
+- Prediction-interval coverage:
+  `evl.coverage(cov_level=...)`
 
-## Non-Parametric Methods
-This package also provides some non-parametric methods to estimate the marginal survival function, 
-without considering the covariates.
+Interval Brier score methods include `"uncensored"`, `"Tsouprou-marginal"`,
+and `"Tsouprou-conditional"`. The conditional method additionally requires
+test and train covariates through `x` and `x_train`.
 
-The non-parametric methods are included in the `SurvivalEVAL.NonparametricEstimator` module.
+### Calibration
 
-| Method         | Description                                                                                                                                         | Code                             | Paper Link                                                             |
-|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------|------------------------------------------------------------------------|
-| Kaplan Meier   | The well known Kaplan Meier (KM) estimator that directly estimate the survival function.                                                            | `SingleEvent.KaplanMeier()`      | [Kaplan&Meier](https://www.jstor.org/stable/2281868)                   |
-| Nelson Aalan   | Nelson Aalan (NA) estimate the cumulative hazard function directly, then transform to survival function.                                            | `SingleEvent.NelsonAalen()`      | [Aalan](https://www.jstor.org/stable/2958850)                          |
-| Copula Graphic | The Copula Graphic (CG) estimator estimate the survival function under the dependent censoring assumption, with known type of copula and parameter. | `SingleEvent.CopulaGraphic()`    | [Emura&Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
-| Turnbull       | The Turnbull estimater estimate the survival function for interval censoring dataset.                                                               | `SingleEvent.TurnbullEstimatorLifelines()`               | [Turnbull](https://www.jstor.org/stable/2285518)                       |
-| Aalan Johansen | The Aalan Johansen (AJ) estimator the cumulative incidence function (CIF) for competing risk dataset.                                               | To be implemented                | [Aalan&Johansen](https://www.jstor.org/stable/4615704)                                                     |
+- One-calibration with interval handling:
+  `evl.one_calibration(target_time=..., method="Turnbull")`
+- Midpoint one-calibration:
+  `evl.one_calibration(target_time=..., method="MidPoint")`
+- Interval D-calibration: `evl.d_calibration()`
+- Interval K-S D-calibration: `evl.ksd_calibration()`
 
+## Other Evaluators And Helper APIs
 
-## Citing this work
+- `PointEvaluator` evaluates already-computed point survival-time predictions
+  with concordance, MAE, MSE, RMSE, and log-rank tests.
+- `SingleTimeEvaluator` evaluates already-computed survival probabilities at a
+  single target time with AUC, Brier score, one-calibration, and ICI.
+- `QuantileRegEvaluator` converts event-time quantile predictions into survival
+  curves and reuses the right-censored survival-curve metrics.
+- `SurvivalEVAL.Evaluations.OtherMetrics` includes lower-level research helpers
+  such as calibration slope and coefficient of variation.
+
+Most evaluator methods are also available as lower-level functions under
+`SurvivalEVAL.Evaluations` for advanced use cases.
+
+## Nonparametric Estimators
+
+The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
+
+- Kaplan-Meier estimators: `KaplanMeier`, `KaplanMeierArea`
+- Nelson-Aalen estimator: `NelsonAalen`
+- Copula Graphic estimator: `CopulaGraphic`
+- Turnbull estimators: `TurnbullEstimator`, `TurnbullEstimatorLifelines`
+- Fiducial interval-censoring fitter:
+  `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor`
+
+## Citing This Work
 
 We recommend you use the following to cite `SurvivalEVAL` in your publications:
 
-```
+```bibtex
 @article{qi2024survivaleval,
 year = {2024},
 month = {01},
 pages = {453-457},
 title = {{SurvivalEVAL}: A Comprehensive Open-Source Python Package for Evaluating Individual Survival Distributions},
-author={Qi, Shi-ang and Sun, Weijie and Greiner, Russell},
+author = {Qi, Shi-ang and Sun, Weijie and Greiner, Russell},
 volume = {2},
 journal = {Proceedings of the AAAI Symposium Series},
 doi = {10.1609/aaaiss.v2i1.27713}

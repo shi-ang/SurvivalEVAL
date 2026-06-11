@@ -194,9 +194,8 @@ class SurvivalEvaluator:
         # The stored grid may already include a zero-time column inserted by
         # zero_padding. Accept raw replacement curves by adding the matching
         # survival-at-zero column before validating curve/grid lengths.
-        if (
-            self._time_coordinates.shape[-1] == pred_survs.shape[-1] + 1
-            and np.all(np.isclose(self._time_coordinates[..., 0], 0.0))
+        if self._time_coordinates.shape[-1] == pred_survs.shape[-1] + 1 and np.all(
+            np.isclose(self._time_coordinates[..., 0], 0.0)
         ):
             pred_survs = np.concatenate(
                 (np.ones((*pred_survs.shape[:-1], 1)), pred_survs), axis=-1
@@ -214,9 +213,8 @@ class SurvivalEvaluator:
         # Symmetric one-sided update: if curves are already zero-padded and
         # the replacement grid is raw, prepend time zero so the pair remains
         # aligned before the shared validation path runs.
-        if (
-            self._pred_survs.shape[-1] == time_coordinates.shape[-1] + 1
-            and not np.all(np.isclose(time_coordinates[..., 0], 0.0))
+        if self._pred_survs.shape[-1] == time_coordinates.shape[-1] + 1 and not np.all(
+            np.isclose(time_coordinates[..., 0], 0.0)
         ):
             time_coordinates = np.concatenate(
                 (np.zeros((*time_coordinates.shape[:-1], 1)), time_coordinates),

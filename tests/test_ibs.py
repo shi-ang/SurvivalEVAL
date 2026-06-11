@@ -342,9 +342,9 @@ def test_case_4_comparison_with_paper():
     train_widths = np.random.uniform(1.5, 5, n_samples)
     train_left_limits = np.maximum(0, train_true_times - train_widths / 2)
     train_right_limits = train_true_times + train_widths / 2
-    train_right_limits[np.random.choice([True, False], n_samples, p=[0.25, 0.75])] = (
-        np.inf
-    )
+    train_right_limits[
+        np.random.choice([True, False], n_samples, p=[0.25, 0.75])
+    ] = np.inf
 
     print(f"Samples: {n_samples}, Time points: {n_time_points}")
     print(f"Max observation time: {max_time}")

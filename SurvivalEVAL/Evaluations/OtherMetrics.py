@@ -46,8 +46,11 @@ def _invert_from_survival_with_interpolator(
             if target <= s_hi:
                 out[i, j] = t_hi
                 continue
-            g = lambda t: float(spl(t)) - target
-            out[i, j] = brentq(g, t_lo, t_hi, maxiter=50)
+
+            def gap(t):
+                return float(spl(t)) - target
+
+            out[i, j] = brentq(gap, t_lo, t_hi, maxiter=50)
     return out
 
 
@@ -113,11 +116,10 @@ def calibration_slope_right_censor(
     x, y_fit = p_arr, o_arr
     if through_origin:
         slope = float((x @ y_fit) / (x @ x + 1e-12))
-        intercept = 0.0
     else:
         X = np.c_[np.ones_like(x), x]
         beta, *_ = np.linalg.lstsq(X, y_fit, rcond=None)
-        intercept, slope = float(beta[0]), float(beta[1])
+        slope = float(beta[1])
 
     return p_arr, o_arr, slope
 

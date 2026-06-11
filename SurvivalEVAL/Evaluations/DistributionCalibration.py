@@ -761,7 +761,7 @@ def ks_pvalue(D_n: float, n: int) -> float:
 
 
 if __name__ == "__main__":
-    ### test the KM calibration
+    # Test the KM calibration.
 
     # # first we define the time coordinates
     # times = np.linspace(0, 100, 11)

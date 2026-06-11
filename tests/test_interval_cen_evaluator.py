@@ -78,9 +78,7 @@ def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
         right_limits=np.array([1.0, 2.0]),
     )
 
-    evaluator.time_coordinates = np.array(
-        [[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]]
-    )
+    evaluator.time_coordinates = np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])
 
     assert evaluator.ndim_time == 2
     assert evaluator.predict_probability_from_curve(1.0).shape == (2,)

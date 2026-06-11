@@ -63,6 +63,9 @@ namespaces = false
 [tool.pytest.ini_options]
 addopts = ["--ignore=tests/private"]
 
+[tool.isort]
+profile = "black"
+
 [project.optional-dependencies]
 dev = [
     "pycox>=0.2.3",
