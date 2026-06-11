@@ -53,7 +53,7 @@ pip install SurvivalEVAL
 For local development:
 
 ```bash
-git clone git@github.com:shi-ang/SurvivalEVAL.git
+git clone https://github.com/shi-ang/SurvivalEVAL.git
 cd SurvivalEVAL
 python -m pip install -r requirements.txt
 python -m pip install -e .
