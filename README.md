@@ -3,8 +3,8 @@
     <img
       alt="SurvivalEVAL logo"
       src="https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/logo.png"
-      width="300"
-      height="300"></a>
+      width="755"
+      height="200"></a>
 </p>
 
 -----------------
