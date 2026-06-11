@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-06-11: Version 0.6.3
+
+1. Fix zero-padding and prediction-input update paths so 1-D survival curves, raw replacements after padding, sample-specific time grids, and row-count mismatches are handled consistently in right- and interval-censored evaluators.
+2. Make string option handling case-insensitive across evaluator methods, interpolation choices, Brier score, concordance, calibration, residual, mean-error, and nonparametric estimator settings.
+3. Correct boundary handling for censored observations at target times in AUC and right-censored Brier score calculations, and for open-left/closed-right interval-censored Brier score cases.
+4. Improve utility behavior for repeated infinite monotonic values, degenerate all-one survival-to-quantile curves, zero-padded probability prediction, and vectorized tail extrapolation for multiple target times.
+5. Clean up evaluator prediction input APIs by adding shared `set_prediction_inputs`, refreshing dimension metadata and cached predictions on updates, and accepting list quantile levels.
+6. Correct setup license metadata to GPLv3 and align documentation/comments for evaluator, interval-censored, Brier score, and utility behavior.
+7. Add regression tests covering the new validation, boundary, zero-padding, quantile, utility, and metric behavior.
+
 ## 2026-06-08: Version 0.6.2
 
 1. Improve survival-curve and time-coordinate validation, broadcasting, zero-padding, and monotonicity correction, including isotonic regression support.
