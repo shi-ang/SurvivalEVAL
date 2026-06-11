@@ -1,5 +1,3 @@
-<h1 align="center">SurvivalEVAL</h1>
-
 <p align="center">
   <a href="https://github.com/shi-ang/SurvivalEVAL/">
     <img
