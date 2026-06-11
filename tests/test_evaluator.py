@@ -431,9 +431,7 @@ def test_pred_survs_setter_resets_cache(evaluator_data):
 
 def test_time_coordinates_setter_refreshes_dimension_metadata(evaluator_data):
     evaluator = evaluator_data["evaluator"]
-    per_sample_grid = np.tile(
-        evaluator.time_coordinates, (evaluator_data["n_test"], 1)
-    )
+    per_sample_grid = np.tile(evaluator.time_coordinates, (evaluator_data["n_test"], 1))
 
     evaluator.time_coordinates = per_sample_grid
 

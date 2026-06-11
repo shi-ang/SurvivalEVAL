@@ -30,7 +30,6 @@ from SurvivalEVAL.Evaluations.util import (
     predict_mean_st,
     predict_median_st,
     predict_rmst,
-    zero_padding,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 

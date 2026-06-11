@@ -428,7 +428,8 @@ def _pairwise_w(S_Li, S_Ri, eps=1e-12):
     S_lmax = np.minimum(S_Lj, S_Li)  # (n,n)
     S_rmin = np.maximum(S_Rj, S_Ri)  # (n,n)
 
-    pos = lambda x: np.clip(x, 0.0, None)
+    def pos(x):
+        return np.clip(x, 0.0, None)
 
     # Base denominator and J terms
     denom = (S_Li - S_Ri) * (S_Lj - S_Rj)  # (n,n)
@@ -527,14 +528,14 @@ def concordance_ic(
         per-pair weights (same as weights) in denominator.
     """
     eta = np.asarray(eta, dtype=float)
-    l = np.asarray(left, dtype=float)
-    r = np.asarray(right, dtype=float)
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
     n = eta.shape[0]
-    if l.shape != (n,) or r.shape != (n,):
+    if left.shape != (n,) or right.shape != (n,):
         raise ValueError("eta, left, right must all be 1-D arrays of same length.")
 
     # Basic sanity
-    if np.any(l > r):
+    if np.any(left > right):
         raise ValueError("Found an interval with left > right in testing data.")
 
     method = method.lower()
@@ -553,12 +554,12 @@ def concordance_ic(
         # train Turnbull estimator on training data
         tb = TurnbullEstimatorLifelines(l_train, r_train)
 
-        S_l = tb.predict(l)
-        S_r = tb.predict(r)
+        S_l = tb.predict(left)
+        S_r = tb.predict(right)
 
         w = _pairwise_w(S_l, S_r, eps=eps)
     elif method == "comparable":
-        comparable = _get_comparable_ic(l, r, tol=eps)
+        comparable = _get_comparable_ic(left, right, tol=eps)
         w = comparable.astype(float)
     else:
         raise ValueError("method must be 'comparable' or 'probability'.")

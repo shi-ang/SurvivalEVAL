@@ -292,8 +292,6 @@ def _solve_qp_scipy(
     minimize 0.5 * x^T Q x + q^T x
     subject to lb <= x <= ub
     """
-    n = len(q)
-
     # Handle any remaining NaN/Inf
     lb = np.nan_to_num(lb, nan=0.0, posinf=1.0, neginf=0.0)
     ub = np.nan_to_num(ub, nan=1.0, posinf=1.0, neginf=0.0)
@@ -323,7 +321,10 @@ def _solve_qp_scipy(
 
 
 def _compute_bounds_fast(
-    u: np.ndarray, l: np.ndarray, r: np.ndarray, query_points: np.ndarray
+    u: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    query_points: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Fast computation of fiducial bounds using sorting and searchsorted.
@@ -350,13 +351,11 @@ def _compute_bounds_fast(
     upper : np.ndarray
         Upper bounds at query points
     """
-    n = len(u)
-    nq = len(query_points)
-
     # For lower bound: max u among r <= s
     # Sort by r, then compute cumulative max of u
-    r_order = np.argsort(r)
-    r_sorted = r[r_order]
+    n = len(u)
+    r_order = np.argsort(right)
+    r_sorted = right[r_order]
     u_by_r = u[r_order]
     cummax_u = np.maximum.accumulate(u_by_r)
 
@@ -368,8 +367,8 @@ def _compute_bounds_fast(
 
     # For upper bound: min u among l > s
     # Sort by l in ascending order, then compute reverse cumulative min
-    l_order = np.argsort(l)
-    l_sorted = l[l_order]
+    l_order = np.argsort(left)
+    l_sorted = left[l_order]
     u_by_l = u[l_order]
 
     # Compute reverse cumulative min (from end to beginning)
@@ -388,7 +387,10 @@ def _compute_bounds_fast(
 
 
 def _gibbs_step(
-    u: np.ndarray, l: np.ndarray, r: np.ndarray, rng: np.random.Generator
+    u: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     """
     One full sweep of the Gibbs sampler (Lines 6-11 in Algorithm 1).
@@ -422,15 +424,15 @@ def _gibbs_step(
         mask[i] = False
 
         u_pre = u[mask]
-        l_pre = l[mask]
-        r_pre = r[mask]
+        left_pre = left[mask]
+        right_pre = right[mask]
 
         # u_lower = max(u[j] for j != i if r[j] <= l[i]) else 0
-        idx1 = r_pre <= l[i]
+        idx1 = right_pre <= left[i]
         u_lower = np.max(u_pre[idx1]) if np.any(idx1) else 0.0
 
         # u_upper = min(u[j] for j != i if l[j] >= r[i]) else 1
-        idx2 = l_pre >= r[i]
+        idx2 = left_pre >= right[i]
         u_upper = np.min(u_pre[idx2]) if np.any(idx2) else 1.0
 
         # Sample new u[i]
@@ -551,56 +553,40 @@ def fit_fiducial_interval_censor(
     (200,)
     """
     # Input validation
-    l = np.asarray(l, dtype=np.float64)
-    r = np.asarray(r, dtype=np.float64)
+    left = np.asarray(l, dtype=np.float64)
+    right = np.asarray(r, dtype=np.float64)
 
-    if l.shape != r.shape:
+    if left.shape != right.shape:
         raise ValueError("l and r must have the same shape")
-    if np.any(l > r):
+    if np.any(left > right):
         raise ValueError("Left endpoints must be <= right endpoints")
-    if np.any(l < 0):
+    if np.any(left < 0):
         raise ValueError("Left endpoints must be non-negative")
 
-    n = len(l)
+    n = len(left)
 
     if n == 0:
         raise ValueError("Input arrays must not be empty")
 
-    # Identify right-censored observations (r = Inf)
     # Unlike previous approach, we keep r=Inf for Gibbs sampling and bounds computation
     # because the R code naturally handles Inf in comparisons:
     #   s >= Inf is FALSE for finite s
     #   Inf >= s is TRUE for finite s
     # So right-censored obs don't contribute to lower bounds in R, and same in Python
-    inf_mask = ~np.isfinite(r)
-
     # For setting grid_high, only use finite r values
-    """
-    r_for_grid = r.copy()
-    if np.any(inf_mask):
-        if np.any(~inf_mask):
-            finite_r_max = np.max(r[~inf_mask])
-        else:
-            finite_r_max = np.max(l) * 2
-        r_for_grid[inf_mask] = finite_r_max  # Only used for grid_high calculation in the initial round.
-    """
-    finite_r = r[np.isfinite(r)]
+    finite_r = right[np.isfinite(right)]
 
     # Set grid bounds
     if grid_low is None:
-        grid_low = float(np.min(l))
+        grid_low = float(np.min(left))
 
-    """
-    if grid_high is None:
-        grid_high = float(np.max(r_for_grid))
-    """
     if grid_high is None:
         if finite_r.size > 0:
             grid_high = float(np.max(finite_r))  # default matches R wrapper idea
         else:
             # No finite right endpoints (e.g., no observed events).
             # Use a conservative finite window; better: require user to pass grid_high_override.
-            grid_high = float(np.max(l))  # NOT 2*max(l)
+            grid_high = float(np.max(left))  # NOT 2*max(l)
 
     if grid_high_override is not None:
         grid_high = float(grid_high_override)
@@ -623,16 +609,10 @@ def fit_fiducial_interval_censor(
 
     # Initialize u (Lines 1-3 in Algorithm 1)
     # For midpoint calculation, use finite substitute for Inf values
-    r_for_mid = r.copy()
-    """
-    if np.any(inf_mask):
-        # Use a finite value for midpoint ordering only
-        # This matches R behavior where (l + Inf) / 2 = Inf, but we need finite for sorting
-        r_for_mid[inf_mask] = r_for_grid[inf_mask]  # Use the grid_high based value
-    """
+    r_for_mid = right.copy()
     r_for_mid[~np.isfinite(r_for_mid)] = grid_high
 
-    mid = (l + r_for_mid) / 2
+    mid = (left + r_for_mid) / 2
     u = np.sort(rng.uniform(0, 1, n))
     u = u[np.argsort(np.argsort(mid))]  # Reorder by midpoint order
 
@@ -656,7 +636,7 @@ def fit_fiducial_interval_censor(
     for j in range(total_iter):
         # Gibbs sampler (Lines 6-11) - use r directly (with Inf),
         # numpy comparisons handle Inf correctly like R does
-        u = _gibbs_step(u, l, r, rng)
+        u = _gibbs_step(u, left, right, rng)
 
         # Rank-resample step (Line 12)
         u = _rank_resample(u, rng)
@@ -667,7 +647,7 @@ def fit_fiducial_interval_censor(
 
         # Compute fiducial bounds on internal grid (Lines 15-20)
         # use r directly (with Inf), numpy comparisons handle Inf correctly
-        fid_lower, fid_upper = _compute_bounds_fast(u, l, r, grid)
+        fid_lower, fid_upper = _compute_bounds_fast(u, left, right, grid)
 
         # Linear interpolation via QP (Lines 21-25)
         w, osqp_solver = _linear_interpolation_qp(
@@ -768,22 +748,22 @@ def _demo():
     # Create interval censoring
     # Inspection times
     inspection_width = 2.0
-    l = np.maximum(0, true_times - np.random.uniform(0, inspection_width, n))
-    r = true_times + np.random.uniform(0, inspection_width, n)
+    left = np.maximum(0, true_times - np.random.uniform(0, inspection_width, n))
+    right = true_times + np.random.uniform(0, inspection_width, n)
 
     # Some right-censored (r = inf -> use large value)
     right_censored = np.random.random(n) < 0.1
-    r[right_censored] = np.inf  # np.max(r) * 1.5
+    right[right_censored] = np.inf  # np.max(right) * 1.5
 
     print(f"\nSample size: {n}")
     print(f"Number right-censored: {np.sum(right_censored)}")
-    print(f"Time range: [{np.min(l):.2f}, {np.max(r):.2f}]")
+    print(f"Time range: [{np.min(left):.2f}, {np.max(right):.2f}]")
 
     # Fit fiducial model
     print("\nFitting fiducial model...")
     result = fit_fiducial_interval_censor(
-        l,
-        r,
+        left,
+        right,
         mfid=500,
         mburn=50,
         alpha=0.05,
@@ -793,7 +773,7 @@ def _demo():
         solver="osqp",
     )
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(
         f"  Test grid: {len(result['testgrid'])} points from "
         f"{result['testgrid'][0]:.2f} to {result['testgrid'][-1]:.2f}"

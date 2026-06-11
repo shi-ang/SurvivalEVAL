@@ -40,13 +40,12 @@
    - Survival AUPRC for both right and interval censoring
    - CRPS (degenerated version of interval Brier score) for both right and interval censoring
 2. Implement other metrics (from literature) that are currently not integrated in the Evaluator classes, including:
-    - Coefficient of variation (CoV)
-    - Calibration slope (for both right and interval censoring)
+   - Coefficient of variation (CoV)
+   - Calibration slope (for both right and interval censoring)
 3. Add converter to use the mid-point imputation for interval censored data to convert to right censored data for evaluation purpose.
 4. Add plot support for calibration metrics, integrated Brier score, for both right and interval censoring.
 5. Remove the reference of old Turnbull estimator, implement a new class TurnbullEstimatorLifelines based on the lifelines package.
 6. Update test scripts for the new features.
-
 
 ## 2025-09-09: Version 0.5.1
 
