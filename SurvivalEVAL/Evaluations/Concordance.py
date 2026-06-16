@@ -145,17 +145,32 @@ def concordance(
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)
-        contributing_anchors = _right_censored_contributing_event_anchor_mask(
-            event_indicators, event_times, tau
-        )
-        if np.any(censoring_survival[contributing_anchors] <= 0):
+        observed_anchors = event_indicators & _is_before_tau(event_times, tau)
+
+        # Uno/IPCW only needs positive censoring survival for anchors whose
+        # weights can actually be used. Every non-final event-time block has
+        # later samples as candidates. In the final observed-time block, an
+        # event anchor still contributes if there is a same-time censored sample
+        # or another same-time event for the time-tie count. The only observed
+        # anchor that cannot contribute is a singleton event in the final block,
+        # so exclude just that case from the zero-survival check and weight
+        # assignment.
+        final_time = np.max(event_times)
+        final_block = event_times == final_time
+        final_events = final_block & event_indicators
+        final_event_count = np.count_nonzero(final_events)
+        final_has_censored_candidate = np.any(final_block & ~event_indicators)
+        if final_event_count == 1 and not final_has_censored_candidate:
+            observed_anchors[final_events] = False
+
+        if np.any(censoring_survival[observed_anchors] <= 0):
             raise ValueError(
                 "Censoring survival probability is zero for at least one observed event; "
                 "cannot estimate Uno's concordance."
             )
 
         ipcw_weights = np.zeros_like(event_times, dtype=float)
-        ipcw_weights[contributing_anchors] = 1 / censoring_survival[contributing_anchors]
+        ipcw_weights[observed_anchors] = 1 / censoring_survival[observed_anchors]
         counts = _right_censored_risk_counts(
             event_indicators,
             event_times,
@@ -356,33 +371,6 @@ def _right_censored_risk_counts(
             )
 
     return counts
-
-
-def _right_censored_contributing_event_anchor_mask(
-    event_indicator: np.ndarray,
-    event_time: np.ndarray,
-    tau: Optional[float] = None,
-) -> np.ndarray:
-    """Return observed-event anchors that can contribute raw concordance counts."""
-    contributing_anchors = np.zeros(event_time.shape[0], dtype=bool)
-
-    for block, later_samples in _iter_time_blocks(event_time):
-        if tau is not None and event_time[block[0]] >= tau:
-            break
-
-        event_anchors = block[event_indicator[block]]
-        if event_anchors.shape[0] == 0:
-            continue
-
-        has_time_ties = event_anchors.shape[0] > 1
-        has_comparable_candidates = (
-            later_samples.shape[0] > 0 or np.any(~event_indicator[block])
-        )
-        if has_time_ties or has_comparable_candidates:
-            contributing_anchors[event_anchors] = True
-
-    return contributing_anchors
-
 
 def _margin_counts(
     event_indicator: np.ndarray,
