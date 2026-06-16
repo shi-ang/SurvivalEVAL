@@ -6,6 +6,7 @@ from typing import Iterator, Optional, Tuple
 import numpy as np
 
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
     KaplanMeierArea,
     TurnbullEstimatorLifelines,
 )
@@ -60,6 +61,7 @@ def concordance(
     train_event_indicators: Optional[np.ndarray] = None,
     method: str = "Harrell",
     ties: str = "Risk",
+    tau: Optional[float] = None,
 ) -> tuple[float, float, float]:
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
@@ -73,17 +75,26 @@ def concordance(
     event_indicators: np.ndarray, shape = (n_samples,)
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples,)
-        The true survival times of the training set.
-    train_event_indicators: np.ndarray, shape = (n_train_samples,)
+    train_event_times: np.ndarray, shape = (n_train_samples,), optional
+        The true survival times of the training set. Required for "Uno",
+        "IPCW", and "Margin".
+    train_event_indicators: np.ndarray, shape = (n_train_samples,), optional
         Binary training-set event indicators: 1 denotes an observed event and
-        0 denotes a censored observation.
+        0 denotes a censored observation. Required for "Uno", "IPCW", and
+        "Margin".
     method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
-        "Harrell": comparable pairs are anchored by samples with observed events. If sample i has an observed
-        event at time t_i, it is compared with samples whose observed event/censoring time is greater than t_i.
-        "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
-        will be calculated and used to construct the pairs.
+        Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
+        "Harrell": comparable pairs are anchored by samples with observed
+        events. If sample i has an observed event at time t_i, it is compared
+        with samples whose observed event/censoring time is greater than t_i.
+        "Naive": alias of "Harrell".
+        "Uno": Harrell-style comparable pairs weighted by inverse probability
+        of censoring weights from the training data.
+        "IPCW": alias of "Uno".
+        "Margin": the pairs are constructed between all samples. A best-guess
+        time for the censored samples will be calculated and used to construct
+        the pairs.
     ties: str, optional (default="Risk")
         A string indicating the way ties should be handled.
         Options: "None", "Time", "Risk" (default), or "All"
@@ -93,6 +104,10 @@ def concordance(
         "All" includes all ties.
         Note the concordance calculation is given by
         (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
+    tau: float, optional (default=None)
+        Truncation time. If provided, only pairs whose effective earlier or
+        anchor time is strictly before ``tau`` are counted. If None, no
+        truncation is applied.
 
     Returns
     -------
@@ -116,9 +131,37 @@ def concordance(
     method = method.lower()
     ties = ties.lower()
 
-    if method == "harrell":
+    if method == "harrell" or method == "naive":
         risks = -1 * predicted_times
-        counts = _right_censored_risk_counts(event_indicators, event_times, risks)
+        counts = _right_censored_risk_counts(
+            event_indicators, event_times, risks, tau=tau
+        )
+    elif method == "uno" or method == "ipcw":
+        if train_event_times is None or train_event_indicators is None:
+            error = "If 'Uno' or 'IPCW' is chosen, training set information must be provided."
+            raise ValueError(error)
+
+        train_event_indicators = train_event_indicators.astype(bool)
+
+        censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
+        censoring_survival = censoring_model.predict(event_times)
+        observed_anchors = event_indicators & _is_before_tau(event_times, tau)
+        if np.any(censoring_survival[observed_anchors] <= 0):
+            raise ValueError(
+                "Censoring survival probability is zero for at least one observed event; "
+                "cannot estimate Uno's concordance."
+            )
+
+        ipcw_weights = np.zeros_like(event_times, dtype=float)
+        ipcw_weights[observed_anchors] = 1 / censoring_survival[observed_anchors]
+        counts = _right_censored_risk_counts(
+            event_indicators,
+            event_times,
+            -1 * predicted_times,
+            sample_weights=ipcw_weights,
+            anchor_pair_weights=np.square(ipcw_weights),
+            tau=tau,
+        )
     elif method == "margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set information must be provided."
@@ -153,6 +196,7 @@ def concordance(
             estimate=risks,
             bg_event_time=bg_event_times,
             partial_weights=partial_weights,
+            tau=tau,
         )
     else:
         raise TypeError("Method for calculating concordance is unrecognized.")
@@ -241,6 +285,8 @@ def _right_censored_risk_counts(
     event_time: np.ndarray,
     estimate: np.ndarray,
     sample_weights: Optional[np.ndarray] = None,
+    anchor_pair_weights: Optional[np.ndarray] = None,
+    tau: Optional[float] = None,
     tied_tol: float = 1e-8,
 ) -> ConcordanceCounts:
     """Count right-censored comparable pairs for a risk score.
@@ -255,7 +301,13 @@ def _right_censored_risk_counts(
         Risk scores. Higher scores indicate higher risk.
     sample_weights: np.ndarray, shape = (n_samples,), optional
         Optional symmetric sample weights. Pair weights are products of anchor
-        and candidate sample weights.
+        and candidate sample weights unless ``anchor_pair_weights`` is provided.
+    anchor_pair_weights: np.ndarray, shape = (n_samples,), optional
+        Optional per-anchor pair weights. If provided, every comparable pair
+        anchored by sample ``i`` receives ``anchor_pair_weights[i]``.
+    tau: float, optional (default=None)
+        Truncation time. If provided, only event anchors whose observed time is
+        strictly before ``tau`` are counted. If None, no truncation is applied.
     tied_tol: float, optional (default=1e-8)
         Absolute tolerance for risk-score ties.
 
@@ -271,21 +323,31 @@ def _right_censored_risk_counts(
 
     counts = ConcordanceCounts()
     for block, later_samples in _iter_time_blocks(event_time):
+        if tau is not None and event_time[block[0]] >= tau:
+            break
+
         event_anchors = block[event_indicator[block]]
         if event_anchors.shape[0] == 0:
             continue
 
         # Same-time events are not comparable; same-time censored samples are.
         counts.time_tie_pairs += _same_time_pair_weight(sample_weights[event_anchors])
-        candidates = np.concatenate((block[~event_indicator[block]], later_samples))
-        if candidates.shape[0] == 0:
+        candidate_indices = np.concatenate((block[~event_indicator[block]], later_samples))
+        if candidate_indices.shape[0] == 0:
             continue
 
         for anchor_index in event_anchors:
-            pair_weights = sample_weights[anchor_index] * sample_weights[candidates]
+            if anchor_pair_weights is None:
+                pair_weights = sample_weights[anchor_index] * sample_weights[candidate_indices]
+            else:
+                pair_weights = np.full(
+                    candidate_indices.shape[0],
+                    anchor_pair_weights[anchor_index],
+                    dtype=float,
+                )
             counts += _count_directed_risk_pairs(
-                np.full(candidates.shape[0], anchor_index, dtype=int),
-                candidates,
+                np.full(candidate_indices.shape[0], anchor_index, dtype=int),
+                candidate_indices,
                 estimate,
                 pair_weights=pair_weights,
                 tied_tol=tied_tol,
@@ -300,6 +362,7 @@ def _margin_counts(
     estimate: np.ndarray,
     bg_event_time: np.ndarray,
     partial_weights: np.ndarray,
+    tau: Optional[float] = None,
     tied_tol: float = 1e-8,
 ) -> ConcordanceCounts:
     """Count Margin concordance pairs from best-guess times.
@@ -320,6 +383,11 @@ def _margin_counts(
         Best-guess event times for all samples.
     partial_weights: np.ndarray, shape = (n_samples,)
         Per-sample weights used for the best-guess baseline.
+    tau: float, optional (default=None)
+        Truncation time. Best-guess baseline pairs use the best-guess earlier
+        time, while observed-pair replacements use the observed event anchor
+        time. In both cases the effective time must be strictly before ``tau``.
+        If None, no truncation is applied.
     tied_tol: float, optional (default=1e-8)
         Absolute tolerance for risk-score ties.
 
@@ -333,6 +401,7 @@ def _margin_counts(
         bg_event_time,
         estimate,
         sample_weights=partial_weights,
+        tau=tau,
         tied_tol=tied_tol,
     )
 
@@ -347,31 +416,48 @@ def _margin_counts(
             bg_event_time[anchor_indices] > bg_event_time[candidate_indices]
         )
         tied_time = ~(anchor_before | candidate_before)
+        baseline_anchor_before_tau = _is_before_tau(bg_event_time[anchor_indices], tau)
+        baseline_candidate_before_tau = _is_before_tau(
+            bg_event_time[candidate_indices], tau
+        )
+        tied_time_before_tau = baseline_anchor_before_tau
+
+        anchor_baseline_included = anchor_before & baseline_anchor_before_tau
+        candidate_baseline_included = candidate_before & baseline_candidate_before_tau
+        tied_time_baseline_included = tied_time & tied_time_before_tau
+        observed_replacement_included = _is_before_tau(event_time[anchor_indices], tau)
 
         counts += _count_directed_risk_pairs(
-            anchor_indices[anchor_before],
-            candidate_indices[anchor_before],
+            anchor_indices[anchor_baseline_included],
+            candidate_indices[anchor_baseline_included],
             estimate,
-            pair_weights=-baseline_weights[anchor_before],
+            pair_weights=-baseline_weights[anchor_baseline_included],
             tied_tol=tied_tol,
         )
         counts += _count_directed_risk_pairs(
-            candidate_indices[candidate_before],
-            anchor_indices[candidate_before],
+            candidate_indices[candidate_baseline_included],
+            anchor_indices[candidate_baseline_included],
             estimate,
-            pair_weights=-baseline_weights[candidate_before],
+            pair_weights=-baseline_weights[candidate_baseline_included],
             tied_tol=tied_tol,
         )
-        counts.time_tie_pairs -= baseline_weights[tied_time].sum()
+        counts.time_tie_pairs -= baseline_weights[tied_time_baseline_included].sum()
         counts += _count_directed_risk_pairs(
-            anchor_indices,
-            candidate_indices,
+            anchor_indices[observed_replacement_included],
+            candidate_indices[observed_replacement_included],
             estimate,
-            pair_weights=np.ones(anchor_indices.shape[0], dtype=float),
+            pair_weights=np.ones(observed_replacement_included.sum(), dtype=float),
             tied_tol=tied_tol,
         )
 
     return counts
+
+
+def _is_before_tau(times: np.ndarray, tau: Optional[float]) -> np.ndarray:
+    """Return a boolean mask for times that pass the strict tau truncation."""
+    if tau is None:
+        return np.ones(times.shape, dtype=bool)
+    return times < tau
 
 
 def _count_directed_risk_pairs(
@@ -442,10 +528,10 @@ def _iter_comparable_event_pairs(
         event_anchors = block[event_indicator[block]]
         if event_anchors.shape[0] > 0:
             same_time_censored = block[~event_indicator[block]]
-            candidates = np.concatenate((same_time_censored, later_samples))
+            candidate_indices = np.concatenate((same_time_censored, later_samples))
             for anchor_index in event_anchors:
-                if candidates.shape[0] > 0:
-                    yield np.full(candidates.shape[0], anchor_index, dtype=int), candidates
+                if candidate_indices.shape[0] > 0:
+                    yield np.full(candidate_indices.shape[0], anchor_index, dtype=int), candidate_indices
 
 
 def _iter_time_blocks(event_time: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:

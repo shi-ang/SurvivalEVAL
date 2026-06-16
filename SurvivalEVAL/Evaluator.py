@@ -609,7 +609,10 @@ class SurvivalEvaluator:
         return fig, ax
 
     def concordance(
-        self, ties: str = "Risk", method: str = "Harrell"
+        self,
+        ties: str = "Risk",
+        method: str = "Harrell",
+        tau: Optional[Numeric] = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
@@ -627,12 +630,23 @@ class SurvivalEvaluator:
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
         method: str, default = "Harrell"
             A string indicating the method for constructing the pairs of samples.
-            Options: "Harrell" (default) or "Margin"
-            "Harrell": comparable pairs are anchored by samples with observed events. If sample i has an observed
-            event at time t_i, it is compared with samples whose observed event/censoring time is greater than t_i.
-            "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
-            will be calculated and used to construct the pairs.
-        :return: (float, float, int)
+            Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
+            "Harrell": comparable pairs are anchored by samples with observed
+            events. If sample i has an observed event at time t_i, it is compared
+            with samples whose observed event/censoring time is greater than t_i.
+            "Naive": alias of "Harrell".
+            "Uno": Harrell-style comparable pairs weighted by inverse probability
+            of censoring weights from the training data.
+            "IPCW": alias of "Uno".
+            "Margin": the pairs are constructed between all samples. A best-guess
+            time for the censored samples will be calculated and used to construct
+            the pairs. "Uno", "IPCW", and "Margin" require training set
+            information.
+        tau: float, optional (default=None)
+            Truncation time. If provided, only pairs whose effective earlier or
+            anchor time is strictly before ``tau`` are counted. If None, no
+            truncation is applied.
+        :return: (float, float, float)
             The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
@@ -640,8 +654,8 @@ class SurvivalEvaluator:
         if self._NO_CENSOR:
             method = "harrell"
 
-        if method == "margin":
-            self._error_trainset("margin concordance")
+        if method in {"margin", "uno", "ipcw"}:
+            self._error_trainset(f"{method} concordance")
 
         return concordance(
             predicted_times=self.predicted_event_times,
@@ -651,11 +665,13 @@ class SurvivalEvaluator:
             train_event_indicators=self.train_event_indicators,
             method=method,
             ties=ties,
+            tau=tau,
         )
 
     def auc(self, target_time: Optional[Numeric] = None) -> float:
         """
-        Calculate the area under the ROC curve (AUC/AUROC) score at a given time point from the predicted survival curve.
+        Calculate the area under the ROC curve (AUC/AUROC) score at a given
+        time point from the predicted survival curve.
 
         Parameters
         ----------
@@ -688,7 +704,8 @@ class SurvivalEvaluator:
 
     def auroc(self, target_time: Optional[Numeric] = None):
         """
-        Calculate the area under the ROC curve (AUC/AUROC) score at a given time point from the predicted survival curve.
+        Calculate the area under the ROC curve (AUC/AUROC) score at a given
+        time point from the predicted survival curve.
 
         Alias for the '.auc()' method.
         Parameters
@@ -1752,8 +1769,11 @@ class PointEvaluator:
         self._pred_times = pred_times
 
     def concordance(
-        self, ties: str = "Risk", method: str = "Harrell"
-    ) -> tuple[float, float, int]:
+        self,
+        ties: str = "Risk",
+        method: str = "Harrell",
+        tau: Optional[Numeric] = None,
+    ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
@@ -1770,11 +1790,22 @@ class PointEvaluator:
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
         method: str, default = "Harrell"
             A string indicating the method for constructing the pairs of samples.
-            Options: "Harrell" (default) or "Margin"
-            "Harrell": comparable pairs are anchored by samples with observed events. If sample i has an observed
-            event at time t_i, it is compared with samples whose observed event/censoring time is greater than t_i.
-            "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
-            will be calculated and used to construct the pairs.
+            Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
+            "Harrell": comparable pairs are anchored by samples with observed
+            events. If sample i has an observed event at time t_i, it is compared
+            with samples whose observed event/censoring time is greater than t_i.
+            "Naive": alias of "Harrell".
+            "Uno": Harrell-style comparable pairs weighted by inverse probability
+            of censoring weights from the training data.
+            "IPCW": alias of "Uno".
+            "Margin": the pairs are constructed between all samples. A best-guess
+            time for the censored samples will be calculated and used to construct
+            the pairs. "Uno", "IPCW", and "Margin" require training set
+            information.
+        tau: float, optional (default=None)
+            Truncation time. If provided, only pairs whose effective earlier or
+            anchor time is strictly before ``tau`` are counted. If None, no
+            truncation is applied.
 
         Returns
         -------
@@ -1782,7 +1813,7 @@ class PointEvaluator:
             The concordance index, which is the proportion of concordant pairs among all pairs.
         concordant_pairs: float
             The number of concordant pairs.
-        total_pairs: int
+        total_pairs: float
             The total number of comparable pairs considered in the concordance calculation.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
@@ -1790,8 +1821,8 @@ class PointEvaluator:
         if self._NO_CENSOR:
             method = "harrell"
 
-        if method == "margin":
-            self._error_trainset("margin concordance")
+        if method in {"margin", "uno", "ipcw"}:
+            self._error_trainset(f"{method} concordance")
 
         return concordance(
             predicted_times=self._pred_times,
@@ -1801,6 +1832,7 @@ class PointEvaluator:
             train_event_indicators=self.train_event_indicators,
             method=method,
             ties=ties,
+            tau=tau,
         )
 
     def mae(
