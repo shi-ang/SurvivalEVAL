@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional
 
 import numpy as np
 
@@ -220,7 +220,7 @@ def concordance(
             tau=tau,
         )
     else:
-        raise TypeError("Method for calculating concordance is unrecognized.")
+        raise ValueError("Method for calculating concordance is unrecognized.")
 
     _check_has_any_pairs(counts)
     return _finalize_counts(counts, ties)
@@ -268,7 +268,7 @@ def _finalize_counts(
         concordant_pairs += 0.5 * (counts.risk_tie_pairs + counts.time_tie_pairs)
     else:
         error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
-        raise TypeError(error)
+        raise ValueError(error)
 
     c_index = concordant_pairs / total_pairs if total_pairs != 0 else float("nan")
     return c_index, concordant_pairs, total_pairs
@@ -869,7 +869,7 @@ def concordance_ic(
 def impute_times_midpoint(
     left: np.ndarray,
     right: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Construct (t, delta) from (left, right] intervals using endpoint/midpoint
     imputation.

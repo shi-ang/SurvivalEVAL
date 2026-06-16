@@ -7,7 +7,7 @@ This module provides a fiducial inference method for interval-censored survival 
 """
 
 import warnings
-from typing import Dict, Literal, Optional, Tuple
+from typing import Dict, Literal, Optional
 
 import numpy as np
 import osqp
@@ -23,7 +23,7 @@ _RIDGE = 1e-8  # Ridge regularization for PSD enforcement
 
 def _validate_grid(
     grid_low: float, grid_high: float, ngrid: int
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Validate and adjust grid bounds to ensure numerical stability.
 
@@ -53,7 +53,7 @@ def _validate_grid(
 
 def _build_qp_matrices(
     ngrid: int, grid: np.ndarray, lam: float = 1.0
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Build the quadratic programming matrices Q (Hessian) for linear interpolation.
 
@@ -137,7 +137,7 @@ def _linear_interpolation_qp(
     rng: np.random.Generator,
     solver: str = "osqp",
     osqp_solver: Optional[object] = None,
-) -> Tuple[np.ndarray, Optional[object]]:
+) -> tuple[np.ndarray, Optional[object]]:
     """
     Solve the quadratic programming problem for linear interpolation.
 
@@ -223,7 +223,7 @@ def _solve_qp_osqp(
     lb: np.ndarray,
     ub: np.ndarray,
     solver: Optional[object] = None,
-) -> Tuple[np.ndarray, object]:
+) -> tuple[np.ndarray, object]:
     """
     Solve QP using OSQP with warm-starting.
 
@@ -325,7 +325,7 @@ def _compute_bounds_fast(
     left: np.ndarray,
     right: np.ndarray,
     query_points: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Fast computation of fiducial bounds using sorting and searchsorted.
 

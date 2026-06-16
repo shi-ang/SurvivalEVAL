@@ -10,7 +10,7 @@ Description:
 
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from typing import Sequence
 
 import numpy as np
 from scipy.optimize import brentq
@@ -63,7 +63,7 @@ def calibration_slope_right_censor(
     *,
     quantile_method: str = "Linear",  # "Linear"|"Pchip"
     through_origin: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float]:
     """
     right uncensor (p, obs(p))：
       - event count=1{t_ip >= y_i}
@@ -135,7 +135,7 @@ def calibration_slope_interval_censor(
     quantile_method: str = "Linear",  # "Linear" | "Pchip"  (for survival interpolator)
     through_origin: bool = True,  # fit slope through origin (default in paper)
     clip_p: float = 1e-6,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Compute calibration points (p, obs(p)) and slope under INTERVAL censoring:
       - Include as 1 if t_{i,p} >= U_i
@@ -201,7 +201,7 @@ def calibration_slope_interval_censor(
 
 def cov(
     cdf: np.ndarray, t_grid: np.ndarray, return_details: bool = False
-) -> float | Tuple[float, np.ndarray]:
+) -> float | tuple[float, np.ndarray]:
     """
     Compute the coefficient of variation of event time from a discretized CDF.
 
