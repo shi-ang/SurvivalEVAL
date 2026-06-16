@@ -411,11 +411,11 @@ def test_uno_tau_excludes_anchors_at_and_after_tau():
 
 
 def test_uno_tau_ignores_zero_censoring_survival_for_excluded_anchors():
-    predicted_times = np.array([1.0, 3.0])
-    event_times = np.array([1.0, 3.0])
-    event_indicators = np.array([1, 1])
-    train_event_times = np.array([1.0, 2.0])
-    train_event_indicators = np.array([0, 0])
+    predicted_times = np.array([1.0, 3.0, 4.0])
+    event_times = np.array([1.0, 3.0, 4.0])
+    event_indicators = np.array([1, 1, 1])
+    train_event_times = np.array([1.0, 3.0])
+    train_event_indicators = np.array([1, 0])
 
     with pytest.raises(ValueError):
         concordance(
@@ -437,7 +437,27 @@ def test_uno_tau_ignores_zero_censoring_survival_for_excluded_anchors():
         tau=2.0,
     )
 
-    np.testing.assert_allclose(actual, (1.0, 4.0, 4.0))
+    np.testing.assert_allclose(actual, (1.0, 2.0, 2.0))
+
+
+def test_uno_ignores_zero_censoring_survival_for_non_contributing_final_anchor():
+    predicted_times = np.array([1.0, 2.0, 3.0])
+    event_times = np.array([1.0, 2.0, 3.0])
+    event_indicators = np.array([1, 1, 1])
+    train_event_times = np.array([1.0, 2.0, 3.0])
+    train_event_indicators = np.array([1, 1, 0])
+
+    actual = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        train_event_times=train_event_times,
+        train_event_indicators=train_event_indicators,
+        method="Uno",
+        tau=4.0,
+    )
+
+    np.testing.assert_allclose(actual, (1.0, 3.0, 3.0))
 
 
 def test_margin_concordance_sorts_pairs_by_best_guess_times():

@@ -145,15 +145,17 @@ def concordance(
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)
-        observed_anchors = event_indicators & _is_before_tau(event_times, tau)
-        if np.any(censoring_survival[observed_anchors] <= 0):
+        contributing_anchors = _right_censored_contributing_event_anchor_mask(
+            event_indicators, event_times, tau
+        )
+        if np.any(censoring_survival[contributing_anchors] <= 0):
             raise ValueError(
                 "Censoring survival probability is zero for at least one observed event; "
                 "cannot estimate Uno's concordance."
             )
 
         ipcw_weights = np.zeros_like(event_times, dtype=float)
-        ipcw_weights[observed_anchors] = 1 / censoring_survival[observed_anchors]
+        ipcw_weights[contributing_anchors] = 1 / censoring_survival[contributing_anchors]
         counts = _right_censored_risk_counts(
             event_indicators,
             event_times,
@@ -354,6 +356,32 @@ def _right_censored_risk_counts(
             )
 
     return counts
+
+
+def _right_censored_contributing_event_anchor_mask(
+    event_indicator: np.ndarray,
+    event_time: np.ndarray,
+    tau: Optional[float] = None,
+) -> np.ndarray:
+    """Return observed-event anchors that can contribute raw concordance counts."""
+    contributing_anchors = np.zeros(event_time.shape[0], dtype=bool)
+
+    for block, later_samples in _iter_time_blocks(event_time):
+        if tau is not None and event_time[block[0]] >= tau:
+            break
+
+        event_anchors = block[event_indicator[block]]
+        if event_anchors.shape[0] == 0:
+            continue
+
+        has_time_ties = event_anchors.shape[0] > 1
+        has_comparable_candidates = (
+            later_samples.shape[0] > 0 or np.any(~event_indicator[block])
+        )
+        if has_time_ties or has_comparable_candidates:
+            contributing_anchors[event_anchors] = True
+
+    return contributing_anchors
 
 
 def _margin_counts(
