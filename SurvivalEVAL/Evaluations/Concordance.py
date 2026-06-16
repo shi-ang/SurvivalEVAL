@@ -38,11 +38,8 @@ def concordance(
         0 denotes a censored observation.
     method: str, optional (default="Harrell")
         A string indicating the method for constructing the pairs of samples.
-        "Harrell": the pairs are constructed by comparing the predicted survival time of each sample with the
-        event time of all other samples. The pairs are only constructed between samples with comparable
-        event times. For example, if i-th sample has a censor time of 10, then the pairs are constructed by
-        comparing the predicted survival time of sample i with the event time of all samples with event
-        time of 10 or less.
+        "Harrell": comparable pairs are anchored by samples with observed events. If sample i has an observed
+        event at time t_i, it is compared with samples whose observed event/censoring time is greater than t_i.
         "Margin": the pairs are constructed between all samples. A best-guess time for the censored samples
         will be calculated and used to construct the pairs.
     ties: str, optional (default="Risk")
