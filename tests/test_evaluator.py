@@ -210,6 +210,51 @@ def test_concordance_variants(evaluator_data):
     assert concordant_m <= total_m
 
 
+def test_survival_evaluator_concordance_forwards_tau():
+    time_grid = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    pred_survs = np.array(
+        [
+            [1.0, 0.5, 0.0, 0.0, 0.0],
+            [1.0, 0.75, 0.5, 0.0, 0.0],
+            [1.0, 0.8, 0.7, 0.5, 0.0],
+            [1.0, 0.9, 0.8, 0.7, 0.5],
+        ]
+    )
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=np.array([1.0, 2.0, 3.0, 4.0]),
+        event_indicators=np.array([1, 1, 1, 1]),
+    )
+
+    c_index, concordant, total = evaluator.concordance(tau=2.0)
+
+    assert np.isclose(c_index, 1.0)
+    assert np.isclose(concordant, 3.0)
+    assert np.isclose(total, 3.0)
+
+
+@pytest.mark.parametrize("method", ["Margin", "Uno", "IPCW"])
+def test_survival_evaluator_concordance_train_required_methods_need_training_data(
+    method,
+):
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array(
+            [
+                [1.0, 0.5, 0.2],
+                [1.0, 0.7, 0.4],
+                [1.0, 0.8, 0.6],
+            ]
+        ),
+        time_coordinates=np.array([0.0, 1.0, 2.0]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.array([1, 0, 1]),
+    )
+
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        evaluator.concordance(method=method)
+
+
 def test_auc_alias(evaluator_data):
     evaluator = evaluator_data["evaluator"]
     auc = evaluator.auc(target_time=9.0)

@@ -181,12 +181,21 @@ These metrics compare predicted survival times with observed event/censoring
 times. Predicted times are derived from survival curves using the configured
 `predict_time_method`: `"Median"`, `"Mean"`, or `"RMST"`.
 
-- Concordance index: `evl.concordance(method="Harrell")`
+- Concordance index: `evl.concordance(method="Harrell")` or
+  `evl.concordance(method="Naive")`
+- IPCW/Uno concordance: `evl.concordance(method="Uno")` or
+  `evl.concordance(method="IPCW")`
 - Margin concordance: `evl.concordance(method="Margin")`
+- Optional concordance truncation: `evl.concordance(..., tau=...)`
 - Mean absolute error: `evl.mae(method=...)`
 - Mean squared error: `evl.mse(method=...)`
 - Root mean squared error: `evl.rmse(method=...)`
 - Log-rank and weighted log-rank tests: `evl.log_rank(...)`
+
+`"Uno"`, `"IPCW"`, and `"Margin"` concordance require training event times
+and indicators. For right-censored concordance, `tau` keeps pairs whose
+effective earlier or anchor time is strictly before `tau`; when omitted, no
+truncation is applied.
 
 Error methods include `"Uncensored"`, `"Hinge"`, `"Margin"`, `"IPCW-T"`,
 `"IPCW-D"`, and `"Pseudo_obs"`.
