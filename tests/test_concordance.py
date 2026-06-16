@@ -460,6 +460,33 @@ def test_uno_ignores_zero_censoring_survival_for_non_contributing_final_anchor()
     np.testing.assert_allclose(actual, (1.0, 3.0, 3.0))
 
 
+@pytest.mark.parametrize("method", ["Uno", "IPCW"])
+def test_uno_ignores_zero_censoring_survival_for_discarded_final_time_ties(method):
+    predicted_times = np.array([1.0, 2.0, 3.0])
+    event_times = np.array([1.0, 2.0, 2.0])
+    event_indicators = np.array([1, 1, 1])
+    train_event_times = np.array([1.0, 2.0])
+    train_event_indicators = np.array([1, 0])
+    kwargs = {
+        "predicted_times": predicted_times,
+        "event_times": event_times,
+        "event_indicators": event_indicators,
+        "train_event_times": train_event_times,
+        "train_event_indicators": train_event_indicators,
+        "method": method,
+    }
+
+    default_ties = concordance(**kwargs)
+    no_ties = concordance(**kwargs, ties="None")
+
+    np.testing.assert_allclose(default_ties, (1.0, 2.0, 2.0))
+    np.testing.assert_allclose(no_ties, (1.0, 2.0, 2.0))
+    with pytest.raises(ValueError):
+        concordance(**kwargs, ties="Time")
+    with pytest.raises(ValueError):
+        concordance(**kwargs, ties="All")
+
+
 def test_margin_concordance_sorts_pairs_by_best_guess_times():
     event_indicators = np.array([True, False, True])
     event_times = np.array([1.0, 2.0, 3.0])

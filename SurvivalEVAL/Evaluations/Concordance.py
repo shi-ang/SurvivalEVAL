@@ -148,19 +148,23 @@ def concordance(
         observed_anchors = event_indicators & _is_before_tau(event_times, tau)
 
         # Uno/IPCW only needs positive censoring survival for anchors whose
-        # weights can actually be used. Every non-final event-time block has
-        # later samples as candidates. In the final observed-time block, an
-        # event anchor still contributes if there is a same-time censored sample
-        # or another same-time event for the time-tie count. The only observed
-        # anchor that cannot contribute is a singleton event in the final block,
-        # so exclude just that case from the zero-survival check and weight
+        # weights can affect the selected concordance result. Every non-final
+        # event-time block has later samples as candidates. In the final block,
+        # event anchors still contribute through same-time censored candidates;
+        # event-event time ties contribute only when the requested tie policy
+        # keeps time ties. Otherwise final events have no effect on the returned
+        # index, so exclude them from the zero-survival check and weight
         # assignment.
         final_time = np.max(event_times)
         final_block = event_times == final_time
         final_events = final_block & event_indicators
         final_event_count = np.count_nonzero(final_events)
         final_has_censored_candidate = np.any(final_block & ~event_indicators)
-        if final_event_count == 1 and not final_has_censored_candidate:
+        final_time_ties_counted = ties in {"time", "all"}
+        final_events_contribute = final_has_censored_candidate or (
+            final_time_ties_counted and final_event_count > 1
+        )
+        if not final_events_contribute:
             observed_anchors[final_events] = False
 
         if np.any(censoring_survival[observed_anchors] <= 0):
