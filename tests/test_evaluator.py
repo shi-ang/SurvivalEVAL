@@ -235,7 +235,9 @@ def test_survival_evaluator_concordance_forwards_tau():
 
 
 @pytest.mark.parametrize("method", ["Margin", "Uno", "IPCW"])
-def test_survival_evaluator_concordance_train_required_methods_need_training_data(method):
+def test_survival_evaluator_concordance_train_required_methods_need_training_data(
+    method,
+):
     evaluator = SurvivalEvaluator(
         pred_survs=np.array(
             [

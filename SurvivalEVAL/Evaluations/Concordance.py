@@ -226,7 +226,9 @@ def concordance(
     return _finalize_counts(counts, ties)
 
 
-def _finalize_counts(counts: ConcordanceCounts, ties: str) -> tuple[float, float, float]:
+def _finalize_counts(
+    counts: ConcordanceCounts, ties: str
+) -> tuple[float, float, float]:
     """Apply the requested tie policy to raw concordance counts.
 
     Parameters
@@ -353,13 +355,17 @@ def _right_censored_risk_counts(
 
         # Same-time events are not comparable; same-time censored samples are.
         counts.time_tie_pairs += _same_time_pair_weight(sample_weights[event_anchors])
-        candidate_indices = np.concatenate((block[~event_indicator[block]], later_samples))
+        candidate_indices = np.concatenate(
+            (block[~event_indicator[block]], later_samples)
+        )
         if candidate_indices.shape[0] == 0:
             continue
 
         for anchor_index in event_anchors:
             if anchor_pair_weights is None:
-                pair_weights = sample_weights[anchor_index] * sample_weights[candidate_indices]
+                pair_weights = (
+                    sample_weights[anchor_index] * sample_weights[candidate_indices]
+                )
             else:
                 pair_weights = np.full(
                     candidate_indices.shape[0],
@@ -375,6 +381,7 @@ def _right_censored_risk_counts(
             )
 
     return counts
+
 
 def _margin_counts(
     event_indicator: np.ndarray,
@@ -551,10 +558,14 @@ def _iter_comparable_event_pairs(
             candidate_indices = np.concatenate((same_time_censored, later_samples))
             for anchor_index in event_anchors:
                 if candidate_indices.shape[0] > 0:
-                    yield np.full(candidate_indices.shape[0], anchor_index, dtype=int), candidate_indices
+                    yield np.full(
+                        candidate_indices.shape[0], anchor_index, dtype=int
+                    ), candidate_indices
 
 
-def _iter_time_blocks(event_time: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+def _iter_time_blocks(
+    event_time: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     """Yield equal-time sample blocks and the samples with later observed times.
 
     Parameters

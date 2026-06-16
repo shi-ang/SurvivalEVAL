@@ -26,7 +26,9 @@ def _before_tau(time, tau):
     return tau is None or time < tau
 
 
-def _brute_harrell_counts(event_indicators, event_times, risks, sample_weights=None, tau=None):
+def _brute_harrell_counts(
+    event_indicators, event_times, risks, sample_weights=None, tau=None
+):
     if sample_weights is None:
         sample_weights = np.ones(event_times.shape[0], dtype=float)
     counts = ConcordanceCounts()
