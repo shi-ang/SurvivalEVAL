@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-06-16: Version 0.7.0
+
+1. Add Uno's right-censored concordance index through the `"Uno"` method, with `"IPCW"` kept as an alias.
+2. Add `tau` truncation support for right-censored concordance methods, using strict before-`tau` anchor filtering.
+3. Improve right-censored concordance pair accounting for Harrell/Naive, Uno/IPCW, and Margin methods, including
+   tie handling and final-block IPCW edge cases.
+4. Update evaluator concordance wrappers and docstrings to expose the new right-censored concordance options.
+5. Add regression tests for Uno/IPCW weighting, `tau` truncation, tie policies, Margin behavior, and evaluator
+   forwarding.
+
 ## 2026-06-11: Version 0.6.3
 
 1. Fix zero-padding and prediction-input update paths so 1-D survival curves, raw replacements after padding, sample-specific time grids, and row-count mismatches are handled consistently in right- and interval-censored evaluators.
