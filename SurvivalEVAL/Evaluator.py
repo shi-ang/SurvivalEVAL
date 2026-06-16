@@ -609,16 +609,16 @@ class SurvivalEvaluator:
         return fig, ax
 
     def concordance(
-        self, ties: str = "None", method: str = "Harrell"
+        self, ties: str = "Risk", method: str = "Harrell"
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
         Parameters
         ----------
-        ties: str, default = "None"
+        ties: str, default = "Risk"
             A string indicating the way ties should be handled.
-            Options: "None" (default), "Time", "Risk", or "All"
+            Options: "None", "Time", "Risk" (default), or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
             "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
             "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
@@ -1755,16 +1755,16 @@ class PointEvaluator:
         self._pred_times = pred_times
 
     def concordance(
-        self, ties: str = "None", method: str = "Harrell"
+        self, ties: str = "Risk", method: str = "Harrell"
     ) -> tuple[float, float, int]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
         Parameters
         ----------
-        ties: str, default = "None"
+        ties: str, default = "Risk"
             A string indicating the way ties should be handled.
-            Options: "None" (default), "Time", "Risk", or "All"
+            Options: "None", "Time", "Risk" (default), or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
             "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
             "Risk" includes ties in predict survival times (risk scores) but not in true survival time.

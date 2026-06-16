@@ -1,6 +1,50 @@
 import numpy as np
 
-from SurvivalEVAL.Evaluations.Concordance import _get_comparable_ic
+from SurvivalEVAL import PointEvaluator
+from SurvivalEVAL.Evaluations.Concordance import _get_comparable_ic, concordance
+
+
+def test_concordance_default_gives_half_credit_to_tied_risk_predictions():
+    predicted_times = np.array([1.0, 1.0, 3.0])
+    event_times = np.array([1.0, 2.0, 3.0])
+    event_indicators = np.array([1, 1, 1])
+
+    c_default, concordant_default, total_default = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        method="Harrell",
+    )
+    c_no_ties, concordant_no_ties, total_no_ties = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        method="Harrell",
+        ties="None",
+    )
+
+    assert np.isclose(c_default, 5.0 / 6.0)
+    assert np.isclose(concordant_default, 2.5)
+    assert np.isclose(total_default, 3.0)
+    assert np.isclose(c_no_ties, 1.0)
+    assert np.isclose(concordant_no_ties, 2.0)
+    assert np.isclose(total_no_ties, 2.0)
+
+
+def test_point_evaluator_concordance_default_uses_standard_harrell_tie_handling():
+    evaluator = PointEvaluator(
+        pred_times=np.array([1.0, 1.0, 3.0]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.array([1, 1, 1]),
+    )
+
+    c_default, concordant_default, total_default = evaluator.concordance()
+    c_risk, concordant_risk, total_risk = evaluator.concordance(ties="Risk")
+
+    assert np.isclose(c_default, c_risk)
+    assert np.isclose(concordant_default, concordant_risk)
+    assert np.isclose(total_default, total_risk)
+    assert np.isclose(c_default, 5.0 / 6.0)
 
 
 def test_get_comparable_ic_returns_directed_precedence_relation():
