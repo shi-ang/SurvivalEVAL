@@ -108,16 +108,16 @@ def concordance(
         bg_event_times[~event_indicators] = best_guesses
     else:
         raise TypeError("Method for calculating concordance is unrecognized.")
-    # risk_ties means predicted times are the same while true times are different.
-    # time_ties means true times are the same while predicted times are different.
-    # c_index, concordant_pairs, discordant_pairs, risk_ties, time_ties = metrics.concordance_index_censored(
+    # risk_tie_pairs are comparable pairs whose predictions/risk scores tie.
+    # time_tie_pairs are non-comparable observed-event pairs with the same event time.
+    # c_index, concordant_pairs, discordant_pairs, risk_tie_pairs, time_tie_pairs = metrics.concordance_index_censored(
     #     event_indicators, event_times, estimate=risk)
     (
         c_index,
         concordant_pairs,
         discordant_pairs,
-        risk_ties,
-        time_ties,
+        risk_tie_pairs,
+        time_tie_pairs,
     ) = _estimate_concordance_index(
         event_indicators,
         event_times,
@@ -129,17 +129,21 @@ def concordance(
         total_pairs = concordant_pairs + discordant_pairs
         c_index = concordant_pairs / total_pairs
     elif ties == "time":
-        total_pairs = concordant_pairs + discordant_pairs + time_ties
-        concordant_pairs = concordant_pairs + 0.5 * time_ties
+        total_pairs = concordant_pairs + discordant_pairs + time_tie_pairs
+        concordant_pairs = concordant_pairs + 0.5 * time_tie_pairs
         c_index = concordant_pairs / total_pairs
     elif ties == "risk":
         # This should be the same as original outputted c_index from above
-        total_pairs = concordant_pairs + discordant_pairs + risk_ties
-        concordant_pairs = concordant_pairs + 0.5 * risk_ties
+        total_pairs = concordant_pairs + discordant_pairs + risk_tie_pairs
+        concordant_pairs = concordant_pairs + 0.5 * risk_tie_pairs
         c_index = concordant_pairs / total_pairs
     elif ties == "all":
-        total_pairs = concordant_pairs + discordant_pairs + risk_ties + time_ties
-        concordant_pairs = concordant_pairs + 0.5 * (risk_ties + time_ties)
+        total_pairs = (
+            concordant_pairs + discordant_pairs + risk_tie_pairs + time_tie_pairs
+        )
+        concordant_pairs = concordant_pairs + 0.5 * (
+            risk_tie_pairs + time_tie_pairs
+        )
         c_index = concordant_pairs / total_pairs
     else:
         error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
@@ -160,7 +164,8 @@ def _estimate_concordance_index(
     Estimate the concordance index.
     This backbone of this function is borrowed from scikit-survival:
     https://github.com/sebp/scikit-survival/blob/4e664d8e4fe5e5b55006e3913f2bbabcf2455496/sksurv/metrics.py#L85-L118
-    In here, we make modifications to the original function to allow for partial weights and best-guess times (margin times).
+    In here, we make modifications to the original function to allow for partial
+    weights and best-guess times (margin times).
 
     All functions in scikit-survival are licensed under the GPLv3 License:
     https://github.com/sebp/scikit-survival/blob/master/COPYING
@@ -190,19 +195,21 @@ def _estimate_concordance_index(
         The number of concordant pairs.
     discordant: float
         The number of discordant pairs.
-    tied_risk: float
-        The number of tied risk scores.
-    tied_time: float
-        The number of tied times.
+    risk_tie_pairs: float
+        The weighted number of comparable pairs tied on risk score.
+    time_tie_pairs: float
+        The weighted number of non-comparable observed-event pairs tied on event time.
     -------
     """
     order = np.argsort(event_time, kind="stable")
 
-    comparable, tied_time, weight = _get_comparable(event_indicator, event_time, order)
+    comparable, time_tie_pairs, weight = _get_comparable(
+        event_indicator, event_time, order
+    )
 
     if partial_weights is not None:
         event_indicator = np.ones_like(event_indicator)
-        comparable_2, tied_time, weight = _get_comparable(
+        comparable_2, time_tie_pairs, weight = _get_comparable(
             event_indicator, bg_event_time, order, partial_weights
         )
         for ind, mask in comparable.items():
@@ -216,7 +223,7 @@ def _estimate_concordance_index(
 
     concordant = 0
     discordant = 0
-    tied_risk = 0
+    risk_tie_pairs = 0.0
     numerator = 0.0
     denominator = 0.0
     for ind, mask in comparable.items():
@@ -246,13 +253,13 @@ def _estimate_concordance_index(
         numerator += n_con + 0.5 * n_ties
         denominator += np.dot(w_i, mask.T)
 
-        tied_risk += n_ties
+        risk_tie_pairs += n_ties
         concordant += n_con
         # discordant += est.size - n_con - n_ties
         discordant += np.dot(w_i, mask.T) - n_con - n_ties
 
     c_index = numerator / denominator
-    return c_index, concordant, discordant, tied_risk, tied_time
+    return c_index, concordant, discordant, risk_tie_pairs, time_tie_pairs
 
 
 def _get_comparable(
@@ -288,8 +295,8 @@ def _get_comparable(
     comparable: dict
         A dictionary where the keys are the indices of the samples with events, and the values are boolean masks
         indicating which samples are comparable to the key sample.
-    tied_time: int
-        The number of tied times.
+    time_tie_pairs: float
+        The number of weighted tied-time pairs between observed events.
     weight: dict
         A dictionary where the keys are the indices of the samples with events, and the values are the weights
         for each comparable sample.
@@ -298,7 +305,7 @@ def _get_comparable(
     if partial_weights is None:
         partial_weights = np.ones_like(event_indicator, dtype=float)
     n_samples = len(event_time)
-    tied_time = 0
+    time_tie_pairs = 0.0
     comparable = {}
     weight = {}
 
@@ -320,11 +327,15 @@ def _get_comparable(
                 # an event is comparable to censored samples at same time point
                 mask[i:end] = censored_at_same_time
                 comparable[j] = mask
-                tied_time += censored_at_same_time.sum()
+                event_at_later_same_time = event_indicator[order[j + 1 : end]]
+                time_tie_pairs += (
+                    partial_weights[order[j]]
+                    * partial_weights[order[j + 1 : end]][event_at_later_same_time]
+                ).sum()
                 weight[j] = partial_weights[order] * partial_weights[order[j]]
         i = end
 
-    return comparable, tied_time, weight
+    return comparable, time_tie_pairs, weight
 
 
 def _get_comparable_ic(

@@ -47,6 +47,57 @@ def test_point_evaluator_concordance_default_uses_standard_harrell_tie_handling(
     assert np.isclose(c_default, 5.0 / 6.0)
 
 
+def test_concordance_tie_modes_separate_risk_time_and_censoring_ties():
+    # This example has 8 concordant pairs, 3 discordant pairs, 5 comparable
+    # risk ties, and 2 event-event time ties. It also includes event-censored
+    # same-time pairs and censored-censored same-time pairs, which must not be
+    # counted as time ties.
+    predicted_times = np.array([1.0, 1.0, 1.0, 3.0, 0.0, 1.0, 4.0, 2.0])
+    event_times = np.array([1.0, 1.0, 2.0, 1.0, 3.0, 2.0, 2.0, 3.0])
+    event_indicators = np.array([1, 1, 1, 0, 1, 0, 0, 1])
+
+    c_none, concordant_none, total_none = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        ties="None",
+    )
+    c_risk, concordant_risk, total_risk = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        ties="Risk",
+    )
+    c_time, concordant_time, total_time = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        ties="Time",
+    )
+    c_all, concordant_all, total_all = concordance(
+        predicted_times,
+        event_times,
+        event_indicators,
+        ties="All",
+    )
+
+    assert np.isclose(c_none, 8.0 / 11.0)
+    assert np.isclose(concordant_none, 8.0)
+    assert np.isclose(total_none, 11.0)
+
+    assert np.isclose(c_risk, 10.5 / 16.0)
+    assert np.isclose(concordant_risk, 10.5)
+    assert np.isclose(total_risk, 16.0)
+
+    assert np.isclose(c_time, 9.0 / 13.0)
+    assert np.isclose(concordant_time, 9.0)
+    assert np.isclose(total_time, 13.0)
+
+    assert np.isclose(c_all, 11.5 / 18.0)
+    assert np.isclose(concordant_all, 11.5)
+    assert np.isclose(total_all, 18.0)
+
+
 def test_get_comparable_ic_returns_directed_precedence_relation():
     left = np.array([0.0, 2.0, 4.0])
     right = np.array([1.0, 3.0, 5.0])
