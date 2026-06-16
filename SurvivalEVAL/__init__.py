@@ -6,7 +6,11 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_score_ic,
     single_brier_score,
 )
-from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
+from SurvivalEVAL.Evaluations.Concordance import (
+    ConcordanceCounts,
+    concordance,
+    concordance_ic,
+)
 from SurvivalEVAL.Evaluations.DistributionCalibration import (
     coverage_ic,
     d_cal_ic,
@@ -57,6 +61,7 @@ __all__ = [
     "brier_multiple_points_ic",
     "concordance",
     "concordance_ic",
+    "ConcordanceCounts",
     "coverage_ic",
     "d_calibration",
     "km_calibration",

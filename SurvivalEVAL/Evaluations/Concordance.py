@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Iterator, Optional, Tuple
 
 import numpy as np
 
@@ -8,6 +9,47 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeierArea,
     TurnbullEstimatorLifelines,
 )
+
+
+@dataclass
+class ConcordanceCounts:
+    """Raw concordance pair counts before tie-mode finalization.
+
+    Attributes
+    ----------
+    concordant: float
+        Weighted count of comparable pairs with correctly ordered risks.
+    discordant: float
+        Weighted count of comparable pairs with incorrectly ordered risks.
+    risk_tie_pairs: float
+        Weighted count of comparable pairs tied on risk.
+    time_tie_pairs: float
+        Weighted count of same-time event pairs.
+    """
+
+    concordant: float = 0.0
+    discordant: float = 0.0
+    risk_tie_pairs: float = 0.0
+    time_tie_pairs: float = 0.0
+
+    def __iadd__(self, other: "ConcordanceCounts") -> "ConcordanceCounts":
+        """Add another count object in place.
+
+        Parameters
+        ----------
+        other: ConcordanceCounts
+            Concordance counts to add to this object.
+
+        Returns
+        -------
+        ConcordanceCounts
+            This count object after mutation.
+        """
+        self.concordant += other.concordant
+        self.discordant += other.discordant
+        self.risk_tie_pairs += other.risk_tie_pairs
+        self.time_tie_pairs += other.time_tie_pairs
+        return self
 
 
 def concordance(
@@ -76,8 +118,7 @@ def concordance(
 
     if method == "harrell":
         risks = -1 * predicted_times
-        partial_weights = None
-        bg_event_times = None
+        counts = _right_censored_risk_counts(event_indicators, event_times, risks)
     elif method == "margin":
         if train_event_times is None or train_event_indicators is None:
             error = "If 'Margin' is chosen, training set information must be provided."
@@ -106,236 +147,353 @@ def concordance(
 
         bg_event_times = np.copy(event_times)
         bg_event_times[~event_indicators] = best_guesses
+        counts = _margin_counts(
+            event_indicators,
+            event_times,
+            estimate=risks,
+            bg_event_time=bg_event_times,
+            partial_weights=partial_weights,
+        )
     else:
         raise TypeError("Method for calculating concordance is unrecognized.")
-    # risk_tie_pairs are comparable pairs whose predictions/risk scores tie.
-    # time_tie_pairs are non-comparable observed-event pairs with the same event time.
-    # c_index, concordant_pairs, discordant_pairs, risk_tie_pairs, time_tie_pairs = metrics.concordance_index_censored(
-    #     event_indicators, event_times, estimate=risk)
-    (
-        c_index,
-        concordant_pairs,
-        discordant_pairs,
-        risk_tie_pairs,
-        time_tie_pairs,
-    ) = _estimate_concordance_index(
-        event_indicators,
-        event_times,
-        estimate=risks,
-        bg_event_time=bg_event_times,
-        partial_weights=partial_weights,
-    )
-    if ties == "none":
-        total_pairs = concordant_pairs + discordant_pairs
-        c_index = concordant_pairs / total_pairs
-    elif ties == "time":
-        total_pairs = concordant_pairs + discordant_pairs + time_tie_pairs
-        concordant_pairs = concordant_pairs + 0.5 * time_tie_pairs
-        c_index = concordant_pairs / total_pairs
-    elif ties == "risk":
-        # This should be the same as original outputted c_index from above
-        total_pairs = concordant_pairs + discordant_pairs + risk_tie_pairs
-        concordant_pairs = concordant_pairs + 0.5 * risk_tie_pairs
-        c_index = concordant_pairs / total_pairs
-    elif ties == "all":
-        total_pairs = (
-            concordant_pairs + discordant_pairs + risk_tie_pairs + time_tie_pairs
-        )
-        concordant_pairs = concordant_pairs + 0.5 * (
-            risk_tie_pairs + time_tie_pairs
-        )
-        c_index = concordant_pairs / total_pairs
-    else:
-        error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
-        raise TypeError(error)
 
-    return c_index, concordant_pairs, total_pairs
+    _check_has_any_pairs(counts)
+    return _finalize_counts(counts, ties)
 
 
-def _estimate_concordance_index(
-    event_indicator: np.ndarray,
-    event_time: np.ndarray,
-    estimate: np.ndarray,
-    bg_event_time: np.ndarray = None,
-    partial_weights: np.ndarray = None,
-    tied_tol: float = 1e-8,
-) -> tuple[float, float, float, float, float]:
-    """
-    Estimate the concordance index.
-    This backbone of this function is borrowed from scikit-survival:
-    https://github.com/sebp/scikit-survival/blob/4e664d8e4fe5e5b55006e3913f2bbabcf2455496/sksurv/metrics.py#L85-L118
-    In here, we make modifications to the original function to allow for partial
-    weights and best-guess times (margin times).
-
-    All functions in scikit-survival are licensed under the GPLv3 License:
-    https://github.com/sebp/scikit-survival/blob/master/COPYING
+def _finalize_counts(counts: ConcordanceCounts, ties: str) -> tuple[float, float, float]:
+    """Apply the requested tie policy to raw concordance counts.
 
     Parameters
     ----------
-    event_indicator: np.ndarray, shape = (n_samples,)
-        Binary event indicators: 1 denotes an observed event and 0 denotes a
-        censored observation.
-    event_time: np.ndarray, shape = (n_samples,)
-        The true survival times.
-    estimate: np.ndarray, shape = (n_samples,)
-        The estimated risk scores. A higher score should correspond to a higher risk.
-    bg_event_time: np.ndarray, shape = (n_samples,), optional (default=None)
-        The best-guess event times. For uncensored samples, this should be the same as the true event times.
-        For censored samples, this should be the best-guess time (margin time) for the censored samples.
-    partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
-        The partial weights for the censored samples.
-    tied_tol: float, optional (default=1e-8)
-        The tolerance for considering two estimated risk scores as tied.
+    counts: ConcordanceCounts
+        Raw concordance pair counts.
+    ties: str
+        One of ``"None"``, ``"Time"``, ``"Risk"``, or ``"All"``.
 
     Returns
     -------
     c_index: float
-        The concordance index.
-    concordant: float
-        The number of concordant pairs.
-    discordant: float
-        The number of discordant pairs.
-    risk_tie_pairs: float
-        The weighted number of comparable pairs tied on risk score.
-    time_tie_pairs: float
-        The weighted number of non-comparable observed-event pairs tied on event time.
-    -------
+        The concordance index after applying the requested tie policy.
+    concordant_pairs: float
+        The concordant-pair count after applying the requested tie policy.
+    total_pairs: float
+        The total pair count after applying the requested tie policy.
     """
-    order = np.argsort(event_time, kind="stable")
+    ties = ties.lower()
 
-    comparable, time_tie_pairs, weight = _get_comparable(
-        event_indicator, event_time, order
-    )
-
-    if partial_weights is not None:
-        event_indicator = np.ones_like(event_indicator)
-        comparable_2, time_tie_pairs, weight = _get_comparable(
-            event_indicator, bg_event_time, order, partial_weights
+    concordant_pairs = counts.concordant
+    if ties == "none":
+        total_pairs = counts.concordant + counts.discordant
+    elif ties == "time":
+        total_pairs = counts.concordant + counts.discordant + counts.time_tie_pairs
+        concordant_pairs += 0.5 * counts.time_tie_pairs
+    elif ties == "risk":
+        total_pairs = counts.concordant + counts.discordant + counts.risk_tie_pairs
+        concordant_pairs += 0.5 * counts.risk_tie_pairs
+    elif ties == "all":
+        total_pairs = (
+            counts.concordant
+            + counts.discordant
+            + counts.risk_tie_pairs
+            + counts.time_tie_pairs
         )
-        for ind, mask in comparable.items():
-            weight[ind][mask] = 1
-        comparable = comparable_2
+        concordant_pairs += 0.5 * (counts.risk_tie_pairs + counts.time_tie_pairs)
+    else:
+        error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
+        raise TypeError(error)
 
-    if len(comparable) == 0:
+    c_index = concordant_pairs / total_pairs if total_pairs != 0 else float("nan")
+    return c_index, concordant_pairs, total_pairs
+
+
+def _check_has_any_pairs(counts: ConcordanceCounts) -> None:
+    """Raise when no comparable or tied-time pairs were counted.
+
+    Parameters
+    ----------
+    counts: ConcordanceCounts
+        Raw concordance pair counts.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If there are no pairs available to estimate concordance.
+    """
+    if (
+        counts.concordant
+        + counts.discordant
+        + counts.risk_tie_pairs
+        + counts.time_tie_pairs
+        == 0
+    ):
         raise ValueError(
             "Data has no comparable pairs, cannot estimate concordance index."
         )
 
-    concordant = 0
-    discordant = 0
-    risk_tie_pairs = 0.0
-    numerator = 0.0
-    denominator = 0.0
-    for ind, mask in comparable.items():
-        est_i = estimate[order[ind]]
-        event_i = event_indicator[order[ind]]
-        # w_i = partial_weights[order[ind]] # change this
-        w_i = weight[ind]
-        weight_i = w_i[order[mask]]
 
-        est = estimate[order[mask]]
-
-        assert event_i, (
-            "got censored sample at index %d, but expected uncensored" % order[ind]
-        )
-
-        ties = np.absolute(est - est_i) <= tied_tol
-        # n_ties = ties.sum()
-        n_ties = np.dot(weight_i, ties.T)
-        # an event should have a higher score
-        con = est < est_i
-        # n_con = con[~ties].sum()
-        con[ties] = False
-        n_con = np.dot(weight_i, con.T)
-
-        # numerator += w_i * n_con + 0.5 * w_i * n_ties
-        # denominator += w_i * mask.sum()
-        numerator += n_con + 0.5 * n_ties
-        denominator += np.dot(w_i, mask.T)
-
-        risk_tie_pairs += n_ties
-        concordant += n_con
-        # discordant += est.size - n_con - n_ties
-        discordant += np.dot(w_i, mask.T) - n_con - n_ties
-
-    c_index = numerator / denominator
-    return c_index, concordant, discordant, risk_tie_pairs, time_tie_pairs
-
-
-def _get_comparable(
+def _right_censored_risk_counts(
     event_indicator: np.ndarray,
     event_time: np.ndarray,
-    order: np.ndarray,
-    partial_weights: np.ndarray = None,
-) -> tuple[dict, int, dict]:
-    """
-    Given the labels of the survival outcomes, get the comparable pairs.
-
-    This backbone of this function is borrowed from scikit-survival:
-    https://github.com/sebp/scikit-survival/blob/4e664d8e4fe5e5b55006e3913f2bbabcf2455496/sksurv/metrics.py#L57-L81
-    In here, we make modifications to the original function to calculates the weights for each pair.
-
-    All functions in scikit-survival are licensed under the GPLv3 License:
-    https://github.com/sebp/scikit-survival/blob/master/COPYING
+    estimate: np.ndarray,
+    sample_weights: Optional[np.ndarray] = None,
+    tied_tol: float = 1e-8,
+) -> ConcordanceCounts:
+    """Count right-censored comparable pairs for a risk score.
 
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        Binary event indicators: 1 denotes an observed event and 0 denotes a
-        censored observation.
+        Boolean event indicators, where True denotes an observed event.
     event_time: np.ndarray, shape = (n_samples,)
-        The true survival times.
-    order: np.ndarray, shape = (n_samples,)
-        The indices that would sort the event times.
-    partial_weights: np.ndarray, shape = (n_samples,), optional (default=None)
-        The partial weights for the censored samples.
+        Observed event or censoring times.
+    estimate: np.ndarray, shape = (n_samples,)
+        Risk scores. Higher scores indicate higher risk.
+    sample_weights: np.ndarray, shape = (n_samples,), optional
+        Optional symmetric sample weights. Pair weights are products of anchor
+        and candidate sample weights.
+    tied_tol: float, optional (default=1e-8)
+        Absolute tolerance for risk-score ties.
 
     Returns
     -------
-    comparable: dict
-        A dictionary where the keys are the indices of the samples with events, and the values are boolean masks
-        indicating which samples are comparable to the key sample.
-    time_tie_pairs: float
-        The number of weighted tied-time pairs between observed events.
-    weight: dict
-        A dictionary where the keys are the indices of the samples with events, and the values are the weights
-        for each comparable sample.
+    ConcordanceCounts
+        Raw concordance counts before tie-mode finalization. ``concordant``,
+        ``discordant``, and ``risk_tie_pairs`` count comparable pairs;
+        ``time_tie_pairs`` counts same-time event pairs.
     """
+    if sample_weights is None:
+        sample_weights = np.ones(event_time.shape[0], dtype=float)
 
-    if partial_weights is None:
-        partial_weights = np.ones_like(event_indicator, dtype=float)
-    n_samples = len(event_time)
-    time_tie_pairs = 0.0
-    comparable = {}
-    weight = {}
+    counts = ConcordanceCounts()
+    for block, later_samples in _iter_time_blocks(event_time):
+        event_anchors = block[event_indicator[block]]
+        if event_anchors.shape[0] == 0:
+            continue
 
-    i = 0
-    while i < n_samples - 1:
-        time_i = event_time[order[i]]
-        end = i + 1
+        # Same-time events are not comparable; same-time censored samples are.
+        counts.time_tie_pairs += _same_time_pair_weight(sample_weights[event_anchors])
+        candidates = np.concatenate((block[~event_indicator[block]], later_samples))
+        if candidates.shape[0] == 0:
+            continue
+
+        for anchor_index in event_anchors:
+            pair_weights = sample_weights[anchor_index] * sample_weights[candidates]
+            counts += _count_directed_risk_pairs(
+                np.full(candidates.shape[0], anchor_index, dtype=int),
+                candidates,
+                estimate,
+                pair_weights=pair_weights,
+                tied_tol=tied_tol,
+            )
+
+    return counts
+
+
+def _margin_counts(
+    event_indicator: np.ndarray,
+    event_time: np.ndarray,
+    estimate: np.ndarray,
+    bg_event_time: np.ndarray,
+    partial_weights: np.ndarray,
+    tied_tol: float = 1e-8,
+) -> ConcordanceCounts:
+    """Count Margin concordance pairs from best-guess times.
+
+    Margin first scores all samples as events at their best-guess event times
+    with partial weights. Harrell-comparable observed pairs are then restored
+    to their original observed ordering at full weight.
+
+    Parameters
+    ----------
+    event_indicator: np.ndarray, shape = (n_samples,)
+        Boolean event indicators, where True denotes an observed event.
+    event_time: np.ndarray, shape = (n_samples,)
+        Observed event or censoring times.
+    estimate: np.ndarray, shape = (n_samples,)
+        Risk scores. Higher scores indicate higher risk.
+    bg_event_time: np.ndarray, shape = (n_samples,)
+        Best-guess event times for all samples.
+    partial_weights: np.ndarray, shape = (n_samples,)
+        Per-sample weights used for the best-guess baseline.
+    tied_tol: float, optional (default=1e-8)
+        Absolute tolerance for risk-score ties.
+
+    Returns
+    -------
+    ConcordanceCounts
+        Raw Margin concordance counts before tie-mode finalization.
+    """
+    counts = _right_censored_risk_counts(
+        np.ones_like(event_indicator, dtype=bool),
+        bg_event_time,
+        estimate,
+        sample_weights=partial_weights,
+        tied_tol=tied_tol,
+    )
+
+    for anchor_indices, candidate_indices in _iter_comparable_event_pairs(
+        event_indicator, event_time
+    ):
+        baseline_weights = (
+            partial_weights[anchor_indices] * partial_weights[candidate_indices]
+        )
+        anchor_before = bg_event_time[anchor_indices] < bg_event_time[candidate_indices]
+        candidate_before = (
+            bg_event_time[anchor_indices] > bg_event_time[candidate_indices]
+        )
+        tied_time = ~(anchor_before | candidate_before)
+
+        counts += _count_directed_risk_pairs(
+            anchor_indices[anchor_before],
+            candidate_indices[anchor_before],
+            estimate,
+            pair_weights=-baseline_weights[anchor_before],
+            tied_tol=tied_tol,
+        )
+        counts += _count_directed_risk_pairs(
+            candidate_indices[candidate_before],
+            anchor_indices[candidate_before],
+            estimate,
+            pair_weights=-baseline_weights[candidate_before],
+            tied_tol=tied_tol,
+        )
+        counts.time_tie_pairs -= baseline_weights[tied_time].sum()
+        counts += _count_directed_risk_pairs(
+            anchor_indices,
+            candidate_indices,
+            estimate,
+            pair_weights=np.ones(anchor_indices.shape[0], dtype=float),
+            tied_tol=tied_tol,
+        )
+
+    return counts
+
+
+def _count_directed_risk_pairs(
+    anchor_indices: np.ndarray,
+    candidate_indices: np.ndarray,
+    estimate: np.ndarray,
+    pair_weights: np.ndarray,
+    tied_tol: float = 1e-8,
+) -> ConcordanceCounts:
+    """Count concordance outcomes for directed risk-score pairs.
+
+    Parameters
+    ----------
+    anchor_indices: np.ndarray, shape = (n_pairs,)
+        Sample indices for the earlier or anchor side of each pair.
+    candidate_indices: np.ndarray, shape = (n_pairs,)
+        Sample indices for the later or candidate side of each pair.
+    estimate: np.ndarray, shape = (n_samples,)
+        Risk scores. Higher scores indicate higher risk.
+    pair_weights: np.ndarray, shape = (n_pairs,)
+        Weight for each directed pair.
+    tied_tol: float, optional (default=1e-8)
+        Absolute tolerance for risk-score ties.
+
+    Returns
+    -------
+    ConcordanceCounts
+        Raw concordance counts for the supplied directed pairs.
+    """
+    if anchor_indices.shape[0] == 0:
+        return ConcordanceCounts()
+
+    risk_diff = estimate[candidate_indices] - estimate[anchor_indices]
+    tied = np.absolute(risk_diff) <= tied_tol
+    concordant = (risk_diff < 0) & ~tied
+
+    concordant_weight = pair_weights[concordant].sum()
+    risk_tie_weight = pair_weights[tied].sum()
+    return ConcordanceCounts(
+        concordant=concordant_weight,
+        discordant=pair_weights.sum() - concordant_weight - risk_tie_weight,
+        risk_tie_pairs=risk_tie_weight,
+    )
+
+
+def _iter_comparable_event_pairs(
+    event_indicator: np.ndarray,
+    event_time: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield directed comparable event pairs in sample-index coordinates.
+
+    Parameters
+    ----------
+    event_indicator: np.ndarray, shape = (n_samples,)
+        Boolean event indicators, where True denotes an observed event.
+    event_time: np.ndarray, shape = (n_samples,)
+        Observed event or censoring times.
+
+    Yields
+    ------
+    anchor_indices: np.ndarray, shape = (n_pairs,)
+        Repeated sample indices for the observed-event anchor side of each pair.
+    candidate_indices: np.ndarray, shape = (n_pairs,)
+        Sample indices that are either later in observed time or censored at
+        the same observed time as the anchor.
+    """
+    for block, later_samples in _iter_time_blocks(event_time):
+        event_anchors = block[event_indicator[block]]
+        if event_anchors.shape[0] > 0:
+            same_time_censored = block[~event_indicator[block]]
+            candidates = np.concatenate((same_time_censored, later_samples))
+            for anchor_index in event_anchors:
+                if candidates.shape[0] > 0:
+                    yield np.full(candidates.shape[0], anchor_index, dtype=int), candidates
+
+
+def _iter_time_blocks(event_time: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield equal-time sample blocks and the samples with later observed times.
+
+    Parameters
+    ----------
+    event_time: np.ndarray, shape = (n_samples,)
+        Observed event or censoring times.
+
+    Yields
+    ------
+    block: np.ndarray
+        Sample indices with the same observed time.
+    later_samples: np.ndarray
+        Sample indices whose observed time is greater than the block time.
+    """
+    order = np.argsort(event_time, kind="stable")
+    n_samples = order.shape[0]
+
+    start = 0
+    while start < n_samples:
+        end = start + 1
+        time_i = event_time[order[start]]
         while end < n_samples and event_time[order[end]] == time_i:
             end += 1
 
-        # check for tied event times
-        event_at_same_time = event_indicator[order[i:end]]
-        censored_at_same_time = ~event_at_same_time
+        yield order[start:end], order[end:]
+        start = end
 
-        for j in range(i, end):
-            if event_indicator[order[j]]:
-                mask = np.zeros(n_samples, dtype=bool)
-                mask[end:] = True
-                # an event is comparable to censored samples at same time point
-                mask[i:end] = censored_at_same_time
-                comparable[j] = mask
-                event_at_later_same_time = event_indicator[order[j + 1 : end]]
-                time_tie_pairs += (
-                    partial_weights[order[j]]
-                    * partial_weights[order[j + 1 : end]][event_at_later_same_time]
-                ).sum()
-                weight[j] = partial_weights[order] * partial_weights[order[j]]
-        i = end
 
-    return comparable, time_tie_pairs, weight
+def _same_time_pair_weight(sample_weights: np.ndarray) -> float:
+    """Return the total pair weight within one same-time event block.
+
+    Parameters
+    ----------
+    sample_weights: np.ndarray
+        Per-sample weights for samples in the same event-time block.
+
+    Returns
+    -------
+    float
+        The sum of pairwise weight products for all unique pairs in the block.
+    """
+    if sample_weights.shape[0] < 2:
+        return 0.0
+    total_weight = sample_weights.sum()
+    return 0.5 * (total_weight * total_weight - np.dot(sample_weights, sample_weights))
 
 
 def _get_comparable_ic(
