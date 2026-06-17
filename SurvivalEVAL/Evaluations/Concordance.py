@@ -113,10 +113,10 @@ def concordance(
     -------
     c_index: float
         The concordance index.
-    concordant_pairs: float
+    num_concordant_pairs: float
         The number of concordant pairs.
-    total_pairs: float
-        The total number of comparable pairs.
+    num_total_pairs: float
+        The number of total pairs.
     """
     # the scikit-survival concordance function only takes risk scores to calculate.
     # So at first we should transfer the predicted time -> risk score.
