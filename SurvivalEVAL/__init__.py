@@ -6,10 +6,7 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_score_ic,
     single_brier_score,
 )
-from SurvivalEVAL.Evaluations.Concordance import (
-    concordance,
-    concordance_ic,
-)
+from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import (
     coverage_ic,
     d_cal_ic,

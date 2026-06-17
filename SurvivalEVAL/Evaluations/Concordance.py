@@ -5,8 +5,8 @@ from typing import Iterator, Optional
 import numpy as np
 
 from SurvivalEVAL.Evaluations._concordance_utils import (
-    _ConcordanceCounts,
     _check_has_any_pairs,
+    _ConcordanceCounts,
     _count_directed_risk_pairs,
     _finalize_counts,
     _is_before_tau,
@@ -192,6 +192,7 @@ def concordance(
     _check_has_any_pairs(counts)
     return _finalize_counts(counts, ties)
 
+
 def _right_censored_risk_counts(
     event_indicator: np.ndarray,
     event_time: np.ndarray,
@@ -368,6 +369,7 @@ def _margin_counts(
 
     return counts
 
+
 def _iter_comparable_event_pairs(
     event_indicator: np.ndarray,
     event_time: np.ndarray,
@@ -399,6 +401,7 @@ def _iter_comparable_event_pairs(
                     yield np.full(
                         candidate_indices.shape[0], anchor_index, dtype=int
                     ), candidate_indices
+
 
 def _get_comparable_ic(
     left: np.ndarray,

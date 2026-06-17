@@ -5,8 +5,8 @@ from typing import Optional
 import numpy as np
 
 from SurvivalEVAL.Evaluations._concordance_utils import (
-    _ConcordanceCounts,
     _check_has_any_pairs,
+    _ConcordanceCounts,
     _count_directed_risk_pairs,
     _finalize_counts,
     _is_before_tau,

@@ -188,7 +188,9 @@ class SurvivalEvaluator:
             increase over time.
         """
         if np.any(np.diff(time_coordinates, axis=-1) <= 0):
-            raise ValueError("Each row of time_coordinates must be strictly increasing.")
+            raise ValueError(
+                "Each row of time_coordinates must be strictly increasing."
+            )
         if np.any((pred_survs < 0) | (pred_survs > 1)):
             raise ValueError("Survival probabilities must be between 0 and 1.")
         if np.any(np.diff(pred_survs, axis=-1) > 1e-8):
@@ -359,9 +361,7 @@ class SurvivalEvaluator:
                 target_time,
                 input_name="target_time",
                 allow_scalar=True,
-            )[0] * np.ones(
-                n_samples, dtype=self._time_coordinates.dtype
-            )
+            )[0] * np.ones(n_samples, dtype=self._time_coordinates.dtype)
         elif isinstance(target_time, np.ndarray):
             target_time = validate_time_points(target_time, input_name="target_time")
             if target_time.shape[0] != n_samples:
