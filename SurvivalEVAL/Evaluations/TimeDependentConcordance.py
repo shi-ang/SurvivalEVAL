@@ -23,7 +23,7 @@ def concordance_time_dependent(
     risk_scores: np.ndarray, shape = (n_samples, n_anchor_times)
         The predicted risk scores for each sample at each anchor time.
         The risk scores should be ordered such that higher scores indicate higher risk
-        (i.e., lower survival probability or lower hazard score).
+        (i.e., lower survival probability or higher hazard score).
     event_times: np.ndarray, shape = (n_samples,)
         The true survival times.
     event_indicators: np.ndarray, shape = (n_samples,)
