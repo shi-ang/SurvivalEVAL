@@ -900,15 +900,32 @@ class SurvivalEvaluator:
             self._error_trainset("IPCW time-dependent concordance")
 
         anchor_times = self.event_times[self.event_indicators == 1]
-        if risks == "survival":
-            risk_scores = -self.predict_multi_probabilities_from_curve(anchor_times)
-        elif risks == "hazard":
-            risk_scores = self.predict_multi_hazards_from_curve(anchor_times)
-        else:
+        included_anchor_mask = (
+            np.ones(anchor_times.shape, dtype=bool)
+            if tau is None
+            else anchor_times < tau
+        )
+        included_anchor_times = anchor_times[included_anchor_mask]
+        risk_scores = np.zeros(
+            (self.event_times.shape[0], anchor_times.shape[0]), dtype=float
+        )
+
+        if risks not in {"survival", "hazard"}:
             error = "Risks must be 'Survival' or 'Hazard', got '{}' instead".format(
                 risks
             )
             raise ValueError(error)
+
+        if included_anchor_times.shape[0] > 0:
+            if risks == "survival":
+                included_risk_scores = -self.predict_multi_probabilities_from_curve(
+                    included_anchor_times
+                )
+            else:
+                included_risk_scores = self.predict_multi_hazards_from_curve(
+                    included_anchor_times
+                )
+            risk_scores[:, included_anchor_mask] = included_risk_scores
 
         return concordance_time_dependent(
             risk_scores=risk_scores,

@@ -342,3 +342,24 @@ def test_survival_evaluator_time_dependent_concordance_end_to_end():
 
     np.testing.assert_allclose(ipcw_survival, (1.0, 2.0, 2.0))
     np.testing.assert_allclose(ipcw_hazard, (1.0, 2.0, 2.0))
+
+
+def test_survival_evaluator_hazard_concordance_tau_skips_excluded_late_anchors():
+    time_grid = np.array([0.0, 1.0, 2.0, 3.0])
+    hazards = np.array([0.5, 0.3, 0.1, 0.05])
+    pred_survs = np.exp(-hazards[:, None] * time_grid)
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=np.array([1.0, 2.0, 10.0, 12.0]),
+        event_indicators=np.array([1, 1, 1, 0]),
+        train_event_times=np.array([1.0, 2.0, 3.0, 4.0]),
+        train_event_indicators=np.array([1, 1, 1, 1]),
+    )
+
+    result = evaluator.concordance_time_dependent(
+        method="IPCW", risks="Hazard", tau=3.0
+    )
+
+    np.testing.assert_allclose(result, (1.0, 5.0, 5.0))
