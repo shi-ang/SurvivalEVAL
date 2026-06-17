@@ -847,7 +847,7 @@ class SurvivalEvaluator:
         tau: Optional[Numeric] = None,
     ) -> tuple[float, float, float]:
         """
-        Calculate the time-dependent concordance index at each unique event time point.
+        Calculate the time-dependent concordance index.
 
         Parameters
         ----------
@@ -883,7 +883,7 @@ class SurvivalEvaluator:
         Returns
         -------
         concordance_index: float
-            The time-dependent concordance index at the target time point.
+            The time-dependent concordance index.
         num_concordant_pairs: float
             The number of concordant pairs.
         num_total_pairs: float
@@ -900,12 +900,17 @@ class SurvivalEvaluator:
             self._error_trainset("IPCW time-dependent concordance")
 
         anchor_times = self.event_times[self.event_indicators == 1]
+        # tau truncation excludes anchors at or after tau, so avoid predicting
+        # risks at times that cannot contribute. This matters for hazard risks,
+        # which cannot be extrapolated beyond the prediction grid.
         included_anchor_mask = (
             np.ones(anchor_times.shape, dtype=bool)
             if tau is None
             else anchor_times < tau
         )
         included_anchor_times = anchor_times[included_anchor_mask]
+        # Keep one column per observed event to preserve the lower-level API
+        # contract; columns for excluded anchors are never read.
         risk_scores = np.zeros(
             (self.event_times.shape[0], anchor_times.shape[0]), dtype=float
         )
