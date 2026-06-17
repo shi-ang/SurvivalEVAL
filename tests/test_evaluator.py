@@ -88,6 +88,65 @@ def test_prediction_utilities(evaluator_data):
     np.testing.assert_allclose(quantile_intervals, intervals)
 
 
+def test_predict_multi_hazards_from_curve_uses_grid_intervals_not_target_order():
+    time_grid = np.array([0.0, 1.0, 3.0])
+    pred_survs = np.array(
+        [
+            [1.0, 0.8, 0.4],
+            [1.0, 0.5, 0.25],
+        ]
+    )
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    target_times = np.array([3.0, 1.0, 1.0, 2.0])
+    hazards = evaluator.predict_multi_hazards_from_curve(target_times)
+
+    expected_first_interval = -np.log(pred_survs[:, 1] / pred_survs[:, 0])
+    expected_second_interval = -np.log(pred_survs[:, 2] / pred_survs[:, 1]) / 2.0
+    expected = np.column_stack(
+        [
+            expected_second_interval,
+            expected_first_interval,
+            expected_first_interval,
+            expected_second_interval,
+        ]
+    )
+
+    np.testing.assert_allclose(hazards, expected)
+
+
+def test_predict_multi_hazards_from_curve_supports_per_sample_time_grids():
+    shared_curve = np.array([1.0, 0.8, 0.4])
+    per_sample_grids = np.array(
+        [
+            [0.0, 1.0, 3.0],
+            [0.0, 2.0, 4.0],
+        ]
+    )
+    evaluator = SurvivalEvaluator(
+        pred_survs=shared_curve,
+        time_coordinates=per_sample_grids,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    hazards = evaluator.predict_multi_hazards_from_curve(np.array([1.0, 3.0]))
+
+    expected = np.array(
+        [
+            [-np.log(0.8), -np.log(0.4 / 0.8) / 2.0],
+            [-np.log(0.8) / 2.0, -np.log(0.4 / 0.8) / 2.0],
+        ]
+    )
+
+    np.testing.assert_allclose(hazards, expected)
+
+
 def test_survival_evaluator_rejects_prediction_row_count_mismatch():
     with pytest.raises(ValueError, match="prediction rows"):
         SurvivalEvaluator(
@@ -111,6 +170,36 @@ def test_survival_evaluator_rejects_time_coordinate_row_count_mismatch():
             ),
             event_times=np.array([1.0, 2.0]),
             event_indicators=np.array([1, 0]),
+        )
+
+
+def test_survival_evaluator_rejects_nonincreasing_time_coordinates():
+    with pytest.raises(ValueError, match="strictly increasing"):
+        SurvivalEvaluator(
+            pred_survs=np.array([[1.0, 0.8, 0.5]]),
+            time_coordinates=np.array([0.0, 2.0, 1.0]),
+            event_times=np.array([1.0]),
+            event_indicators=np.array([1]),
+        )
+
+
+def test_survival_evaluator_rejects_survival_probabilities_outside_unit_interval():
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        SurvivalEvaluator(
+            pred_survs=np.array([[1.0, 1.2, 0.5]]),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            event_times=np.array([1.0]),
+            event_indicators=np.array([1]),
+        )
+
+
+def test_survival_evaluator_rejects_increasing_survival_probabilities():
+    with pytest.raises(ValueError, match="nonincreasing"):
+        SurvivalEvaluator(
+            pred_survs=np.array([[1.0, 0.7, 0.8]]),
+            time_coordinates=np.array([0.0, 1.0, 2.0]),
+            event_times=np.array([1.0]),
+            event_indicators=np.array([1]),
         )
 
 
