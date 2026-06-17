@@ -867,13 +867,14 @@ class SurvivalEvaluator:
             events. If sample i has an observed event at time t_i, it is compared
             with samples whose observed event/censoring time is greater than t_i.
             "Naive": alias of "Antolini".
-            "IPCW": Harrell-style comparable pairs weighted by inverse probability
+            "IPCW": Antolini-style comparable pairs weighted by inverse probability
             of censoring weights from the training data.
         risks: str, default = "Survival"
             A string indicating the type of risk scores to be used for concordance calculation.
             Options are "Survival" (default) and "Hazard".
-            "Survival": the predicted survival probabilities at the anchor's event time are used as risk scores.
-            "Hazard": the predicted hazard rates at the anchor's event time are used as risk scores.
+            "Survival": predicted survival probabilities at anchor event times are converted to risk scores
+            using -S(t | z).
+            "Hazard": predicted hazard rates at anchor event times are used directly as risk scores.
         tau: float, optional (default=None)
             Truncation time. If provided, only pairs whose effective earlier or
             anchor time is strictly before ``tau`` are counted. If None, no

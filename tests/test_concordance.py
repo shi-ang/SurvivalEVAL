@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import PointEvaluator
+from SurvivalEVAL.Evaluations._concordance_utils import _ConcordanceCounts
 from SurvivalEVAL.Evaluations.Concordance import (
-    ConcordanceCounts,
     _finalize_counts,
     _get_comparable_ic,
     _margin_counts,
@@ -31,7 +31,7 @@ def _brute_harrell_counts(
 ):
     if sample_weights is None:
         sample_weights = np.ones(event_times.shape[0], dtype=float)
-    counts = ConcordanceCounts()
+    counts = _ConcordanceCounts()
 
     for i in range(event_times.shape[0]):
         for j in range(i + 1, event_times.shape[0]):

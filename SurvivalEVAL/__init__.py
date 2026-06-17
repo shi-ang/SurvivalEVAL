@@ -7,7 +7,6 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     single_brier_score,
 )
 from SurvivalEVAL.Evaluations.Concordance import (
-    ConcordanceCounts,
     concordance,
     concordance_ic,
 )
@@ -26,6 +25,7 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     one_cal_ic,
     one_calibration,
 )
+from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
 from SurvivalEVAL.Evaluator import (
     DistributionEvaluator,
     LifelinesEvaluator,
@@ -61,7 +61,7 @@ __all__ = [
     "brier_multiple_points_ic",
     "concordance",
     "concordance_ic",
-    "ConcordanceCounts",
+    "concordance_time_dependent",
     "coverage_ic",
     "d_calibration",
     "km_calibration",
