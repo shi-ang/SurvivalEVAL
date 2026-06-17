@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 2026-06-17: Version 0.8.0
+
+1. Add Antolini-style time-dependent concordance through the lower-level
+   `concordance_time_dependent` function and `SurvivalEvaluator.concordance_time_dependent`.
+2. Add survival-probability and hazard-rate risk modes for time-dependent concordance, including the
+   Gandy-Matcham hazard-rate IPCW usage for crossing-hazards models.
+3. Add IPCW weighting, strict before-`tau` anchor filtering, training-data validation, and tie handling for
+   time-dependent concordance.
+4. Add hazard prediction support and consistent target-time validation for evaluator probability and hazard lookups.
+5. Add regression tests for time-dependent pair counting, IPCW weighting, tie policies, `tau` filtering,
+   input validation, and evaluator end-to-end behavior.
+6. Reconstruct the README metric reference with paper-linked tables covering the documented right-censored,
+   interval-censored, helper, and estimator APIs.
+
 ## 2026-06-16: Version 0.7.0
 
 1. Add Uno's right-censored concordance index through the `"Uno"` method, with `"IPCW"` kept as an alias.
