@@ -40,6 +40,23 @@ The public tests and examples show typical model integrations. See
 quantile prediction, point prediction, interpolation choices, and monotonicity
 handling.
 
+## Metric Guide
+
+SurvivalEVAL groups metrics by prediction target:
+
+- Point prediction metrics compare predicted event times with observed
+  event/censoring times.
+- Single-time probability metrics evaluate survival or event probability at one
+  target time.
+- Survival distribution metrics evaluate the full predicted survival curve.
+- Interval-censored metrics evaluate survival curves against observed event
+  intervals.
+
+<p align="center">
+  <a href="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png">
+    <img alt="Visualization of the evaluation metrics" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png"></a>
+</p>
+
 ## Installation
 
 Install from PyPI:
@@ -111,6 +128,8 @@ evl = LifelinesEvaluator(
 )
 
 c_index, concordant, total = evl.concordance(method="Harrell")
+td_c_index, td_concordant, td_total = evl.concordance_time_dependent(method="Antolini")
+
 mae = evl.mae(method="Pseudo_obs")
 ibs = evl.integrated_brier_score(num_points=53)
 d_cal_p, d_cal_hist = evl.d_calibration()
@@ -175,54 +194,81 @@ Right-censored survival-curve evaluators include `SurvivalEvaluator`,
 `LifelinesEvaluator`, `PycoxEvaluator`, `ScikitSurvivalEvaluator`, and
 `QuantileRegEvaluator`.
 
-### Point Prediction Metrics
+### Point Prediction Discrimination
 
 These metrics compare predicted survival times with observed event/censoring
-times. Predicted times are derived from survival curves using the configured
-`predict_time_method`: `"Median"`, `"Mean"`, or `"RMST"`.
+times. For survival-curve evaluators, predicted times are derived using the
+configured `predict_time_method`: `"Median"`, `"Mean"`, or `"RMST"`.
 
-- Concordance index: `evl.concordance(method="Harrell")` or
-  `evl.concordance(method="Naive")`
-- IPCW/Uno concordance: `evl.concordance(method="Uno")` or
-  `evl.concordance(method="IPCW")`
-- Margin concordance: `evl.concordance(method="Margin")`
-- Optional concordance truncation: `evl.concordance(..., tau=...)`
-- Mean absolute error: `evl.mae(method=...)`
-- Mean squared error: `evl.mse(method=...)`
-- Root mean squared error: `evl.rmse(method=...)`
-- Log-rank and weighted log-rank tests: `evl.log_rank(...)`
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Harrell's C-index | Uses observed-event comparable pairs and checks whether earlier observed events receive higher risk. | `evl.concordance(method="Harrell")` | [Harrell et al.](https://onlinelibrary.wiley.com/doi/10.1002/(SICI)1097-0258(19960229)15:4%3C361::AID-SIM168%3E3.0.CO;2-4) |
+| Uno/IPCW C-index | Adds inverse-probability-of-censoring weights to comparable pairs. | `evl.concordance(method="Uno")` or `evl.concordance(method="IPCW")` | [Uno et al.](https://onlinelibrary.wiley.com/doi/10.1002/sim.4154) |
+| Truncated C-index | Counts only pairs whose earlier or anchor time is strictly before `tau`. | `evl.concordance(method=..., tau=...)` | [Uno et al.](https://onlinelibrary.wiley.com/doi/10.1002/sim.4154) |
+| Margin C-index | Replaces censored times with best-guess survival times before calculating C-index. | `evl.concordance(method="Margin")` | [Kumar et al.](https://www.nature.com/articles/s41598-022-08601-6) |
 
-`"Uno"`, `"IPCW"`, and `"Margin"` concordance require training event times
-and indicators. For right-censored concordance, `tau` keeps pairs whose
-effective earlier or anchor time is strictly before `tau`; when omitted, no
-truncation is applied.
+`"Uno"`, `"IPCW"`, and `"Margin"` require training event times and indicators.
+When `tau` is omitted, no concordance truncation is applied.
 
-Error methods include `"Uncensored"`, `"Hinge"`, `"Margin"`, `"IPCW-T"`,
-`"IPCW-D"`, and `"Pseudo_obs"`.
+### Point Prediction Errors And Reliability
+
+MAE, MSE, and RMSE share the same censoring-handling methods. Use
+`evl.mae(method=...)`, `evl.mse(method=...)`, or `evl.rmse(method=...)`.
+
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Uncensored error | Calculates error on observed-event samples only. | `evl.mae(method="Uncensored")` | N/A |
+| Hinge error | Penalizes censored samples only when the prediction is earlier than the censoring time. | `evl.mae(method="Hinge")` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
+| Margin error | Replaces censored times with KM-based best guesses. | `evl.mae(method="Margin")` | [Haider et al.](https://jmlr.org/papers/v21/18-772.html) |
+| IPCW-T error | Uses surrogate event times from later observed events with censoring weights. | `evl.mae(method="IPCW-T")` | [Qi et al.](https://proceedings.mlr.press/v202/qi23b/qi23b.pdf) |
+| IPCW-D error | Uses IPCW weights directly on observed-event errors. | `evl.mae(method="IPCW-D")` | [Qi et al.](https://proceedings.mlr.press/v202/qi23b/qi23b.pdf) |
+| Pseudo-observation error | De-censors censored observations with pseudo-observed event times. | `evl.mae(method="Pseudo_obs")` | [Qi et al.](https://proceedings.mlr.press/v202/qi23b/qi23b.pdf) |
+| MSE | Uses the same methods as MAE with squared errors. | `evl.mse(method=...)` | Same as selected method |
+| RMSE | Square root of MSE using the same methods as MAE. | `evl.rmse(method=...)` | Same as selected method |
+| Log-rank test | Compares observed event times with predicted event times; weighted variants are available. | `evl.log_rank(weightings=...)` | [Mantel](https://pubmed.ncbi.nlm.nih.gov/5910392/) |
+
+`"Margin"`, `"IPCW-T"`, `"IPCW-D"`, and `"Pseudo_obs"` require training event
+times and indicators. Hinge uses training data only when `weighted=True`.
 
 ### Single-Time Probability Metrics
 
-These metrics evaluate survival probabilities at a specified target time:
+These metrics evaluate survival probabilities at a specified target time. Use
+`SingleTimeEvaluator` when the model only outputs one survival probability per
+patient at one target time.
 
-- AUROC/AUC: `evl.auc(target_time=...)` or `evl.auroc(target_time=...)`
-- Brier score: `evl.brier_score(target_time=..., IPCW_weighted=True)`
-- Hosmer-Lemeshow calibration: `evl.one_calibration(target_time=...)`
-- Integrated calibration index: `evl.integrated_calibration_index(...)`
-
-Use `SingleTimeEvaluator` when the model only outputs one survival probability
-per patient at one target time.
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| AUC/AUROC | Calculates ROC AUC after excluding samples censored before the target time. | `evl.auc(target_time=...)` or `evl.auroc(target_time=...)` | N/A |
+| Plain Brier score | Mean squared error between survival status and predicted survival probability without IPCW. | `evl.brier_score(target_time=..., IPCW_weighted=False)` | [Brier](https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOEPIT%3E2.0.CO;2) |
+| IPCW Brier score | Brier score with inverse-probability-of-censoring weights. | `evl.brier_score(target_time=..., IPCW_weighted=True)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
+| Uncensored HL calibration | Hosmer-Lemeshow calibration test on uncensored samples. | `evl.one_calibration(target_time=..., method="Uncensored")` | [Hosmer and Lemeshow](https://www.tandfonline.com/doi/abs/10.1080/03610928008827941) |
+| DN HL calibration | D'Agostino-Nam extension using Kaplan-Meier estimates for observed probabilities. | `evl.one_calibration(target_time=..., method="DN")` | [D'Agostino and Nam](https://www.sciencedirect.com/science/article/pii/S0169716103230017) |
+| Integrated calibration index | Smooth calibration-curve summary at a target time. | `evl.integrated_calibration_index(target_time=...)` | [Austin et al.](https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.8570) |
 
 ### Survival Distribution Metrics
 
-These metrics evaluate the full predicted survival curve:
+These metrics evaluate the full predicted survival curve.
 
-- Integrated Brier score: `evl.integrated_brier_score(...)`
-- Survival-AUPRC: `evl.auprc()`
-- D-calibration: `evl.d_calibration()`
-- K-S D-calibration: `evl.ksd_calibration()`
-- KM calibration: `evl.km_calibration()`
-- Cox-Snell, modified Cox-Snell, Martingale, and Deviance residuals:
-  `evl.residuals(method=...)`
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Antolini's time-dependent C-index | Uses survival-curve risk scores at observed-event anchors. | `evl.concordance_time_dependent(method="Antolini", risks="Survival")` | [Antolini et al.](https://onlinelibrary.wiley.com/doi/10.1002/sim.2427) |
+| Gandy-Matcham time-dependent C-index | Uses hazard-rate risk scores for crossing hazards. | `evl.concordance_time_dependent(method="IPCW", risks="Hazard", tau=...)` | [Gandy and Matcham](https://onlinelibrary.wiley.com/doi/full/10.1111/sjos.70000) |
+| Plain integrated Brier score | Integrates unweighted Brier scores over a time grid. | `evl.integrated_brier_score(IPCW_weighted=False)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
+| IPCW integrated Brier score | Integrates IPCW Brier scores over a time grid. | `evl.integrated_brier_score(IPCW_weighted=True)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
+| Survival-AUPRC | Scores full survival distributions using area under the precision-recall curve. | `evl.auprc()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
+| D-calibration | Tests whether predicted survival probabilities at event times follow a uniform distribution. | `evl.d_calibration()` | [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) |
+| K-S D-calibration | Kolmogorov-Smirnov version of D-calibration. | `evl.ksd_calibration()` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
+| KM calibration | Compares the average predicted survival curve with the Kaplan-Meier curve. | `evl.km_calibration()` | [Chapfuwa et al.](https://ieeexplore.ieee.org/abstract/document/9244076/) |
+| Cox-Snell residuals | Uses cumulative hazard at the observed time to check goodness of fit. | `evl.residuals(method="CoxSnell")` | [Cox and Snell](https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1968.tb00724.x) |
+| Modified Cox-Snell residuals | Adds an excess residual for censored subjects. | `evl.residuals(method="Modified CoxSnell-v1")` or `evl.residuals(method="Modified CoxSnell-v2")` | [Collett](https://www.taylorfrancis.com/books/mono/10.1201/b18041/modelling-survival-data-medical-research-david-collett) |
+| Martingale residuals | Calculates event indicator minus cumulative hazard. | `evl.residuals(method="Martingale")` | [Barlow and Prentice](https://academic.oup.com/biomet/article-abstract/75/1/65/352141) |
+| Deviance residuals | Transforms martingale residuals toward a normal residual scale. | `evl.residuals(method="Deviance")` | [Therneau et al.](https://academic.oup.com/biomet/article-abstract/77/1/147/271076) |
+
+For time-dependent concordance, `risks="Survival"` uses `-S(t | z)` as the risk
+score at each event anchor, while `risks="Hazard"` uses estimated hazard rates
+directly. `method="IPCW"` requires training event times and indicators. `tau`
+keeps event anchors whose observed time is strictly before `tau`; when omitted,
+no truncation is applied.
 
 ## Interval-Censored Metrics
 
@@ -230,70 +276,68 @@ These metrics evaluate the full predicted survival curve:
 endpoints. It supports exact events, left-censored observations, interval
 censoring, and right censoring within one interface.
 
-### Discrimination
+### Interval-Censored Discrimination
 
-- Comparable-pair interval concordance:
-  `evl.concordance(method="comparable")`
-- Probability-weighted interval concordance using a Turnbull estimator:
-  `evl.concordance(method="probability")`
-- Midpoint-imputed concordance:
-  `evl.concordance(method="midpoint")`
-- Survival-AUPRC for interval-censored outcomes: `evl.auprc()`
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Comparable-pair interval C-index | Counts interval-censored pairs that are comparable from observed endpoints. | `evl.concordance(method="comparable")` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
+| Probability-weighted interval C-index | Uses Turnbull-estimated pair weights for interval-censored comparable ordering. | `evl.concordance(method="probability")` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Midpoint-imputed C-index | Converts finite intervals to midpoint event times and right-censored intervals to censoring times. | `evl.concordance(method="midpoint")` | N/A |
+| Interval Survival-AUPRC | Extends Survival-AUPRC scoring to interval-censored outcomes. | `evl.auprc()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 
-### Error And Scoring Metrics
+### Interval-Censored Error And Scoring Metrics
 
-- Single-time interval Brier score:
-  `evl.brier_score(target_time=..., method=...)`
-- Multiple-time interval Brier score:
-  `evl.brier_score_multiple_points(target_times=..., method=...)`
-- Integrated Brier score:
-  `evl.integrated_brier_score(target_times=..., method=...)`
-- Continuous Ranked Probability Score:
-  `evl.crps(...)`
-- Point-prediction MAE/MSE/RMSE:
-  `evl.mae()`, `evl.mse()`, and `evl.rmse()`
-- Inclusion rate of point predictions in observed intervals:
-  `evl.inclusion_rate()`
-- Prediction-interval coverage:
-  `evl.coverage(cov_level=...)`
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Uncensored interval Brier score | Excludes samples whose event status is ambiguous at the target time. | `evl.brier_score(target_time=..., method="uncensored")` | [Brier](https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOEPIT%3E2.0.CO;2) |
+| Tsouprou marginal Brier score | Uses marginal interval-censored survival estimates from the training intervals. | `evl.brier_score(target_time=..., method="Tsouprou-marginal")` | [Tsouprou](https://studenttheses.universiteitleiden.nl/access/item%3A3597164/view) |
+| Tsouprou conditional Brier score | Uses a conditional Weibull AFT model with `x` and `x_train` covariates. | `evl.brier_score(target_time=..., method="Tsouprou-conditional")` | [Tsouprou](https://studenttheses.universiteitleiden.nl/access/item%3A3597164/view) |
+| Multiple-time interval Brier score | Evaluates interval Brier scores on a supplied time grid. | `evl.brier_score_multiple_points(target_times=..., method=...)` | Same as selected Brier method |
+| Integrated interval Brier score | Integrates interval Brier scores over a time grid. | `evl.integrated_brier_score(target_times=..., method=...)` | Same as selected Brier method |
+| CRPS | Integrated unweighted interval Brier score, using survival CRPS terminology. | `evl.crps(...)` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
+| Interval MAE | One-sided absolute error that penalizes predictions outside the observed interval. | `evl.mae()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
+| Interval MSE | One-sided squared error that penalizes predictions outside the observed interval. | `evl.mse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
+| Interval RMSE | Square root of interval MSE. | `evl.rmse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
+| Inclusion rate | Fraction of point predictions that fall inside observed event intervals. | `evl.inclusion_rate()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
+| Interval prediction coverage | Fractional coverage of observed intervals by predicted intervals. | `evl.coverage(cov_level=...)` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
 
-Interval Brier score methods include `"uncensored"`, `"Tsouprou-marginal"`,
-and `"Tsouprou-conditional"`. The conditional method additionally requires
-test and train covariates through `x` and `x_train`.
+The `"Tsouprou-conditional"` method requires test and train covariates through
+`x` and `x_train`.
 
-### Calibration
+### Interval-Censored Calibration
 
-- One-calibration with interval handling:
-  `evl.one_calibration(target_time=..., method="Turnbull")`
-- Midpoint one-calibration:
-  `evl.one_calibration(target_time=..., method="MidPoint")`
-- Interval D-calibration: `evl.d_calibration()`
-- Interval K-S D-calibration: `evl.ksd_calibration()`
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Turnbull one-calibration | One-time calibration using Turnbull interval estimates in prediction bins. | `evl.one_calibration(target_time=..., method="Turnbull")` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Midpoint one-calibration | One-time calibration after midpoint imputation of observed intervals. | `evl.one_calibration(target_time=..., method="MidPoint")` | N/A |
+| Interval D-calibration | D-calibration using probability intervals instead of exact event probabilities. | `evl.d_calibration()` | [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) |
+| Interval K-S D-calibration | Kolmogorov-Smirnov D-calibration for interval-censored outcomes. | `evl.ksd_calibration()` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
 
 ## Other Evaluators And Helper APIs
 
-- `PointEvaluator` evaluates already-computed point survival-time predictions
-  with concordance, MAE, MSE, RMSE, and log-rank tests.
-- `SingleTimeEvaluator` evaluates already-computed survival probabilities at a
-  single target time with AUC, Brier score, one-calibration, and ICI.
-- `QuantileRegEvaluator` converts event-time quantile predictions into survival
-  curves and reuses the right-censored survival-curve metrics.
-- `SurvivalEVAL.Evaluations.OtherMetrics` includes lower-level research helpers
-  such as calibration slope and coefficient of variation.
+| API | Description | Typical Code |
+| --- | --- | --- |
+| `PointEvaluator` | Evaluates already-computed point survival-time predictions with concordance, MAE, MSE, RMSE, and log-rank tests. | `PointEvaluator(predicted_times, event_times, event_indicators, ...)` |
+| `SingleTimeEvaluator` | Evaluates already-computed survival probabilities at one target time with AUC, Brier score, one-calibration, and ICI. | `SingleTimeEvaluator(predicted_probs, event_times, event_indicators, ...)` |
+| `QuantileRegEvaluator` | Converts event-time quantile predictions into survival curves and reuses right-censored survival-curve metrics. | `QuantileRegEvaluator(predicted_quantiles, quantile_levels, ...)` |
+| Lower-level functions | Most evaluator methods are also available under `SurvivalEVAL.Evaluations` for advanced use cases. | `SurvivalEVAL.Evaluations.concordance(...)` |
 
-Most evaluator methods are also available as lower-level functions under
-`SurvivalEVAL.Evaluations` for advanced use cases.
+`SurvivalEVAL.Evaluations.OtherMetrics` includes research helpers such as
+calibration slope and coefficient of variation.
 
 ## Nonparametric Estimators
 
 The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 
-- Kaplan-Meier estimators: `KaplanMeier`, `KaplanMeierArea`
-- Nelson-Aalen estimator: `NelsonAalen`
-- Copula Graphic estimator: `CopulaGraphic`
-- Turnbull estimators: `TurnbullEstimator`, `TurnbullEstimatorLifelines`
-- Fiducial interval-censoring fitter:
-  `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor`
+| Method | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Kaplan-Meier | Nonparametric estimator of the marginal survival function. | `SingleEvent.KaplanMeier(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
+| Kaplan-Meier area | Kaplan-Meier estimator with area/best-guess utilities for censored survival times. | `SingleEvent.KaplanMeierArea(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
+| Nelson-Aalen | Nonparametric estimator of the cumulative hazard function. | `SingleEvent.NelsonAalen(...)` | [Nelson](https://www.jstor.org/stable/2958850) |
+| Copula Graphic | Estimates survival under dependent censoring with a specified copula. | `SingleEvent.CopulaGraphic(...)` | [Emura and Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
+| Turnbull | EM estimator for interval-censored survival data. | `SingleEvent.TurnbullEstimator(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Turnbull lifelines adapter | Lifelines-backed Turnbull estimator wrapper. | `SingleEvent.TurnbullEstimatorLifelines(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor(...)` | N/A |
 
 ## Citing This Work
 
