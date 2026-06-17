@@ -88,6 +88,36 @@ def test_prediction_utilities(evaluator_data):
     np.testing.assert_allclose(quantile_intervals, intervals)
 
 
+def test_predict_probability_from_curve_rejects_invalid_target_times(evaluator_data):
+    evaluator = evaluator_data["evaluator"]
+    n_test = evaluator_data["n_test"]
+
+    with pytest.raises(ValueError, match="non-negative"):
+        evaluator.predict_probability_from_curve(-0.1)
+
+    with pytest.raises(ValueError, match="same length"):
+        evaluator.predict_probability_from_curve(np.ones(n_test - 1))
+
+    with pytest.raises(ValueError, match="1-D array"):
+        evaluator.predict_probability_from_curve(np.ones((n_test, 1)))
+
+
+def test_multi_curve_prediction_methods_reject_invalid_target_times(evaluator_data):
+    evaluator = evaluator_data["evaluator"]
+
+    with pytest.raises(ValueError, match="non-negative"):
+        evaluator.predict_multi_probabilities_from_curve(np.array([1.0, -0.1]))
+
+    with pytest.raises(ValueError, match="1-D array"):
+        evaluator.predict_multi_probabilities_from_curve(np.array([[1.0, 2.0]]))
+
+    with pytest.raises(ValueError, match="non-negative"):
+        evaluator.predict_multi_hazards_from_curve(np.array([1.0, -0.1]))
+
+    with pytest.raises(ValueError, match="1-D array"):
+        evaluator.predict_multi_hazards_from_curve(np.array([[1.0, 2.0]]))
+
+
 def test_predict_multi_hazards_from_curve_uses_grid_intervals_not_target_order():
     time_grid = np.array([0.0, 1.0, 3.0])
     pred_survs = np.array(

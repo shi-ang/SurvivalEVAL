@@ -83,6 +83,52 @@ def check_and_convert(*args):
     return result
 
 
+def validate_time_points(
+    time_points,
+    input_name: str = "target_times",
+    allow_scalar: bool = False,
+) -> np.ndarray:
+    """Validate nonnegative scalar or one-dimensional time inputs.
+
+    Parameters
+    ----------
+    time_points
+        Time point input to validate.
+    input_name : str, default="target_times"
+        Name used in validation error messages.
+    allow_scalar : bool, default=False
+        Whether a scalar time point is accepted. Scalars are returned as a
+        one-element array.
+
+    Returns
+    -------
+    np.ndarray
+        One-dimensional array of nonnegative time points.
+
+    Raises
+    ------
+    ValueError
+        If the input is scalar when scalars are not allowed, is not
+        one-dimensional, or contains negative values.
+    """
+    is_scalar = np.isscalar(time_points) or (
+        isinstance(time_points, np.ndarray) and time_points.ndim == 0
+    )
+    if is_scalar:
+        if not allow_scalar:
+            raise ValueError(f"{input_name} must be a 1-D array.")
+        time_points = np.asarray([time_points], dtype=float)
+    else:
+        time_points = check_and_convert(time_points).astype(float)
+
+    if time_points.ndim != 1:
+        raise ValueError(f"{input_name} must be a 1-D array.")
+    if np.any(time_points < 0):
+        raise ValueError(f"{input_name} must be non-negative.")
+
+    return time_points
+
+
 def check_monotonicity(
     array: NumericArrayLike,
     direction: str | None = None,
@@ -299,9 +345,14 @@ def predict_prob_from_curve(
     survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
     if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
         raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
-    target_time = float(target_time)
-    if target_time < 0:
-        raise ValueError("target_time must be non-negative.")
+    target_time = validate_time_points(
+        target_time,
+        input_name="target_time",
+        allow_scalar=True,
+    )
+    if target_time.shape[0] != 1:
+        raise ValueError("target_time must contain exactly one time point.")
+    target_time = float(target_time[0])
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
@@ -359,11 +410,7 @@ def predict_multi_probs_from_curve(
     survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
     if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
         raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
-    target_times = check_and_convert(target_times).astype(float)
-    if target_times.ndim != 1:
-        raise ValueError("target_times must be a 1-D array.")
-    if np.any(target_times < 0):
-        raise ValueError("target_times must be non-negative.")
+    target_times = validate_time_points(target_times, input_name="target_times")
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
@@ -545,7 +592,8 @@ def predict_mean_st(
     last_time = time_grids[:, -1]
     # the residual area is calculated as the area of a triangle with height = last_prob
     # and base = extrapolation_time - last_time
-    # extrapolation_time is the time point where the survival curve crosses 0 (using the linear function of [0, 1] - [last_time, last_prob])
+    # extrapolation_time is the time point where the survival curve crosses 0
+    # using the linear function of [0, 1] - [last_time, last_prob].
     residual_area = 0.5 * last_prob**2 * last_time / (1 - last_prob)
     mean_st = rmst + residual_area
     return float(mean_st[0]) if scalar_output else mean_st

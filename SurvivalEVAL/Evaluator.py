@@ -42,6 +42,7 @@ from SurvivalEVAL.Evaluations.util import (
     predict_rmst,
     quantile_to_survival,
     survival_to_quantile,
+    validate_time_points,
     zero_padding,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
@@ -353,15 +354,20 @@ class SurvivalEvaluator:
         else:
             raise TypeError("Dimensional error")
 
-        if isinstance(target_time, (float, int)):
-            target_time = target_time * np.ones(
+        if np.isscalar(target_time):
+            target_time = validate_time_points(
+                target_time,
+                input_name="target_time",
+                allow_scalar=True,
+            )[0] * np.ones(
                 n_samples, dtype=self._time_coordinates.dtype
             )
         elif isinstance(target_time, np.ndarray):
-            assert target_time.ndim == 1, "Target time must be a 1D array"
-            assert target_time.shape[0] == n_samples, (
-                "Target time must have the same length as " "the number of samples"
-            )
+            target_time = validate_time_points(target_time, input_name="target_time")
+            if target_time.shape[0] != n_samples:
+                raise ValueError(
+                    "target_time must have the same length as the number of samples."
+                )
         else:
             error = "Target time must be a float, int, or 1D array, got '{}' instead".format(
                 type(target_time)
@@ -409,10 +415,12 @@ class SurvivalEvaluator:
         prob_mat: np.ndarray, shape = (n_samples, n_target_times)
             Predicted survival probabilities at the target time points.
         """
+        target_times = validate_time_points(target_times, input_name="target_times")
+
         if self.ndim_surv == 2 and self.ndim_time == 1:
             n_samples = self._pred_survs.shape[0]
             prob_mat = np.empty(
-                (n_samples, len(target_times)), dtype=self._pred_survs.dtype
+                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
             )
 
             for i, curve in enumerate(self._pred_survs):
@@ -422,7 +430,7 @@ class SurvivalEvaluator:
         elif self.ndim_surv == 1 and self.ndim_time == 2:
             n_samples = self._time_coordinates.shape[0]
             prob_mat = np.empty(
-                (n_samples, len(target_times)), dtype=self._pred_survs.dtype
+                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
             )
 
             for i, times in enumerate(self._time_coordinates):
@@ -432,7 +440,7 @@ class SurvivalEvaluator:
         elif self.ndim_surv == 2 and self.ndim_time == 2:
             n_samples = self._pred_survs.shape[0]
             prob_mat = np.empty(
-                (n_samples, len(target_times)), dtype=self._pred_survs.dtype
+                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
             )
 
             for i in range(n_samples):
@@ -462,11 +470,7 @@ class SurvivalEvaluator:
         hazard_mat: np.ndarray, shape = (n_samples, n_target_times)
             Predicted hazard rates at the target time points.
         """
-        target_times = check_and_convert(target_times).astype(float)
-        if target_times.ndim != 1:
-            raise ValueError("target_times must be a 1-D array.")
-        if np.any(target_times < 0):
-            raise ValueError("target_times must be non-negative.")
+        target_times = validate_time_points(target_times, input_name="target_times")
 
         survival_curves, time_grids = align_curve_and_time_coordinates(
             self._pred_survs,
