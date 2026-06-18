@@ -280,8 +280,8 @@ censoring, and right censoring within one interface.
 
 | Metric Name | Description | Code | Paper Link |
 | --- | --- | --- | --- |
-| Comparable-pair interval C-index | Counts interval-censored pairs that are comparable from observed endpoints. | `evl.concordance(method="comparable")` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
-| Probability-weighted interval C-index | Uses Turnbull-estimated pair weights for interval-censored comparable ordering. | `evl.concordance(method="probability")` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Comparable-pair interval C-index | Counts interval-censored pairs that are comparable from observed endpoints. | `evl.concordance(method="comparable")` | N/A |
+| Probability-weighted interval C-index | Uses Turnbull-estimated pair weights for interval-censored comparable ordering. | `evl.concordance(method="probability")` | N/A |
 | Midpoint-imputed C-index | Converts finite intervals to midpoint event times and right-censored intervals to censoring times. | `evl.concordance(method="midpoint")` | N/A |
 | Interval Survival-AUPRC | Extends Survival-AUPRC scoring to interval-censored outcomes. | `evl.auprc()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 
@@ -299,7 +299,7 @@ censoring, and right censoring within one interface.
 | Interval MSE | One-sided squared error that penalizes predictions outside the observed interval. | `evl.mse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
 | Interval RMSE | Square root of interval MSE. | `evl.rmse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
 | Inclusion rate | Fraction of point predictions that fall inside observed event intervals. | `evl.inclusion_rate()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
-| Interval prediction coverage | Fractional coverage of observed intervals by predicted intervals. | `evl.coverage(cov_level=...)` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
+| Interval prediction coverage | Fractional coverage of observed intervals by predicted intervals. | `evl.coverage(cov_level=...)` | N/A |
 
 The `"Tsouprou-conditional"` method requires test and train covariates through
 `x` and `x_train`.
@@ -308,10 +308,10 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 
 | Metric Name | Description | Code | Paper Link |
 | --- | --- | --- | --- |
-| Turnbull one-calibration | One-time calibration using Turnbull interval estimates in prediction bins. | `evl.one_calibration(target_time=..., method="Turnbull")` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Turnbull one-calibration | One-time calibration using Turnbull interval estimates in prediction bins. | `evl.one_calibration(target_time=..., method="Turnbull")` | N/A |
 | Midpoint one-calibration | One-time calibration after midpoint imputation of observed intervals. | `evl.one_calibration(target_time=..., method="MidPoint")` | N/A |
-| Interval D-calibration | D-calibration using probability intervals instead of exact event probabilities. | `evl.d_calibration()` | [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) |
-| Interval K-S D-calibration | Kolmogorov-Smirnov D-calibration for interval-censored outcomes. | `evl.ksd_calibration()` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
+| Interval D-calibration | D-calibration using probability intervals instead of exact event probabilities. | `evl.d_calibration()` | N/A |
+| Interval K-S D-calibration | Kolmogorov-Smirnov D-calibration for interval-censored outcomes. | `evl.ksd_calibration()` | N/A |
 
 ## Other Evaluators And Helper APIs
 
@@ -337,7 +337,7 @@ The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 | Copula Graphic | Estimates survival under dependent censoring with a specified copula. | `SingleEvent.CopulaGraphic(...)` | [Emura and Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
 | Turnbull | EM estimator for interval-censored survival data. | `SingleEvent.TurnbullEstimator(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
 | Turnbull lifelines adapter | Lifelines-backed Turnbull estimator wrapper. | `SingleEvent.TurnbullEstimatorLifelines(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
-| Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor(...)` | N/A |
+| Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor(...)` | [Cui](https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2252143) |
 
 ## Citing This Work
 
