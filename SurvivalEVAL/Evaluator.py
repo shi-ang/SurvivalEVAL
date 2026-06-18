@@ -897,18 +897,31 @@ class SurvivalEvaluator:
         if method == "ipcw":
             self._error_trainset("IPCW time-dependent concordance")
 
-        anchor_times = self.event_times[self.event_indicators == 1]
-        # tau truncation excludes anchors at or after tau, so avoid predicting
-        # risks at times that cannot contribute. This matters for hazard risks,
-        # which cannot be extrapolated beyond the prediction grid.
-        included_anchor_mask = (
-            np.ones(anchor_times.shape, dtype=bool)
-            if tau is None
-            else anchor_times < tau
+        event_indicators = self.event_indicators.astype(bool)
+        anchor_times = self.event_times[event_indicators]
+
+        # Only predict risks for anchor columns the concordance counter can
+        # read: event anchors before tau with a later sample or same-time
+        # censored candidate. Final event-only blocks may still add time ties,
+        # but they do not need survival or hazard scores.
+        included_anchor_mask_by_sample = np.zeros(
+            self.event_times.shape[0], dtype=bool
         )
+        for anchor_time in np.unique(anchor_times):
+            if tau is not None and anchor_time >= tau:
+                continue
+            same_time = self.event_times == anchor_time
+            has_later_sample = np.any(self.event_times > anchor_time)
+            has_same_time_censored = np.any(same_time & ~event_indicators)
+            has_candidate = has_later_sample or has_same_time_censored
+            if has_candidate:
+                included_anchor_mask_by_sample[same_time & event_indicators] = True
+
+        included_anchor_mask = included_anchor_mask_by_sample[event_indicators]
         included_anchor_times = anchor_times[included_anchor_mask]
+
         # Keep one column per observed event to preserve the lower-level API
-        # contract; columns for excluded anchors are never read.
+        # contract; columns for anchors without risk comparisons are never read.
         risk_scores = np.zeros(
             (self.event_times.shape[0], anchor_times.shape[0]), dtype=float
         )

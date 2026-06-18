@@ -363,3 +363,22 @@ def test_survival_evaluator_hazard_concordance_tau_skips_excluded_late_anchors()
     )
 
     np.testing.assert_allclose(result, (1.0, 5.0, 5.0))
+
+
+def test_survival_evaluator_hazard_concordance_skips_final_anchor_without_candidates():
+    time_grid = np.array([0.0, 1.0, 2.0, 3.0])
+    hazards = np.array([0.5, 0.3, 0.1])
+    pred_survs = np.exp(-hazards[:, None] * time_grid)
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_grid,
+        event_times=np.array([1.0, 2.0, 10.0]),
+        event_indicators=np.array([1, 1, 1]),
+    )
+
+    result = evaluator.concordance_time_dependent(
+        method="Antolini", risks="Hazard"
+    )
+
+    np.testing.assert_allclose(result, (1.0, 3.0, 3.0))
