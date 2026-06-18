@@ -13,6 +13,7 @@ from SurvivalEVAL.Evaluations.util import (
     predict_multi_probs_from_curve,
     predict_prob_from_curve,
     survival_to_quantile,
+    validate_time_point,
     validate_time_points,
     zero_padding,
 )
@@ -362,13 +363,23 @@ def test_predict_prob_from_curve_rejects_negative_time_coordinates():
         )
 
 
-def test_validate_time_points_accepts_scalar_when_allowed():
-    result = validate_time_points(1.5, input_name="target_time", allow_scalar=True)
+def test_validate_time_point_accepts_scalar():
+    result = validate_time_point(1.5, input_name="target_time")
 
-    np.testing.assert_allclose(result, [1.5])
+    assert result == 1.5
 
 
-def test_validate_time_points_rejects_scalar_when_not_allowed():
+def test_validate_time_point_rejects_non_numeric_scalar():
+    with pytest.raises(TypeError, match="target_time must be a numeric scalar"):
+        validate_time_point("1.5", input_name="target_time")
+
+
+def test_validate_time_point_rejects_array_like_input():
+    with pytest.raises(TypeError, match="target_time must be a numeric scalar"):
+        validate_time_point([1.5], input_name="target_time")
+
+
+def test_validate_time_points_rejects_scalar():
     with pytest.raises(ValueError, match="1-D array"):
         validate_time_points(1.5)
 

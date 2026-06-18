@@ -10,7 +10,7 @@ Description:
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 from scipy.optimize import brentq
@@ -201,7 +201,7 @@ def calibration_slope_interval_censor(
 
 def cov(
     cdf: np.ndarray, t_grid: np.ndarray, return_details: bool = False
-) -> float | tuple[float, np.ndarray]:
+) -> Union[float, tuple[float, np.ndarray]]:
     """
     Compute the coefficient of variation of event time from a discretized CDF.
 

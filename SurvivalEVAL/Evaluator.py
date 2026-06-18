@@ -42,6 +42,7 @@ from SurvivalEVAL.Evaluations.util import (
     predict_rmst,
     quantile_to_survival,
     survival_to_quantile,
+    validate_time_point,
     validate_time_points,
     zero_padding,
 )
@@ -357,11 +358,10 @@ class SurvivalEvaluator:
             raise TypeError("Dimensional error")
 
         if np.isscalar(target_time):
-            target_time = validate_time_points(
+            target_time = validate_time_point(
                 target_time,
                 input_name="target_time",
-                allow_scalar=True,
-            )[0] * np.ones(n_samples, dtype=self._time_coordinates.dtype)
+            ) * np.ones(n_samples, dtype=self._time_coordinates.dtype)
         elif isinstance(target_time, np.ndarray):
             target_time = validate_time_points(target_time, input_name="target_time")
             if target_time.shape[0] != n_samples:
@@ -764,8 +764,6 @@ class SurvivalEvaluator:
             The number of concordant pairs.
         num_total_pairs: float
             The number of total pairs.
-
-            The concordance index, the number of concordant pairs, and the number of total pairs.
         """
         # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
         method = method.lower()
@@ -1022,12 +1020,12 @@ class SurvivalEvaluator:
 
     def integrated_brier_score(
         self,
-        num_points: int | None = None,
-        target_times: np.ndarray | None = None,
+        num_points: Optional[int] = None,
+        target_times: Optional[np.ndarray] = None,
         IPCW_weighted: bool = True,
         integration_method: str = "trapz",
         draw_figure: bool = False,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
         """
         Calculate the integrated Brier score (IBS) from the predicted survival curve.
 
@@ -1336,7 +1334,7 @@ class SurvivalEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> tuple[float, list, list] | tuple[float, dict]:
+    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
         Parameters
@@ -1494,7 +1492,7 @@ class SurvivalEvaluator:
 
     def d_calibration(
         self, num_bins: int = 10, return_details: bool = False
-    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
+    ) -> Union[tuple[float, np.ndarray], tuple[float, dict]]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
@@ -1590,7 +1588,7 @@ class SurvivalEvaluator:
 
     def ksd_calibration(
         self, return_details: bool = False
-    ) -> tuple[float, float] | tuple[float, dict]:
+    ) -> Union[tuple[float, float], tuple[float, dict]]:
         """
         Calculate the KSD calibration score from the predicted survival curve.
         Parameters
@@ -1658,7 +1656,7 @@ class SurvivalEvaluator:
 
     def km_calibration(
         self, draw_figure: bool = False
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
         Parameters
@@ -2368,7 +2366,7 @@ class SingleTimeEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> tuple[float, list, list] | tuple[float, dict]:
+    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -2470,7 +2468,7 @@ class SingleTimeEvaluator:
         knots: int = 3,
         draw_figure: Optional[bool] = True,
         figure_range: Optional[tuple] = None,
-    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
+    ) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 

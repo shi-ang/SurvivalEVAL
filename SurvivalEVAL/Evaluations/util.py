@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -83,22 +83,65 @@ def check_and_convert(*args):
     return result
 
 
+def validate_time_point(
+    time_point: Union[int, float],
+    input_name: str = "target_time",
+) -> float:
+    """Validate a nonnegative scalar time input.
+
+    Parameters
+    ----------
+    time_point
+        Scalar time point input to validate.
+    input_name : str, default="target_time"
+        Name used in validation error messages.
+
+    Returns
+    -------
+    float
+        Nonnegative time point.
+
+    Raises
+    ------
+    TypeError
+        If the input is not a numeric scalar.
+    ValueError
+        If the scalar time point is negative.
+    """
+    is_scalar = np.isscalar(time_point) or (
+        isinstance(time_point, np.ndarray) and time_point.ndim == 0
+    )
+    is_numeric_scalar = isinstance(
+        time_point, (int, float, np.integer, np.floating)
+    ) or (
+        isinstance(time_point, np.ndarray)
+        and (
+            np.issubdtype(time_point.dtype, np.integer)
+            or np.issubdtype(time_point.dtype, np.floating)
+        )
+    )
+    if not is_scalar or not is_numeric_scalar:
+        raise TypeError(f"{input_name} must be a numeric scalar.")
+
+    time_point = float(np.asarray(time_point, dtype=float))
+    if time_point < 0:
+        raise ValueError(f"{input_name} must be non-negative.")
+
+    return time_point
+
+
 def validate_time_points(
-    time_points,
+    time_points: NumericArrayLike,
     input_name: str = "target_times",
-    allow_scalar: bool = False,
 ) -> np.ndarray:
-    """Validate nonnegative scalar or one-dimensional time inputs.
+    """Validate one-dimensional nonnegative time inputs.
 
     Parameters
     ----------
     time_points
-        Time point input to validate.
+        One-dimensional time point input to validate.
     input_name : str, default="target_times"
         Name used in validation error messages.
-    allow_scalar : bool, default=False
-        Whether a scalar time point is accepted. Scalars are returned as a
-        one-element array.
 
     Returns
     -------
@@ -108,18 +151,15 @@ def validate_time_points(
     Raises
     ------
     ValueError
-        If the input is scalar when scalars are not allowed, is not
-        one-dimensional, or contains negative values.
+        If the input is scalar, is not one-dimensional, or contains negative values.
     """
     is_scalar = np.isscalar(time_points) or (
         isinstance(time_points, np.ndarray) and time_points.ndim == 0
     )
     if is_scalar:
-        if not allow_scalar:
-            raise ValueError(f"{input_name} must be a 1-D array.")
-        time_points = np.asarray([time_points], dtype=float)
-    else:
-        time_points = check_and_convert(time_points).astype(float)
+        raise ValueError(f"{input_name} must be a 1-D array.")
+
+    time_points = check_and_convert(time_points).astype(float)
 
     if time_points.ndim != 1:
         raise ValueError(f"{input_name} must be a 1-D array.")
@@ -131,7 +171,7 @@ def validate_time_points(
 
 def check_monotonicity(
     array: NumericArrayLike,
-    direction: str | None = None,
+    direction: Optional[str] = None,
 ) -> bool:
     """
     Check whether values are monotonic along the last axis.
@@ -311,7 +351,7 @@ def interpolated_curve(
 def predict_prob_from_curve(
     survival_curve: np.ndarray,
     times_coordinate: np.ndarray,
-    target_time: float,
+    target_time: Union[int, float],
     interpolation: str = "Linear",
 ) -> float:
     """
@@ -330,7 +370,7 @@ def predict_prob_from_curve(
         Time points corresponding to the survival curve. 1-D array of time
         points. Values must be non-negative. If the first value is greater than
         0, `(0, 1)` is prepended to the curve.
-    target_time: float
+    target_time: int or float
         Non-negative time point at which to predict the probability of survival.
     interpolation: str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
@@ -345,14 +385,10 @@ def predict_prob_from_curve(
     survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
     if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
         raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
-    target_time = validate_time_points(
+    target_time = validate_time_point(
         target_time,
         input_name="target_time",
-        allow_scalar=True,
     )
-    if target_time.shape[0] != 1:
-        raise ValueError("target_time must contain exactly one time point.")
-    target_time = float(target_time[0])
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
