@@ -54,7 +54,7 @@ SurvivalEVAL groups metrics by prediction target:
 
 <p align="center">
   <a href="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png">
-    <img alt="Visualization of the evaluation metrics" src="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png"></a>
+    <img alt="Visualization of the evaluation metrics" src="https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/all_metrics.png"></a>
 </p>
 
 ## Installation
