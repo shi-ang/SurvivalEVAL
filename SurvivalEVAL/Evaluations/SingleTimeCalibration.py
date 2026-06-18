@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Union
+
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 import pandas as pd
@@ -285,7 +287,7 @@ def integrated_calibration_index(
     knots: int = 3,
     draw_figure: bool = False,
     figure_range: tuple = None,
-) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
+) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
     The method is presented in [1]. The implementation is based on the R code available in Appendix A of [1].

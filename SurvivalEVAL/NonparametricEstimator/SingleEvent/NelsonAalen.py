@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
+from typing import Union
 
 import numpy as np
 
@@ -53,7 +54,9 @@ class NelsonAalen:
             self.cumulative_hazard = np.insert(self.cumulative_hazard, 0, 0.0)
             self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
 
-    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
+    def predict(
+        self, prediction_times: Union[int, float, np.ndarray]
+    ) -> Union[float, np.ndarray]:
         """
         Predict the cumulative hazard based on the survival times.
         Parameters
@@ -86,8 +89,8 @@ class NelsonAalen:
         return cumulative_hazard
 
     def predict_survival(
-        self, prediction_times: int | float | np.ndarray
-    ) -> float | np.ndarray:
+        self, prediction_times: Union[int, float, np.ndarray]
+    ) -> Union[float, np.ndarray]:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters

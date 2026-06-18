@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import InitVar, dataclass, field
+from typing import Union
 
 import numpy as np
 from scipy.integrate import trapezoid
@@ -61,7 +62,9 @@ class KaplanMeier:
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(self, prediction_times: int | float | np.ndarray) -> float | np.ndarray:
+    def predict(
+        self, prediction_times: Union[int, float, np.ndarray]
+    ) -> Union[float, np.ndarray]:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters

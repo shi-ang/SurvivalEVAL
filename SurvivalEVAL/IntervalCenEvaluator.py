@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from functools import cached_property
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -305,14 +305,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def integrated_brier_score(
         self,
-        num_points: int | None = None,
-        target_times: np.ndarray | None = None,
+        num_points: Optional[int] = None,
+        target_times: Optional[np.ndarray] = None,
         method: str = "uncensored",
         x: Optional[np.ndarray] = None,
         x_train: Optional[np.ndarray] = None,
         integration_method: str = "trapz",
         draw_figure: bool = False,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
         """
         Calculate the Integrated Brier Score (IBS) from the predicted survival curve.
 
@@ -498,8 +498,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def crps(
         self,
-        num_points: int | None = None,
-        target_times: np.ndarray | None = None,
+        num_points: Optional[int] = None,
+        target_times: Optional[np.ndarray] = None,
     ) -> float:
         """
         Calculate the Continuous Ranked Probability Score (CRPS) from the predicted survival curve.
@@ -552,7 +552,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         binning_strategy: str = "C",
         method: str = "Turnbull",
         return_details: bool = False,
-    ) -> tuple[float, list, list] | tuple[float, dict]:
+    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -665,7 +665,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def d_calibration(
         self, num_bins: int = 10, return_details: bool = False
-    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
+    ) -> Union[tuple[float, np.ndarray], tuple[float, dict]]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
@@ -762,7 +762,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def ksd_calibration(
         self, return_details: bool = False
-    ) -> tuple[float, float] | tuple[float, dict]:
+    ) -> Union[tuple[float, float], tuple[float, dict]]:
         """
         Calculate the K-S-D calibration score from the predicted survival curve.
 

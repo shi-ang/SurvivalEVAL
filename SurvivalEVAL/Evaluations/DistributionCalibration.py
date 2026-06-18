@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -153,7 +153,7 @@ def ksd_calibration(
     pred_probs: np.ndarray,
     event_indicators: np.ndarray,
     return_details: bool = False,
-) -> tuple[float, float] | tuple[float, dict]:
+) -> Union[tuple[float, float], tuple[float, dict]]:
     """
     Calculate the K-S D-Calibration score.
 
@@ -483,7 +483,7 @@ def km_calibration(
     event_indicators: np.ndarray,
     interpolation_method: str = "Linear",
     draw_figure: bool = False,
-) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
     The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.

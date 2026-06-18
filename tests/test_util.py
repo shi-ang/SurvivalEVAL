@@ -13,6 +13,8 @@ from SurvivalEVAL.Evaluations.util import (
     predict_multi_probs_from_curve,
     predict_prob_from_curve,
     survival_to_quantile,
+    validate_time_point,
+    validate_time_points,
     zero_padding,
 )
 
@@ -359,6 +361,37 @@ def test_predict_prob_from_curve_rejects_negative_time_coordinates():
             times_coordinate=np.array([-1.0, 1.0, 2.0]),
             target_time=1.0,
         )
+
+
+def test_validate_time_point_accepts_scalar():
+    result = validate_time_point(1.5, input_name="target_time")
+
+    assert result == 1.5
+
+
+def test_validate_time_point_rejects_non_numeric_scalar():
+    with pytest.raises(TypeError, match="target_time must be a numeric scalar"):
+        validate_time_point("1.5", input_name="target_time")
+
+
+def test_validate_time_point_rejects_array_like_input():
+    with pytest.raises(TypeError, match="target_time must be a numeric scalar"):
+        validate_time_point([1.5], input_name="target_time")
+
+
+def test_validate_time_points_rejects_scalar():
+    with pytest.raises(ValueError, match="1-D array"):
+        validate_time_points(1.5)
+
+
+def test_validate_time_points_rejects_non_1d_inputs():
+    with pytest.raises(ValueError, match="1-D array"):
+        validate_time_points(np.array([[1.0, 2.0]]))
+
+
+def test_validate_time_points_rejects_negative_values():
+    with pytest.raises(ValueError, match="non-negative"):
+        validate_time_points(np.array([1.0, -0.1]))
 
 
 def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
