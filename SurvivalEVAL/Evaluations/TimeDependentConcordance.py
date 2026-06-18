@@ -38,6 +38,10 @@ def concordance_time_dependent(
         ``risk_scores[i, k]`` is the risk score for test sample ``i``
         evaluated at the kth observed-event anchor time. The kth anchor time
         corresponds to ``event_times[np.flatnonzero(event_indicators)[k]]``.
+        Anchor times are sample-level observed events, not unique event times.
+        If multiple observed events share the same time, ``risk_scores`` must
+        include one column for each of those samples in observed-event sample
+        order.
     event_times: np.ndarray, shape = (n_samples,)
         The true survival times.
     event_indicators: np.ndarray, shape = (n_samples,)

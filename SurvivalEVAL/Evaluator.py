@@ -847,6 +847,12 @@ class SurvivalEvaluator:
         """
         Calculate the time-dependent concordance index.
 
+        Risk scores are evaluated at sample-level observed-event anchor times.
+        If multiple observed events share the same time, that time is represented
+        once per observed event anchor, not once per unique event time. The
+        evaluator preserves the lower-level column contract while skipping risk
+        prediction for anchor columns that cannot enter risk comparisons.
+
         Parameters
         ----------
         ties: str, default = "Risk"
