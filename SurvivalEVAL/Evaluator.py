@@ -910,9 +910,7 @@ class SurvivalEvaluator:
         # read: event anchors before tau with a later sample or same-time
         # censored candidate. Final event-only blocks may still add time ties,
         # but they do not need survival or hazard scores.
-        included_anchor_mask_by_sample = np.zeros(
-            self.event_times.shape[0], dtype=bool
-        )
+        included_anchor_mask_by_sample = np.zeros(self.event_times.shape[0], dtype=bool)
         for anchor_time in np.unique(anchor_times):
             if tau is not None and anchor_time >= tau:
                 continue

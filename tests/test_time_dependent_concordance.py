@@ -377,8 +377,6 @@ def test_survival_evaluator_hazard_concordance_skips_final_anchor_without_candid
         event_indicators=np.array([1, 1, 1]),
     )
 
-    result = evaluator.concordance_time_dependent(
-        method="Antolini", risks="Hazard"
-    )
+    result = evaluator.concordance_time_dependent(method="Antolini", risks="Hazard")
 
     np.testing.assert_allclose(result, (1.0, 3.0, 3.0))
