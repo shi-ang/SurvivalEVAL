@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## 2026-06-17: Version 0.8.0
+
+1. Add Antolini-style time-dependent concordance through the lower-level
+   `concordance_time_dependent` function and `SurvivalEvaluator.concordance_time_dependent`.
+2. Add survival-probability and hazard-rate risk modes for time-dependent concordance, including the
+   Gandy-Matcham hazard-rate IPCW usage for crossing-hazards models.
+3. Add IPCW weighting, strict before-`tau` anchor filtering, training-data validation, and tie handling for
+   time-dependent concordance.
+4. Add hazard prediction support and consistent target-time validation for evaluator probability and hazard lookups.
+5. Add regression tests for time-dependent pair counting, IPCW weighting, tie policies, `tau` filtering,
+   input validation, and evaluator end-to-end behavior.
+6. Reconstruct the README metric reference with paper-linked tables covering the documented right-censored,
+   interval-censored, helper, and estimator APIs.
+
+## 2026-06-16: Version 0.7.0
+
+1. Add Uno's right-censored concordance index through the `"Uno"` method, with `"IPCW"` kept as an alias.
+2. Add `tau` truncation support for right-censored concordance methods, using strict before-`tau` anchor filtering.
+3. Improve right-censored concordance pair accounting for Harrell/Naive, Uno/IPCW, and Margin methods, including
+   tie handling and final-block IPCW edge cases.
+4. Update evaluator concordance wrappers and docstrings to expose the new right-censored concordance options.
+5. Add regression tests for Uno/IPCW weighting, `tau` truncation, tie policies, Margin behavior, and evaluator
+   forwarding.
+
+## 2026-06-11: Version 0.6.3
+
+1. Fix zero-padding and prediction-input update paths so 1-D survival curves, raw replacements after padding, sample-specific time grids, and row-count mismatches are handled consistently in right- and interval-censored evaluators.
+2. Make string option handling case-insensitive across evaluator methods, interpolation choices, Brier score, concordance, calibration, residual, mean-error, and nonparametric estimator settings.
+3. Correct boundary handling for censored observations at target times in AUC and right-censored Brier score calculations, and for open-left/closed-right interval-censored Brier score cases.
+4. Improve utility behavior for repeated infinite monotonic values, degenerate all-one survival-to-quantile curves, zero-padded probability prediction, and vectorized tail extrapolation for multiple target times.
+5. Clean up evaluator prediction input APIs by adding shared `set_prediction_inputs`, refreshing dimension metadata and cached predictions on updates, and accepting list quantile levels.
+6. Correct setup license metadata to GPLv3 and align documentation/comments for evaluator, interval-censored, Brier score, and utility behavior.
+7. Add regression tests covering the new validation, boundary, zero-padding, quantile, utility, and metric behavior.
+
+## 2026-06-08: Version 0.6.2
+
+1. Improve survival-curve and time-coordinate validation, broadcasting, zero-padding, and monotonicity correction, including isotonic regression support.
+2. Fix calibration edge cases for probability-one predictions, uncensored bin sizes, interval-specific limits, and arbitrary D-calibration bin counts.
+3. Fix concordance, Brier score, RMST, coefficient of variation, and survival AUPRC behavior for interval-censored data and boundary cases.
+4. Correct nonparametric estimator baselines and exact-event handling for Kaplan-Meier, Nelson-Aalen, Copula Graphic, Turnbull, and Fiducial estimators.
+5. Improve evaluator input validation and defaults for prediction intervals, missing training data, duplicated time coordinates, and scikit-survival probability curves.
+6. Clarify event-indicator terminology, API documentation, and code comments throughout the package.
+7. Add regression tests for the corrected metrics, evaluators, utility functions, and nonparametric estimators.
+
+## 2026-01-22: Version 0.6.1
+
+1. Add a version of Concordance index for interval censoring based on comparable pairs only, just like Harrell's C for right censoring.
+2. Added Fiducial estimator for interval censored data. This haven't been integrated into the Evaluator class yet.
+3. Bug fixes for Distribution Calibration (for interval censoring), and coverage (for interval censoring).
+
 ## 2025-11-04: Version 0.6.0
 
 1. Add IntervalCenEvaluator.py for interval censoring evaluation. The new features include:
@@ -14,13 +64,12 @@
    - Survival AUPRC for both right and interval censoring
    - CRPS (degenerated version of interval Brier score) for both right and interval censoring
 2. Implement other metrics (from literature) that are currently not integrated in the Evaluator classes, including:
-    - Coefficient of variation (CoV)
-    - Calibration slope (for both right and interval censoring)
+   - Coefficient of variation (CoV)
+   - Calibration slope (for both right and interval censoring)
 3. Add converter to use the mid-point imputation for interval censored data to convert to right censored data for evaluation purpose.
 4. Add plot support for calibration metrics, integrated Brier score, for both right and interval censoring.
 5. Remove the reference of old Turnbull estimator, implement a new class TurnbullEstimatorLifelines based on the lifelines package.
 6. Update test scripts for the new features.
-
 
 ## 2025-09-09: Version 0.5.1
 

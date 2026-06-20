@@ -38,10 +38,13 @@ def auc(
         event_times < target_time, event_indicators == 0
     )
     event_times = event_times[~exclude_indicators]
+    event_indicators = event_indicators[~exclude_indicators]
     predict_probs = predict_probs[~exclude_indicators]
 
     # get the binary status of the test data, given the target time
-    binary_status = (event_times <= target_time).astype(int)
+    binary_status = (
+        (event_times <= target_time) & event_indicators.astype(bool)
+    ).astype(int)
 
     # check if the binary status is all zeros or all ones
     if np.all(binary_status == 0) or np.all(binary_status == 1):

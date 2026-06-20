@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Union
+
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 import pandas as pd
@@ -11,6 +15,18 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
 )
+
+
+def _h_statistic_bin_masks(preds: np.ndarray, num_bins: int) -> list[np.ndarray]:
+    """Return equal-width probability-bin masks with a closed final bin."""
+    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_masks = []
+    for i in range(num_bins):
+        upper_mask = (
+            preds <= bin_edges[i + 1] if i == num_bins - 1 else preds < bin_edges[i + 1]
+        )
+        bin_masks.append((preds >= bin_edges[i]) & upper_mask)
+    return bin_masks
 
 
 def one_calibration(
@@ -32,7 +48,8 @@ def one_calibration(
     event_time: np.ndarray
         The true event times.
     event_indicator: np.ndarray
-        The indicator of whether the event is observed or not.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     target_time: Numeric
         The time of interest.
     num_bins: int
@@ -43,7 +60,8 @@ def one_calibration(
         H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
     method: str
         The method to handle censored patients. The options are: "DN" (default), and "Uncensored".
-        "Uncensored" method simply removes the censored patients, and uses the standard Hosmer-Lemeshow test.
+        "Uncensored" removes observations censored before the target time, whose event status is unknown,
+        and uses the standard Hosmer-Lemeshow test on the remaining observations.
         "DN" method uses the D'Agostino-Nam method, which uses the Kaplan-Meier estimate of the survival function
         to compute the average observed probabilities in each bin.
 
@@ -58,7 +76,10 @@ def one_calibration(
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    if binning_strategy == "C":
+    binning_strategy = binning_strategy.lower()
+    method = method.lower()
+
+    if binning_strategy == "c":
         sorted_idx = np.argsort(-preds)
         sorted_predictions = preds[sorted_idx]
         sorted_event_time = event_time[sorted_idx]
@@ -67,16 +88,12 @@ def one_calibration(
         binned_event_time = np.array_split(sorted_event_time, num_bins)
         binned_event_indicator = np.array_split(sorted_event_indicator, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "H":
-        # Create bins from 0 to 1 with equal increments
-        bin_edges = np.linspace(0, 1, num_bins + 1)
+    elif binning_strategy == "h":
         binned_event_time = []
         binned_event_indicator = []
         binned_predictions = []
 
-        for i in range(num_bins):
-            # Get the indices of predictions that fall into the current bin
-            bin_mask = (preds >= bin_edges[i]) & (preds < bin_edges[i + 1])
+        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
             binned_event_time.append(event_time[bin_mask])
             binned_event_indicator.append(event_indicator[bin_mask])
             binned_predictions.append(preds[bin_mask])
@@ -99,17 +116,23 @@ def one_calibration(
 
         # For Uncensored method, we simply remove the censored patients,
         # for D'Agostina-Nam method, we will use 1-KM(t) as the observed probability.
-        if method == "Uncensored":
+        if method == "uncensored":
             filter_idx = ~(
                 (binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0)
             )
-            mean_prob = np.mean(binned_predictions[b][filter_idx])
-            event_count = sum(binned_event_time[b][filter_idx] < target_time)
-            event_probability = event_count / bin_size
-            hl_statistics += (event_count - bin_size * mean_prob) ** 2 / (
-                bin_size * mean_prob * (1 - mean_prob)
+            filtered_predictions = binned_predictions[b][filter_idx]
+            filtered_event_times = binned_event_time[b][filter_idx]
+            retained_bin_size = len(filtered_event_times)
+            if retained_bin_size == 0:
+                continue
+
+            mean_prob = np.mean(filtered_predictions)
+            event_count = np.sum(filtered_event_times < target_time)
+            event_probability = event_count / retained_bin_size
+            hl_statistics += (event_count - retained_bin_size * mean_prob) ** 2 / (
+                retained_bin_size * mean_prob * (1 - mean_prob)
             )
-        elif method == "DN":
+        elif method == "dn":
             mean_prob = np.mean(binned_predictions[b])
             km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
             event_probability = 1 - km_model.predict(target_time)
@@ -125,7 +148,7 @@ def one_calibration(
     # recalculate the number of bins as the number of bins with data
     num_bins = len(observed_probabilities)
     degree_of_freedom = (
-        num_bins - 1 if (num_bins <= 15 and method == "DN") else num_bins - 2
+        num_bins - 1 if (num_bins <= 15 and method == "dn") else num_bins - 2
     )
     if degree_of_freedom <= 0:
         raise ValueError(
@@ -172,14 +195,19 @@ def one_cal_ic(
         to compute the average observed probabilities in each bin.
     Returns
     -------
-    score: float
-        The one calibration score.
+    p_value: float
+        The one-calibration p-value.
+    statistics: float
+        The Hosmer-Lemeshow statistic.
     observed_probabilities: list
         The observed probabilities in each bin.
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    if binning_strategy == "C":
+    binning_strategy = binning_strategy.lower()
+    method = method.lower()
+
+    if binning_strategy == "c":
         sorted_idx = np.argsort(-preds)
         sorted_predictions = preds[sorted_idx]
         sorted_left = left_limits[sorted_idx]
@@ -188,16 +216,12 @@ def one_cal_ic(
         binned_left = np.array_split(sorted_left, num_bins)
         binned_right = np.array_split(sorted_right, num_bins)
         binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "H":
-        # Create bins from 0 to 1 with equal increments
-        bin_edges = np.linspace(0, 1, num_bins + 1)
+    elif binning_strategy == "h":
         binned_left = []
         binned_right = []
         binned_predictions = []
 
-        for i in range(num_bins):
-            # Get the indices of predictions that fall into the current bin
-            bin_mask = (preds >= bin_edges[i]) & (preds < bin_edges[i + 1])
+        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
             binned_left.append(left_limits[bin_mask])
             binned_right.append(right_limits[bin_mask])
             binned_predictions.append(preds[bin_mask])
@@ -221,16 +245,16 @@ def one_cal_ic(
         r_limits = np.array(binned_right[b])
         mean_prob = np.mean(binned_predictions[b])
 
-        if method == "MidPoint":
+        if method == "midpoint":
             mid = l_limits + (r_limits - l_limits) / 2.0
             finite_mid = np.isfinite(mid)
-            event_times = np.where(finite_mid, mid, left_limits)
+            event_times = np.where(finite_mid, mid, l_limits)
             event_indicators = finite_mid.astype(int)
 
             km_model = KaplanMeier(event_times, event_indicators)
             event_probability = 1 - km_model.predict(target_time)
-        elif method == "Turnbull":
-            tb = TurnbullEstimatorLifelines(left_limits, right_limits)
+        elif method == "turnbull":
+            tb = TurnbullEstimatorLifelines(l_limits, r_limits)
             event_probability = 1 - tb.predict(target_time)
         else:
             error = "Please enter one of 'MidPoint','Turnbull' for method."
@@ -263,7 +287,7 @@ def integrated_calibration_index(
     knots: int = 3,
     draw_figure: bool = False,
     figure_range: tuple = None,
-) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
+) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
     The method is presented in [1]. The implementation is based on the R code available in Appendix A of [1].
@@ -279,7 +303,8 @@ def integrated_calibration_index(
     event_time: NumericArrayLike
         The true event times.
     event_indicator: NumericArrayLike
-        The indicator of whether the event is observed or not.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     target_time: Numeric
         The time of interest for calibration.
     knots: int
@@ -290,7 +315,7 @@ def integrated_calibration_index(
     figure_range: tuple
         The range of the x-axis and y-axis for the plot.
         It should be a tuple of the form (x_min, x_max, y_min, y_max).
-        If None, it will be set to the range of predicted survival probabilities.
+        If None, it will be set to the range of predicted event probabilities.
         Default is None.
     Returns
     -------
@@ -362,8 +387,8 @@ def integrated_calibration_index(
 
         ax.plot(grid, cal_pred, label="Calibration Curve", color="blue")
         ax.plot(grid, grid, label="Perfect Calibration", linestyle="--", color="grey")
-        ax.set_xlabel("Predicted Survival Probability")
-        ax.set_ylabel("Observed Survival Probability")
+        ax.set_xlabel("Predicted Event Probability")
+        ax.set_ylabel("Observed Event Probability")
         ax.set_title("Graphical Calibration Curve")
         ax.legend()
         if figure_range is not None:

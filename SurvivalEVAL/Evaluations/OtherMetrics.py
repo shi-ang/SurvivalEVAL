@@ -8,7 +8,9 @@ Description:
     These functions can be used independently for custom evaluation needs or further research.
 """
 
-from typing import Sequence, Tuple
+from __future__ import annotations
+
+from typing import Sequence, Union
 
 import numpy as np
 from scipy.optimize import brentq
@@ -44,8 +46,11 @@ def _invert_from_survival_with_interpolator(
             if target <= s_hi:
                 out[i, j] = t_hi
                 continue
-            g = lambda t: float(spl(t)) - target
-            out[i, j] = brentq(g, t_lo, t_hi, maxiter=50)
+
+            def gap(t):
+                return float(spl(t)) - target
+
+            out[i, j] = brentq(gap, t_lo, t_hi, maxiter=50)
     return out
 
 
@@ -58,7 +63,7 @@ def calibration_slope_right_censor(
     *,
     quantile_method: str = "Linear",  # "Linear"|"Pchip"
     through_origin: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float]:
     """
     right uncensor (p, obs(p))：
       - event count=1{t_ip >= y_i}
@@ -111,11 +116,10 @@ def calibration_slope_right_censor(
     x, y_fit = p_arr, o_arr
     if through_origin:
         slope = float((x @ y_fit) / (x @ x + 1e-12))
-        intercept = 0.0
     else:
         X = np.c_[np.ones_like(x), x]
         beta, *_ = np.linalg.lstsq(X, y_fit, rcond=None)
-        intercept, slope = float(beta[0]), float(beta[1])
+        slope = float(beta[1])
 
     return p_arr, o_arr, slope
 
@@ -131,7 +135,7 @@ def calibration_slope_interval_censor(
     quantile_method: str = "Linear",  # "Linear" | "Pchip"  (for survival interpolator)
     through_origin: bool = True,  # fit slope through origin (default in paper)
     clip_p: float = 1e-6,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Compute calibration points (p, obs(p)) and slope under INTERVAL censoring:
       - Include as 1 if t_{i,p} >= U_i
@@ -197,12 +201,9 @@ def calibration_slope_interval_censor(
 
 def cov(
     cdf: np.ndarray, t_grid: np.ndarray, return_details: bool = False
-) -> float | Tuple[float, np.ndarray]:
+) -> Union[float, tuple[float, np.ndarray]]:
     """
-    Compute CoV = SD[F]/E[F] from a discretized CDF
-    0.1, 0.2, 0.3, 0.4
-    1, 5, 8, 10
-    CoV = (Var (0.1 * (1+5)/2 + 0.1 * 5+8/2 ,... ))
+    Compute the coefficient of variation of event time from a discretized CDF.
 
     Parameters
     ----------
@@ -216,26 +217,66 @@ def cov(
     Returns
     -------
     float
-        The mean CoV across all patients.
+        The mean event-time CoV across all patients.
+    np.ndarray, optional
+        The per-patient event-time CoV values, returned when
+        ``return_details`` is True.
+
+    Notes
+    -----
+    For each patient, the increment
+    ``F(t_grid[k + 1]) - F(t_grid[k])`` is assigned to the midpoint of that
+    interval. These increments are divided by their sum,
+    ``F(t_grid[-1]) - F(t_grid[0])``, before the event-time moments are
+    calculated.
+
+    Consequently, if ``F(t_grid[0]) = 0`` and ``F(t_grid[-1]) = 1``, this
+    approximates the CoV of the full event-time distribution. Otherwise, it is
+    the CoV conditional on the event occurring within the grid interval; mass
+    before the first grid point and after the last grid point is excluded.
     """
-    # discrete pmf mass per bin: dF_k = F(t_{k+1}) - F(t_k)
-    pmf = np.diff(cdf, axis=1)
+    cdf = np.asarray(cdf, dtype=float)
+    t_grid = np.asarray(t_grid, dtype=float)
 
-    t_mid = 0.5 * (t_grid[1:] + t_grid[:-1])  # (T-1,)
-    # midpoint rule to approximate E[T] and E[T^2]
-    m1 = np.sum(pmf * t_mid, axis=1)  # E[F]
-    m2 = np.sum(pmf * (t_mid**2), axis=1)  # E[F^2]
-    var = m2 - m1**2  # Var[F] ≥ 0 = E[F^2] - E[F]^2
+    if cdf.ndim != 2:
+        raise ValueError("cdf must be a two-dimensional array.")
+    if t_grid.ndim != 1:
+        raise ValueError("t_grid must be a one-dimensional array.")
+    if t_grid.size < 2 or cdf.shape[1] != t_grid.size:
+        raise ValueError("cdf and t_grid must contain the same number of time points.")
+    if not np.all(np.isfinite(cdf)) or not np.all(np.isfinite(t_grid)):
+        raise ValueError("cdf and t_grid must contain only finite values.")
+    if np.any(t_grid < 0) or np.any(np.diff(t_grid) <= 0):
+        raise ValueError("t_grid must be nonnegative and strictly increasing.")
+    if np.any((cdf < 0) | (cdf > 1)):
+        raise ValueError("cdf values must lie between 0 and 1.")
 
-    if np.any(var < -1e-8):
+    cdf_increments = np.diff(cdf, axis=1)
+    tolerance = 1e-12
+    if np.any(cdf_increments < -tolerance):
+        raise ValueError("cdf must be nondecreasing along the time axis.")
+
+    # Treat each CDF increment as event-time mass at its bin midpoint.
+    probability_mass = np.clip(cdf_increments, 0.0, None)
+    represented_mass = np.sum(probability_mass, axis=1)
+    if np.any(represented_mass <= tolerance):
         raise ValueError(
-            "Zero or negative variance encountered in CoV calculation. Ignore these samples or check CDF input."
+            "Each CDF must contain positive probability mass on the time grid."
         )
-    # CoV per patient; guard divide-by-zero
-    cov = np.where(m1 > 0, np.sqrt(var) / m1, np.nan)  # (N,)
+    probability_mass = probability_mass / represented_mass[:, None]
 
-    mean_cov = float(np.nanmean(cov))
+    time_midpoints = 0.5 * (t_grid[1:] + t_grid[:-1])
+    mean_time = np.sum(probability_mass * time_midpoints, axis=1)
+    if np.any(mean_time <= 0):
+        raise ValueError("Mean event time must be positive; CoV is undefined.")
+
+    variance_time = np.sum(
+        probability_mass * (time_midpoints - mean_time[:, None]) ** 2,
+        axis=1,
+    )
+    cov_values = np.sqrt(variance_time) / mean_time
+    mean_cov = float(np.mean(cov_values))
     if return_details:
-        return mean_cov, cov
+        return mean_cov, cov_values
     else:
         return mean_cov

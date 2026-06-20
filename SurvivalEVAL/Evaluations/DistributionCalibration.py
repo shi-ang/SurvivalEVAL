@@ -1,4 +1,6 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import Optional, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -23,7 +25,8 @@ def d_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     num_bins: int
         The number of bins to use for the D-Calibration score.
 
@@ -83,7 +86,7 @@ def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
     censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
         if prob == 1:
-            censor_binning += 0.1
+            censor_binning += 1 / num_bins
             break
         elif quantile[i] > prob >= quantile[i + 1]:
             first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
@@ -150,7 +153,7 @@ def ksd_calibration(
     pred_probs: np.ndarray,
     event_indicators: np.ndarray,
     return_details: bool = False,
-) -> tuple[float, float] | tuple[float, dict]:
+) -> Union[tuple[float, float], tuple[float, dict]]:
     """
     Calculate the K-S D-Calibration score.
 
@@ -159,7 +162,8 @@ def ksd_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     return_details: bool
         Whether to return the detailed information including the empirical distribution and the figure.
 
@@ -259,7 +263,7 @@ def ksd_cal_ic(
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
-    tb = TurnbullEstimatorLifelines(pred_probs_left, pred_probs_right)
+    tb = TurnbullEstimatorLifelines(pred_probs_right, pred_probs_left)
     x_support = tb.survival_times
     cdf_values = tb.cumulative_dens
 
@@ -366,11 +370,11 @@ def create_interval_c_hist(
 
 
 _residual_names = {
-    "CoxSnell": "Cox-Snell Residuals",
-    "Modified CoxSnell-v1": "Cox-Snell Residuals",
-    "Modified CoxSnell-v2": "Cox-Snell Residuals",
-    "Martingale": "Martingale Residuals",
-    "Deviance": "Deviance Residuals",
+    "coxsnell": "Cox-Snell Residuals",
+    "modified coxsnell-v1": "Cox-Snell Residuals",
+    "modified coxsnell-v2": "Cox-Snell Residuals",
+    "martingale": "Martingale Residuals",
+    "deviance": "Deviance Residuals",
 }
 
 
@@ -390,7 +394,8 @@ def residuals(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     method: str
         The method to calculate residuals. Options are "CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2",
         "Martingale", "Deviance".
@@ -402,20 +407,21 @@ def residuals(
         The calculated residuals.
     """
     cox_residuals = -np.log(pred_probs)
+    method = method.lower()
 
-    if method == "CoxSnell":
+    if method == "coxsnell":
         residuals = cox_residuals
-    elif method == "Modified CoxSnell-v1" or method == "Modified CoxSnell-v2":
+    elif method in ["modified coxsnell-v1", "modified coxsnell-v2"]:
         # Compare with standard CoxSnell residuals, this method adds an 'excess residual' for censored instances.
         # The excess residual should also follow a unit exponential distribution, based on the lack of memory property.
         # There are two choices of excess residuals:
         # (1) use the mean of the unit exponential distribution, which is 1,
         # or (2) use the median of the unit exponential distribution, which is ln(2).
-        excess_residual = 1 if method == "Modified CoxSnell-v1" else np.log(2)
+        excess_residual = 1 if method == "modified coxsnell-v1" else np.log(2)
         residuals = cox_residuals + excess_residual * (1 - event_indicators)
-    elif method == "Martingale":
+    elif method == "martingale":
         residuals = event_indicators - cox_residuals
-    elif method == "Deviance":
+    elif method == "deviance":
 
         def safe_log(x):
             return np.log(x + 1e-8)
@@ -477,7 +483,7 @@ def km_calibration(
     event_indicators: np.ndarray,
     interpolation_method: str = "Linear",
     draw_figure: bool = False,
-) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
     The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.
@@ -500,7 +506,11 @@ def km_calibration(
     event_times: np.ndarray
         The event time of the test data.
     event_indicators: np.ndarray
-        The event indicator of the test data.\
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
+    interpolation_method: str, default "Linear"
+        Interpolation method for evaluating the average survival curve.
+        Options are "Linear" and "Pchip".
     draw_figure: bool
         Whether to visualize the comparison of the KM curve and average curve.
 
@@ -511,7 +521,7 @@ def km_calibration(
     fig: tuple(plt.Figure, plt.Axes)
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
         is True.
-    
+
     References
     ----------
     [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
@@ -606,6 +616,8 @@ def coverage_ic(
         Method to compute the coverage.
         - "Turnbull": use the empirical distribution (Turnbull estimator) of censoring intervals from the training data.
         - "linear": use linear interpolation between the left and right bounds of the censoring intervals.
+    eps : float, default 1e-12
+        Numerical tolerance for treating the conditional coverage denominator as zero.
 
     Returns
     -------
@@ -625,6 +637,7 @@ def coverage_ic(
             "pred_l, pred_r, obs_l, and obs_r must contain the same number of samples."
         )
 
+    method = method.lower()
     if method == "linear":
         # Linear interpolation method, assumes uniform distribution within each censoring interval
         overlap_left = np.maximum(obs_l, pred_l)
@@ -632,7 +645,7 @@ def coverage_ic(
 
         denom = obs_r - obs_l
         numer = np.maximum(0.0, overlap_right - overlap_left)
-    elif method == "Turnbull":
+    elif method == "turnbull":
         # error if training is None
         if obs_l_train is None or obs_r_train is None:
             raise ValueError(
@@ -748,7 +761,7 @@ def ks_pvalue(D_n: float, n: int) -> float:
 
 
 if __name__ == "__main__":
-    ### test the KM calibration
+    # Test the KM calibration.
 
     # # first we define the time coordinates
     # times = np.linspace(0, 100, 11)

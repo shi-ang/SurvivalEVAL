@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
@@ -30,19 +32,22 @@ def mean_error(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     error_type: string, default: "absolute"
         Type of mean error to use. Options are "absolute" and "squared".
     method: string, default: "Hinge"
         Method of handling censorship.
-        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", and "Pseudo_obs_pop"
+        Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
     weighted: boolean, default: True
-        Whether to use weighting scheme for mean error.
-        If true, each best guess value / surrogate value will have a confidence weight = 1/ (1 - KM(censoring time)).
+        Whether to use weighting scheme for MAE.
+        If true, each censored sample has confidence weight
+        1 - S_KM(censoring time).
     log_scale: boolean, default: False
         Whether to use log scale for the loss function.
     verbose: boolean, default: False
@@ -59,8 +64,11 @@ def mean_error(
     if train_event_indicators is not None:
         train_event_indicators = train_event_indicators.astype(bool)
 
+    error_type = error_type.lower()
+    method = method.lower()
+
     # calculate the weighting for each sample
-    if method in ["Margin", "IPCW-T", "IPCW-D", "Pseudo_obs", "Pseudo_obs_pop"]:
+    if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
                 "If method is '{}', training set values must be included.".format(
@@ -89,7 +97,7 @@ def mean_error(
             "Please enter one of 'absolute' or 'squared' for calculating error."
         )
 
-    if method == "Uncensored":
+    if method == "uncensored":
         # only use uncensored data
         if log_scale:
             errors = np.log(event_times[event_indicators]) - np.log(
@@ -98,7 +106,7 @@ def mean_error(
         else:
             errors = event_times[event_indicators] - predicted_times[event_indicators]
         return error_func(errors).mean()
-    elif method == "Hinge":
+    elif method == "hinge":
         # consider only the early prediction error
         # if prediction is higher than the censored time, it is not penalized
         weights = np.ones(predicted_times.size)
@@ -117,7 +125,7 @@ def mean_error(
             errors = event_times - predicted_times
         errors[~event_indicators] = np.maximum(errors[~event_indicators], 0)
         return np.average(error_func(errors), weights=weights)
-    elif method == "Margin":
+    elif method == "margin":
         # The L1-margin method proposed by https://www.jmlr.org/papers/v21/18-772.html
         # Calculate the best guess survival time given the KM curve and censoring time of that patient
         best_guesses = km_model.best_guess(censor_times)
@@ -146,7 +154,7 @@ def mean_error(
                 best_guesses - predicted_times[~event_indicators]
             )
         return np.average(error_func(errors), weights=weights)
-    elif method == "IPCW-T":
+    elif method == "ipcw-t":
         # This is the IPCW-T method from https://arxiv.org/pdf/2306.01196.pdf
         # Calculate the best guess time (surrogate time) based on the subsequent uncensored subjects
         best_guesses = np.empty(shape=n_test)
@@ -176,7 +184,7 @@ def mean_error(
         else:
             errors = best_guesses - predicted_times
         return np.average(error_func(errors), weights=weights)
-    elif method == "IPCW-D":
+    elif method == "ipcw-d":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
         inverse_train_event_indicators = 1 - train_event_indicators
@@ -197,7 +205,7 @@ def mean_error(
         return (
             error_func(errors)[event_indicators] / ipc_pred[event_indicators]
         ).mean()
-    elif method == "Pseudo_obs":
+    elif method == "pseudo_obs":
         # Calculate the best guess time (surrogate time) by the contribution of the censored subjects to KM curve
         n_train = train_event_times.size
 
@@ -652,9 +660,13 @@ def _compute_inside_mask(
         Boolean mask for right-censored intervals.
     """
     is_right_cens = np.isinf(right)
-    inside_finite = (~is_right_cens) & (predicted > left) & (predicted <= right)
+    is_exact = (~is_right_cens) & (left == right)
+    inside_exact = is_exact & np.isclose(predicted, right)
+    inside_finite = (
+        (~is_right_cens) & (~is_exact) & (predicted > left) & (predicted <= right)
+    )
     inside_right = is_right_cens & (predicted > left)
-    inside = inside_finite | inside_right
+    inside = inside_exact | inside_finite | inside_right
     return inside, is_right_cens
 
 
@@ -731,6 +743,7 @@ def mean_error_ic(
     L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
 
     # set the error function
+    error_type = error_type.lower()
     if error_type == "absolute":
         error_func = np.abs
     elif error_type == "squared":

@@ -22,6 +22,7 @@ dependencies = [
     "matplotlib>=3.4.3",
     "scikit-learn>=1.5.2",
     "lifelines>=0.30.0",
+    "osqp>=0.6.3",
     "patsy>=1.0.1",
 ]
 classifiers = [
@@ -57,6 +58,14 @@ version = { attr = "SurvivalEVAL.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["SurvivalEVAL*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+addopts = ["--ignore=tests/private"]
+
+[tool.isort]
+profile = "black"
 
 [project.optional-dependencies]
 dev = [
@@ -64,4 +73,3 @@ dev = [
     "scikit-survival>=0.20.2",
     "pytest>=7.4.0",
 ]
-

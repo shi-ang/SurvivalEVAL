@@ -30,11 +30,13 @@ def single_brier_score(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_time: float, default: None
         The specific time point for which to estimate the Brier score.
     ipcw: bool, default: True
@@ -50,6 +52,10 @@ def single_brier_score(
 
     event_indicators = event_indicators.astype(bool)
     # train_event_indicators = train_event_indicators.astype(bool)
+    event_before_or_at_target = (event_times <= target_time) & event_indicators
+    event_free_at_target = (event_times > target_time) | (
+        (event_times == target_time) & ~event_indicators
+    )
 
     if ipcw:
         inverse_train_event_indicators = 1 - train_event_indicators
@@ -60,18 +66,20 @@ def single_brier_score(
         ipc_pred[ipc_pred == 0] = np.inf
         # Category one calculates IPCW weight at observed time point.
         # Category one is individuals with event time lower than the time of interest and were NOT censored.
-        weight_cat1 = ((event_times <= target_time) & event_indicators) / ipc_pred
-        # Catch if event times goes over max training event time, i.e. predict gives NA
+        weight_cat1 = event_before_or_at_target / ipc_pred
+        # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
         # contain both censored and uncensored individuals.
-        weight_cat2 = (event_times > target_time) / ipc_model.predict(target_time)
-        # predict returns NA if the passed-in time is greater than any of the times used to build the inverse probability
-        # of censoring model.
+        ipc_target_pred = ipc_model.predict(target_time)
+        if ipc_target_pred == 0:
+            ipc_target_pred = np.inf
+        weight_cat2 = event_free_at_target / ipc_target_pred
+        # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = (event_times <= target_time) & event_indicators
-        weight_cat2 = event_times > target_time
+        weight_cat1 = event_before_or_at_target
+        weight_cat2 = event_free_at_target
 
     b_score = (
         np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
@@ -83,7 +91,7 @@ def single_brier_score(
     # Refer above few lines for the justified code
     ###########################
     # order_of_times = np.argsort(event_times)
-    # # Catch if event times goes over max training event time, i.e. predict gives NA
+    # # Defensively discard any undefined IPCW weights.
     # weight_cat1 = ((event_times[order_of_times] <= target_time) & event_indicators[order_of_times]) /\
     #               ipc_model.predict(event_times[order_of_times])
     # weight_cat1[np.isnan(weight_cat1)] = 0
@@ -134,9 +142,9 @@ def brier_score_ic(
         Features for the training samples. Use only when method is 'Tsouprou-conditional'.
     target_time: numeric, default: None
         The specific time point for which to estimate the Brier score.
-    method: str, default: IPCW
+    method: str, default: "Tsouprou-marginal"
         Method to use for handling censoring. One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
-        'uncensored': Treat censored data as uncensored.
+        'uncensored': Exclude samples whose event status is ambiguous at the target time.
         'Tsouprou-marginal': Use marginal survival probabilities based on Turnbull estimator.
         'Tsouprou-conditional': Use conditional survival probabilities based on Weibull AFT model.
     Returns
@@ -151,9 +159,11 @@ def brier_score_ic(
         tau = np.unique(np.sort(tau_vals))
         target_time = np.median(tau)
 
+    method = method.lower()
+
     if method == "uncensored":
-        # if the target time is within the interval, then we calculate the brier score
-        # otherwise, we skip the instance
+        # If the target time lies within the censoring interval, the event status
+        # is ambiguous and the sample is excluded.
         mask = (left_limits <= target_time) & (right_limits > target_time)
         weight = 1 - mask.astype(float)
         # get the survival status at the target time
@@ -161,7 +171,7 @@ def brier_score_ic(
         # if the right limit is less than or equal to the target time, then the event has occurred, so 0
         survival_status = (left_limits > target_time).astype(float)
         brier_score = (np.square(preds - survival_status) * weight).sum() / weight.sum()
-    elif "Tsouprou" in method:
+    elif method in {"tsouprou-marginal", "tsouprou-conditional"}:
         # method based on Sofia Tsouprou's thesis
         # Measures of discrimination and predictive accuracy for interval censored survival data
         # https://studenttheses.universiteitleiden.nl/access/item:3597164/view
@@ -172,7 +182,7 @@ def brier_score_ic(
         if train_left_limits is None or train_right_limits is None:
             raise ValueError("Training data must be provided for Tsouprou methods.")
 
-        if method == "Tsouprou-marginal":
+        if method == "tsouprou-marginal":
             marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
@@ -181,7 +191,7 @@ def brier_score_ic(
             left_probs = marginal_estimator.predict(left_limits)
             right_probs = marginal_estimator.predict(right_limits)
             target_probs = marginal_estimator.predict(target_time)
-        elif method == "Tsouprou-conditional":
+        elif method == "tsouprou-conditional":
             if x is None or x_train is None:
                 raise ValueError(
                     "Features for both training and testing data must be provided for "
@@ -228,12 +238,13 @@ def brier_score_ic(
         else:
             raise ValueError(f"Method {method} is not supported.")
         # exam on non-bad indices
-        # bad indices are those (1) the target time is within the interval and (2) the left and right survival
+        # bad indices are those (1) the target time is strictly inside the
+        # interval and (2) the left and right survival
         # probabilities are the same, which leads to zeros in both numerator and denominator in survival_status
         bad = (
             (left_probs == right_probs)
             & (left_limits < target_time)
-            & (target_time <= right_limits)
+            & (target_time < right_limits)
         )
         if np.sum(bad) > 0:
             left_limits = left_limits[~bad]
@@ -247,8 +258,10 @@ def brier_score_ic(
         # supress warnings for divide by zero
         with np.errstate(divide="ignore", invalid="ignore"):
             survival_status = (target_probs - right_probs) / (left_probs - right_probs)
-        survival_status[right_limits < target_time] = 0
+        # Intervals are left-open, right-closed: (left, right].
+        # At t <= left the subject is alive; at t >= right the event has occurred.
         survival_status[left_limits >= target_time] = 1
+        survival_status[right_limits <= target_time] = 0
 
         if np.any((survival_status < 0) | (survival_status > 1)):
             raise ValueError(
@@ -281,11 +294,13 @@ def brier_multiple_points(
     event_times: np.ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
     event_indicators: np.ndarray, shape = (n_samples, )
-        Binary indicators of censoring for the testing samples
+        Binary event indicators for the testing samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     train_event_times: np.ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
     train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples
+        Binary event indicators for the training samples: 1 denotes an observed
+        event and 0 denotes a censored observation.
     target_times: float
         The specific time points for which to estimate the Brier scores.
     ipcw: bool, default: True
@@ -311,6 +326,12 @@ def brier_multiple_points(
         event_indicators.reshape(-1, 1), repeats=len(target_times), axis=1
     )
     event_indicators_mat = event_indicators_mat.astype(bool)
+    event_before_or_at_target = (
+        event_times_mat <= target_times_mat
+    ) & event_indicators_mat
+    event_free_at_target = (event_times_mat > target_times_mat) | (
+        (event_times_mat == target_times_mat) & ~event_indicators_mat
+    )
 
     if ipcw:
         if train_event_times is None or train_event_indicators is None:
@@ -327,23 +348,20 @@ def brier_multiple_points(
         ipc_pred = ipc_model.predict(event_times_mat)
         # Catch if denominator is 0.
         ipc_pred[ipc_pred == 0] = np.inf
-        weight_cat1 = (
-            (event_times_mat <= target_times_mat) & event_indicators_mat
-        ) / ipc_pred
-        # Catch if event times goes over max training event time, i.e. predict gives NA
+        weight_cat1 = event_before_or_at_target / ipc_pred
+        # Defensively discard any undefined IPCW weights.
         weight_cat1[np.isnan(weight_cat1)] = 0
         # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
         # contain both censored and uncensored individuals.
         ipc_target_pred = ipc_model.predict(target_times_mat)
         # Catch if denominator is 0.
         ipc_target_pred[ipc_target_pred == 0] = np.inf
-        weight_cat2 = (event_times_mat > target_times_mat) / ipc_target_pred
-        # predict returns NA if the passed in time is greater than any of the times used to build
-        # the inverse probability of censoring model.
+        weight_cat2 = event_free_at_target / ipc_target_pred
+        # Defensively discard any undefined IPCW weights.
         weight_cat2[np.isnan(weight_cat2)] = 0
     else:
-        weight_cat1 = (event_times_mat <= target_times_mat) & event_indicators_mat
-        weight_cat2 = event_times_mat > target_times_mat
+        weight_cat1 = event_before_or_at_target
+        weight_cat2 = event_free_at_target
 
     ipcw_square_error_mat = (
         np.square(pred_mat) * weight_cat1 + np.square(1 - pred_mat) * weight_cat2
@@ -420,6 +438,8 @@ def brier_multiple_points_ic(
     # ============================================================
     # Case 1: 'uncensored' (naive treating intervals like exact-ish)
     # ============================================================
+    method = method.lower()
+
     if method == "uncensored":
         # For each (i,j), define survival_status_ij in {0,1}:
         #   if t_j < L_i  -> alive -> 1
@@ -459,14 +479,14 @@ def brier_multiple_points_ic(
     # ============================================================
     # Case 2/3: Tsouprou-based, which creates fractional "status"
     # ============================================================
-    if "Tsouprou" in method:
+    if method in {"tsouprou-marginal", "tsouprou-conditional"}:
         if train_left_limits is None or train_right_limits is None:
             raise ValueError("Training data must be provided for Tsouprou methods.")
 
         # --------------------------------------------------------
         # 2A. Fit marginal or conditional model on training data
         # --------------------------------------------------------
-        if method == "Tsouprou-marginal":
+        if method == "tsouprou-marginal":
             marginal_estimator = TurnbullEstimatorLifelines(
                 left=train_left_limits,
                 right=train_right_limits,
@@ -486,7 +506,7 @@ def brier_multiple_points_ic(
                 target_probs_vec.reshape(1, -1), n_samples, axis=0
             )
 
-        elif method == "Tsouprou-conditional":
+        elif method == "tsouprou-conditional":
             if x is None or x_train is None:
                 raise ValueError(
                     "x and x_train must be provided for Tsouprou-conditional."
@@ -542,15 +562,15 @@ def brier_multiple_points_ic(
         # --------------------------------------------------------
         # 2B. Build Y_mat (fractional survival status) for every (i,j)
         # --------------------------------------------------------
-        # We'll follow your single-time logic:
+        # We'll follow the single-time logic:
         # survival_status = (S(t) - S(R)) / (S(L) - S(R))
-        # Then override based on position of t relative to [L,R].
+        # Then override based on position of t relative to (L,R].
         #
         # Edge cases:
-        # - If denominator is 0 *and* t is strictly inside (L,R], we can't define status. We'll drop those cells.
+        # - If denominator is 0 *and* t is strictly inside (L,R), we can't define status. We'll drop those cells.
         # - After override:
-        #       if t_j > R_i  -> 0
         #       if t_j <= L_i -> 1
+        #       if t_j >= R_i -> 0
         # This guarantees values in [0,1].
 
         denom = left_probs_mat - right_probs_mat
@@ -558,15 +578,16 @@ def brier_multiple_points_ic(
         with np.errstate(divide="ignore", invalid="ignore"):
             survival_status_mat = (target_probs_mat - right_probs_mat) / denom
 
-        # Apply boundary overrides
-        after_right_mask = time_mat > right_mat
+        # Intervals are left-open, right-closed: (left, right].
+        # Apply the right boundary last so exact intervals are dead at t == right.
+        at_or_after_right_mask = time_mat >= right_mat
         before_left_mask = time_mat <= left_mat
-        survival_status_mat[after_right_mask] = 0.0
         survival_status_mat[before_left_mask] = 1.0
+        survival_status_mat[at_or_after_right_mask] = 0.0
 
         # Identify "bad" cells:
-        # bad if denom == 0 AND t_j is within (L_i, R_i] (i.e. genuinely ambiguous)
-        inside_mask = (time_mat > left_mat) & (time_mat <= right_mat)
+        # bad if denom == 0 AND t_j is within (L_i, R_i) (i.e. genuinely ambiguous)
+        inside_mask = (time_mat > left_mat) & (time_mat < right_mat)
         bad_mask = (denom == 0.0) & inside_mask
 
         # sanity check: any out-of-range due to numerical issues?
