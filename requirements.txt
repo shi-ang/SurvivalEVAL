@@ -6,4 +6,5 @@ matplotlib>=3.4.3
 pandas>=2.0.3
 numpy>=1.26.0
 lifelines>=0.30.0
+osqp>=0.6.3
 patsy>=1.0.1
