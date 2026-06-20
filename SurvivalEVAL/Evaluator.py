@@ -1256,7 +1256,7 @@ class SurvivalEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def mse(
@@ -1308,7 +1308,7 @@ class SurvivalEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def rmse(
@@ -2121,7 +2121,7 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def mse(
@@ -2173,7 +2173,7 @@ class PointEvaluator:
             weighted=weighted,
             log_scale=log_scale,
             verbose=verbose,
-            truncated_time=truncated_time,
+            truncation_time=truncated_time,
         )
 
     def rmse(
@@ -2559,6 +2559,10 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         """
         quantile_levels = check_and_convert(quantile_levels)
         survival_level = 1 - quantile_levels
+        if predict_time_method == "RMST":
+            raise NotImplementedError(
+                "RMST prediction time method is not implemented for quantile curves."
+            )
         super(QuantileRegEvaluator, self).__init__(
             survival_level,
             pred_regs,

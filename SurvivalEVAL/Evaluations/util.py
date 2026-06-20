@@ -550,9 +550,9 @@ def predict_rmst(
         time coordinate shared by all survival curves.
     interpolation: str
         The integration method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
-        If 'None', treat the survival curve as a left-continuous step function.
-        If 'Linear', use trapezoidal integration.
-        If 'Pchip', integrate a monotonic cubic interpolation.
+        If 'None', no interpolation is applied. Treat the survival curve as a left-continuous step function.
+        If 'Linear', use the interp1d method (trapezoidal integration) from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator (monotonic cubic interpolation) from scipy.interpolate.
 
     Returns
     -------

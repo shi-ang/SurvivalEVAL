@@ -12,6 +12,12 @@ def read(filename):
     with open(os.path.join(os.path.dirname(__file__), filename), encoding="utf8") as f:
         return f.read()
 
+def read_version():
+    version_file = Path(__file__).parent / "SurvivalEVAL" / "version.py"
+    for line in version_file.read_text().splitlines():
+        if line.startswith("__version__"):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    raise RuntimeError("Unable to find __version__ in SurvivalEVAL/version.py")
 
 def read_version():
     version_file = Path(__file__).parent / "SurvivalEVAL" / "version.py"

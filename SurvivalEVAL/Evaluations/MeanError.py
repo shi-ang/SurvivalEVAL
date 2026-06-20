@@ -5,7 +5,8 @@ from typing import Optional
 import numpy as np
 from tqdm import trange
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeierArea, km_mean
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, KaplanMeierArea, km_mean
+from SurvivalEVAL.Evaluations.util import predict_rmst
 
 
 def mean_error(
@@ -19,7 +20,7 @@ def mean_error(
     weighted: bool = True,
     log_scale: bool = False,
     verbose: bool = False,
-    truncated_time=None,
+    truncation_time=None,
 ) -> float:
     """
     Calculate the mean absolute/squared error score for the predicted survival times.
@@ -56,7 +57,7 @@ def mean_error(
 
     Returns
     -------
-    Value for the calculated MAE score.
+    Value for the calculated mean error.
     """
     event_indicators = event_indicators.astype(bool)
     n_test = event_times.size
@@ -132,10 +133,10 @@ def mean_error(
             censor_times > km_linear_zero
         ]
 
-        if truncated_time:
-            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
-            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
-            event_times = np.clip(event_times, a_max=truncated_time, a_min=None)
+        if truncation_time:
+            best_guesses = np.clip(best_guesses, a_max=truncation_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncation_time, a_min=None)
+            event_times = np.clip(event_times, a_max=truncation_time, a_min=None)
 
         errors = np.empty(predicted_times.size)
         if log_scale:
@@ -174,9 +175,9 @@ def mean_error(
         best_guesses = np.delete(best_guesses, nan_idx)
         weights = np.delete(weights, nan_idx)
 
-        if truncated_time:
-            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
-            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
+        if truncation_time:
+            best_guesses = np.clip(best_guesses, a_max=truncation_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncation_time, a_min=None)
 
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
@@ -193,9 +194,9 @@ def mean_error(
         # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
         ipc_pred[ipc_pred == 0] = np.inf
 
-        if truncated_time:
-            event_times = np.clip(event_times, a_max=truncated_time, a_min=None)
-            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
+        if truncation_time:
+            event_times = np.clip(event_times, a_max=truncation_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncation_time, a_min=None)
 
         if log_scale:
             errors = np.log(event_times) - np.log(predicted_times)
@@ -234,7 +235,7 @@ def mean_error(
         best_guesses = event_times.copy().astype(float)
 
         for i in trange(
-            n_test, desc="Calculating surrogate times for MAE-PO", disable=not verbose
+            n_test, desc="Calculating surrogate times for Pseudo_obs", disable=not verbose
         ):
             if event_indicators[i] != 1:
                 total_multiplier = multiplier.copy()
@@ -255,9 +256,9 @@ def mean_error(
                     n_train + 1
                 ) * total_expect_time - n_train * sub_expect_time
 
-        if truncated_time:
-            best_guesses = np.clip(best_guesses, a_max=truncated_time, a_min=None)
-            predicted_times = np.clip(predicted_times, a_max=truncated_time, a_min=None)
+        if truncation_time:
+            best_guesses = np.clip(best_guesses, a_max=truncation_time, a_min=None)
+            predicted_times = np.clip(predicted_times, a_max=truncation_time, a_min=None)
 
         if log_scale:
             errors = np.log(best_guesses) - np.log(predicted_times)
@@ -271,61 +272,350 @@ def mean_error(
         )
 
 
-def insert_km(
-    survival_times: np.ndarray,
-    event_count: np.ndarray,
-    as_risk_count: np.ndarray,
-    new_t: float,
-    new_e: int,
-) -> tuple[np.ndarray, np.ndarray]:
+def mean_error_truncated(
+        pred_rmst: np.ndarray,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+        train_event_times: Optional[np.ndarray] = None,
+        train_event_indicators: Optional[np.ndarray] = None,
+        truncation_time: float = None,
+        error_type: str = "squared",
+        method: str = "Pseudo_obs",
+        log_scale: bool = False,
+        interpolation: str = "None",
+        verbose: bool = False,
+) -> float:
     """
-    Insert a new time point into the Kaplan-Meier curve.
+    Truncated mean error.
+    It is calculated as the mean error between the predicted RMST and the true RMST up to the truncation time.
+    The true RMST is calculated using Pseudo-observation method.
 
     Parameters
     ----------
-    survival_times: np.ndarray, shape = (n_samples, )
-        Survival times for KM curve of the testing samples
-    event_count: np.ndarray, shape = (n_samples, )
-        Event count for KM curve of the testing samples at each time point
-    as_risk_count: np.ndarray, shape = (n_samples, )
-        At-risk count for KM curve of the testing samples at each time point
-    new_t: float
-        New time point to be inserted
-    new_e: int
-        New event count to be inserted
+    pred_rmst: np.ndarray, (n_samples,)
+        Predicted RMST values for each sample.
+    event_times: np.ndarray, (n_samples,)
+        Actual event/censor time for each sample.
+    event_indicators: np.ndarray, (n_samples,)
+        Binary indicators of censoring for each sample.
+    train_event_times: np.ndarray, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    train_event_indicators: np.ndarray, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples.
+    truncation_time: float = None
+        The truncation time up to which RMST is calculated.
+        If None, use the maximum event time in the training set.
+    error_type: string, default: "absolute"
+        Type of mean error to use. Options are "absolute" and "squared".
+    method: string, default: "Pseudo_obs"
+        Method of handling censorship. Only "Pseudo_obs" is supported for truncated mean error for now.
+    log_scale: boolean, default: False
+        Whether to use log scale for the mean error.
+    interpolation: str, default: "None"
+        The monotonic cubic interpolation method for RMST calculation. One of ['None', 'Linear', 'Pchip']. Default: 'None'.
+        If 'None', no interpolation is applied. Use step function to calculate the area under the curve.
+        If 'Linear', use the interp1d method from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    verbose: boolean, default: False
+        Whether to print detailed logs during the computation.
 
     Returns
     -------
-    survival_times: np.ndarray, shape = (n_samples, )
-        Survival times for KM curve of the testing samples
-    survival_probabilities: np.ndarray, shape = (n_samples, )
-        Survival probabilities for KM curve of the testing samples
+    mean_error: float
+        Mean error value.
     """
-    # Find the index where new_t should be inserted
-    insert_index = np.searchsorted(survival_times, new_t)
+    event_indicators = event_indicators.astype(bool)
+    n_test = event_times.size
+    if train_event_indicators is not None:
+        train_event_indicators = train_event_indicators.astype(bool)
+        n_train = train_event_times.size
 
-    # Check if new_t is already at the found index
-    if insert_index < len(survival_times) and survival_times[insert_index] == new_t:
-        # If new_t is already in the array, increment the event count
-        event_count[insert_index] += new_e
-        as_risk_count[: insert_index + 1] += 1
+    if truncation_time is None:
+        truncation_time = max(train_event_times)
+    assert 0 < truncation_time <= max(train_event_times), "truncation_time must be in (0, max training event time]"
+
+    # set the error function
+    if error_type == "absolute":
+        error_func = np.abs
+    elif error_type == "squared":
+        error_func = np.square
     else:
-        # Insert new_t into
-        survival_times = np.insert(survival_times, insert_index, new_t)
-        event_count = np.insert(event_count, insert_index, new_e)
-        # if beyond the last time point, manually insert the last at-risk count with 0, then add 1 to all before
-        if insert_index == survival_times.size - 1:
-            as_risk_count = np.insert(as_risk_count, insert_index, 0)
-        else:
-            as_risk_count = np.insert(
-                as_risk_count, insert_index, as_risk_count[insert_index]
+        raise TypeError(
+            "Please enter one of 'absolute' or 'squared' for calculating error."
+        )
+    
+    # this is more like the estimated "true" RMST for each test sample
+    true_rmst = np.empty(shape=n_test)
+
+    if method in ["Pseudo_obs"]:
+        if train_event_times is None or train_event_indicators is None:
+            raise ValueError(
+                "If method is '{}', training set values must be included.".format(
+                    method
+                )
             )
-        as_risk_count[: insert_index + 1] += 1
 
-    event_ratios = 1 - event_count / as_risk_count
-    survival_probabilities = np.cumprod(event_ratios)
+        km_model = KaplanMeier(train_event_times, train_event_indicators)
 
-    return survival_times, survival_probabilities
+        event_counts, population_counts = (
+            km_model.events.copy(),
+            km_model.population_count.copy(),
+        )
+        times = km_model.survival_times.copy()
+        probs = km_model.survival_probabilities.copy()
+        
+        # if the first time point is not 0, we need to add a time point at 0 with survival probability 1
+        if times[0] > 0:
+            times = np.insert(times, 0, 0.0)
+            probs = np.insert(probs, 0, 1.0)
+            population_counts = np.insert(population_counts, 0, population_counts[0])
+            event_counts = np.insert(event_counts, 0, 0)
+
+        # if truncation_time < times[-1], we need to stop at truncation_time, so that the last time point is truncation_time (and two arrays stop at the truncation time)
+        if truncation_time < times[-1]:
+            # index of the last time <= truncation_time
+            trunc_idx = np.searchsorted(times, truncation_time, side="right")
+            if np.isclose(times[trunc_idx - 1], truncation_time):
+                times = times[:trunc_idx]
+                probs = probs[:trunc_idx]
+                population_counts = population_counts[:trunc_idx]
+                event_counts = event_counts[:trunc_idx]
+            else:   
+                times = np.insert(times[:trunc_idx], trunc_idx, truncation_time)
+                probs = np.insert(probs[:trunc_idx], trunc_idx, probs[trunc_idx - 1])
+                population_counts = np.insert(
+                    population_counts[:trunc_idx], 
+                    trunc_idx,
+                    population_counts[trunc_idx - 1]
+                )
+                event_counts = np.insert(event_counts[:trunc_idx], trunc_idx, 0)
+        sub_rmst = predict_rmst(probs.copy(), times.copy(), interpolation=interpolation)
+
+        # use the idea of dynamic programming to calculate the multiplier of the KM estimator in advances.
+        # if we add a new time point to the KM curve, 
+        # the multiplier before the new time point will be 1 - event_counts / (population_counts + 1), 
+        # the multiplier at the new time point will be 1 - 1 / population_counts[insert_index - 1],
+        # and the multiplier after the new time point will be the same as before.
+        multiplier = 1 - event_counts / population_counts
+        multiplier_total = 1 - event_counts / (population_counts + 1)
+
+        for i in trange(
+            n_test, desc="Calculating surrogate 'true' RMST for Pseudo_obs", disable=not verbose
+        ):
+            total_multiplier = multiplier.copy()
+            ti = event_times[i]
+            ei = event_indicators[i]
+            insert_idx = np.searchsorted(times, ti, side="right")
+            total_multiplier[:insert_idx] = multiplier_total[:insert_idx]
+
+            # if the event time is before truncation time, we need to add the new time point to the KM curve
+            has_existing_time = (insert_idx > 0 and np.isclose(times[insert_idx - 1], ti))
+
+            if has_existing_time:
+                # case 1: event time already exists in the grid
+                total_times = times.copy()
+                insert_idx -= 1   # index of the existing time ti, because we use side="right" in searchsorted
+                
+                n_events = event_counts[insert_idx] + (1 if ei else 0)
+                # Risk set at this time gets +1 subject
+                denom = population_counts[insert_idx] + 1
+                total_multiplier[insert_idx] = 1 - n_events / denom                
+            elif insert_idx < len(times):
+                # Case 2: new time point strictly inside the existing time range
+                # (t is strictly between times[insert_index-1] and times[insert_index])
+                total_times = np.insert(times, insert_idx, ti)
+                
+                n_events = 1 if ei else 0
+                denom = population_counts[insert_idx] + 1
+                new_factor = 1 - n_events / denom
+                total_multiplier = np.insert(total_multiplier, insert_idx, new_factor)
+                # total_multiplier = np.insert(total_multiplier, insert_index, 1 - n_events / (population_counts[insert_index] + 1))
+            else:
+                # Case 3: insert_index == len(times)
+                if np.isclose(ti, times[-1]):
+                    # Treat as an event at the last existing time
+                    total_times = times.copy()
+                    idx = len(times) - 1
+                    n_events = event_counts[idx] + (1 if ei else 0)
+                    denom = population_counts[idx] + 1
+                    total_multiplier[idx] = 1 - n_events / denom
+                else:
+                    # ignoring these events > truncation_time
+                    total_times = times.copy()
+
+            total_surv_prob = np.cumprod(total_multiplier)
+            total_rmst = predict_rmst(total_surv_prob, total_times, interpolation=interpolation)
+            true_rmst[i] = (n_train + 1) * total_rmst - n_train * sub_rmst
+    else:
+        raise ValueError(
+            "Method must be 'Pseudo_obs' for truncated mean error. "
+            "Got '{}' instead.".format(method)
+        )
+    
+    # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
+    # TODO: get a sense of how often this happens in real data. And decide whether we need to handle this case by clipping the values.
+    # THIS MUST BE REMOVED BEFORE THE FINAL PUBLIC RELEASE.
+    # if true_rmst.min() < 0 or true_rmst.max() > truncation_time:
+    #     invalid_idx = np.where((true_rmst < 0) | (true_rmst > truncation_time))[0]
+    #     for trunc_idx in invalid_idx:
+    #         print(f"Warning: Surrogate RMST out of bounds at index {trunc_idx}: true RMST = {true_rmst[trunc_idx]}, truncation_time = {truncation_time}")
+    true_rmst = np.clip(true_rmst, a_min=0.0, a_max=truncation_time)
+
+    if log_scale:
+        errors = np.log(true_rmst) - np.log(pred_rmst)
+    else:
+        errors = true_rmst - pred_rmst
+
+    return float(np.mean(error_func(errors)))
+
+def mean_error_truncated_slow(
+        pred_rmst: np.ndarray,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+        train_event_times: Optional[np.ndarray] = None,
+        train_event_indicators: Optional[np.ndarray] = None,
+        truncation_time: float = None,
+        error_type: str = "squared",
+        method: str = "Pseudo_obs",
+        log_scale: bool = False,
+        interpolation: str = "None",
+        verbose: bool = False,
+) -> float:
+    """
+    Truncated mean error.
+    It is calculated as the mean error between the predicted RMST and the true RMST up to the truncation time.
+    The true RMST is calculated using Pseudo-observation method.
+
+    Parameters
+    ----------
+    pred_rmst: np.ndarray, (n_samples,)
+        Predicted RMST values for each sample.
+    event_times: np.ndarray, (n_samples,)
+        Actual event/censor time for each sample.
+    event_indicators: np.ndarray, (n_samples,)
+        Binary indicators of censoring for each sample.
+    train_event_times: np.ndarray, shape = (n_train_samples, )
+        Actual event/censor time for the training samples.
+    train_event_indicators: np.ndarray, shape = (n_train_samples, )
+        Binary indicators of censoring for the training samples.
+    truncation_time: float = None
+        The truncation time up to which RMST is calculated.
+        If None, use the maximum event time in the training set.
+    error_type: string, default: "absolute"
+        Type of mean error to use. Options are "absolute" and "squared".
+    method: string, default: "Pseudo_obs"
+        Method of handling censorship. Only "Pseudo_obs" is supported for truncated mean error for now.
+    log_scale: boolean, default: False
+        Whether to use log scale for the mean error.
+    interpolation: str, default: "None"
+        The monotonic cubic interpolation method for RMST calculation. One of ['None', 'Linear', 'Pchip']. Default: 'None'.
+        If 'None', no interpolation is applied. Use step function to calculate the area under the curve.
+        If 'Linear', use the interp1d method from scipy.interpolate.
+        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+    verbose: boolean, default: False
+        Whether to print detailed logs during the computation.
+
+    Returns
+    -------
+    mean_error: float
+        Mean error value.
+    """
+    event_indicators = event_indicators.astype(bool)
+    n_test = event_times.size
+    if train_event_indicators is not None:
+        train_event_indicators = train_event_indicators.astype(bool)
+        n_train = train_event_times.size
+
+    if truncation_time is None:
+        truncation_time = max(train_event_times)
+
+    # set the error function
+    if error_type == "absolute":
+        error_func = np.abs
+    elif error_type == "squared":
+        error_func = np.square
+    else:
+        raise TypeError(
+            "Please enter one of 'absolute' or 'squared' for calculating error."
+        )
+    
+    # this is more like the estimated "true" RMST for each test sample
+    true_rmst = np.empty(shape=n_test)
+
+    if method in ["Pseudo_obs"]:
+        if train_event_times is None or train_event_indicators is None:
+            raise ValueError(
+                "If method is '{}', training set values must be included.".format(
+                    method
+                )
+            )
+
+        km_model = KaplanMeier(train_event_times, train_event_indicators)
+
+        times = km_model.survival_times.copy()
+        probs = km_model.survival_probabilities.copy()
+        
+        # if the first time point is not 0, we need to add a time point at 0 with survival probability 1
+        if times[0] > 0:
+            times = np.insert(times, 0, 0.0)
+            probs = np.insert(probs, 0, 1.0)
+
+        # if truncation_time < times[-1], we need to stop at truncation_time, so that the last time point is truncation_time (and two arrays stop at the truncation time)
+        if truncation_time < times[-1]:
+            trunc_idx = np.searchsorted(times, truncation_time, side="right")
+            if np.isclose(times[trunc_idx - 1], truncation_time):
+                times = times[:trunc_idx]
+                probs = probs[:trunc_idx]
+            else:   
+                times = np.insert(times[:trunc_idx], trunc_idx, truncation_time)
+                probs = np.insert(probs[:trunc_idx], trunc_idx, probs[trunc_idx - 1])
+        sub_rmst = predict_rmst(probs.copy(), times.copy(), interpolation=interpolation)
+
+        for i in trange(
+            n_test, desc="Calculating surrogate 'true' RMST for Pseudo_obs", disable=not verbose
+        ):
+            added_event_times = np.append(train_event_times, event_times[i])
+            added_event_indicators = np.append(train_event_indicators, event_indicators[i])
+            total_km_model = KaplanMeier(added_event_times, added_event_indicators)
+            total_surv_prob = total_km_model.survival_probabilities.copy()
+            total_times = total_km_model.survival_times.copy()
+
+            if total_times[0] > 0:
+                total_times = np.insert(total_times, 0, 0.0)
+                total_surv_prob = np.insert(total_surv_prob, 0, 1.0)
+            
+            if truncation_time < total_times[-1]:
+                trunc_idx = np.searchsorted(total_times, truncation_time, side="right")
+                if np.isclose(total_times[trunc_idx - 1], truncation_time):
+                    total_times = total_times[:trunc_idx]
+                    total_surv_prob = total_surv_prob[:trunc_idx]
+                else:
+                    total_times = np.insert(total_times[:trunc_idx], trunc_idx, truncation_time)
+                    total_surv_prob = np.insert(total_surv_prob[:trunc_idx], trunc_idx, total_surv_prob[trunc_idx - 1])
+            total_rmst = predict_rmst(total_surv_prob, total_times, interpolation=interpolation)
+            true_rmst[i] = (n_train + 1) * total_rmst - n_train * sub_rmst
+    else:
+        raise ValueError(
+            "Method must be 'Pseudo_obs' for truncated mean error. "
+            "Got '{}' instead.".format(method)
+        )
+    
+    # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
+    # TODO: get a sense of how often this happens in real data. And decide whether we need to handle this case by clipping the values.
+    # THIS MUST BE REMOVED BEFORE THE FINAL PUBLIC RELEASE.
+    # if true_rmst.min() < 0 or true_rmst.max() > truncation_time:
+    #     invalid_idx = np.where((true_rmst < 0) | (true_rmst > truncation_time))[0]
+    #     for idx in invalid_idx:
+    #         print(f"Warning: Surrogate RMST out of bounds at index {idx}: true RMST = {true_rmst[idx]}, truncation_time = {truncation_time}")
+    true_rmst = np.clip(true_rmst, a_min=0.0, a_max=truncation_time)
+
+    if log_scale:
+        errors = np.log(true_rmst) - np.log(pred_rmst)
+    else:
+        errors = true_rmst - pred_rmst
+
+    return float(np.mean(error_func(errors)))
+
 
 
 def _prepare_interval_arrays(
@@ -482,7 +772,6 @@ if __name__ == "__main__":
     # Test the functions
     train_t = np.array(
         [
-            0,
             1,
             2,
             3,
@@ -623,7 +912,6 @@ if __name__ == "__main__":
     train_e = np.array(
         [
             1,
-            1,
             0,
             0,
             0,
@@ -760,6 +1048,8 @@ if __name__ == "__main__":
             0,
         ]
     )
+    train_t = np.array([20, 97, 150, 200, 210])
+    train_e = np.array([1, 1, 0, 1, 1])
     t = np.array(
         [
             5,
@@ -773,7 +1063,7 @@ if __name__ == "__main__":
             97,
             113,
             134,
-            151,
+            150,
             163,
             176,
             182,
@@ -783,7 +1073,7 @@ if __name__ == "__main__":
             220,
         ]
     )
-    e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0])
+    e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0])
     predict_time = np.array(
         [
             18,
@@ -808,14 +1098,35 @@ if __name__ == "__main__":
         ]
     )
     # "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"
-    mae_score = mean_error(
-        predict_time,
-        t,
-        e,
-        train_t,
-        train_e,
-        method="Pseudo_obs",
-        verbose=True,
-        truncated_time=100,
-    )
-    print(mae_score)
+    # score = mean_error(
+    #     predict_time,
+    #     t,
+    #     e,
+    #     train_t,
+    #     train_e,
+    #     method="Pseudo_obs",
+    #     verbose=True,
+    #     truncation_time=100,
+    # )
+    score_1 = mean_error_truncated(
+    predict_time,
+    t,
+    e,
+    train_t,
+    train_e,
+    truncation_time= 200,
+    method="Pseudo_obs",
+    verbose=True,
+)
+    score_2 = mean_error_truncated_slow(
+    predict_time,
+    t,
+    e,
+    train_t,
+    train_e,
+    truncation_time= 200,
+    method="Pseudo_obs",
+    verbose=True,
+)
+    print(np.sqrt(score_1))
+    print(np.sqrt(score_2))
