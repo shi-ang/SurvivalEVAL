@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -574,8 +574,8 @@ def coverage_ic(
     pred_r: np.ndarray,
     obs_l: np.ndarray,
     obs_r: np.ndarray,
-    obs_l_train: Optional[np.ndarray] = None,
-    obs_r_train: Optional[np.ndarray] = None,
+    obs_l_train: np.ndarray | None = None,
+    obs_r_train: np.ndarray | None = None,
     cov_level: float = 0.95,
     method: str = "Turnbull",
     eps: float = 1e-12,
@@ -699,7 +699,7 @@ def coverage_ic(
 
 
 def discrepancy_to_uniform(
-    x: np.ndarray, cdf: np.ndarray, x_support: Optional[tuple[float, float]] = None
+    x: np.ndarray, cdf: np.ndarray, x_support: tuple[float, float] | None = None
 ) -> float:
     """
     Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
@@ -712,7 +712,7 @@ def discrepancy_to_uniform(
         The support points of the empirical CDF.
     cdf: np.ndarray
         The values of the empirical CDF at the support points.
-    x_support: Optional[tuple[float, float]]
+    x_support: tuple[float, float] | None
         The support points of the uniform distribution. If None, it is assumed to be [0, 1].
     Returns
     -------

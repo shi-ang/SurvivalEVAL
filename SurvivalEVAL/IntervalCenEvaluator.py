@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from functools import cached_property
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -49,8 +49,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         time_coordinates: NumericArrayLike,
         left_limits: NumericArrayLike,
         right_limits: NumericArrayLike,
-        train_left_limits: Optional[NumericArrayLike] = None,
-        train_right_limits: Optional[NumericArrayLike] = None,
+        train_left_limits: NumericArrayLike | None = None,
+        train_right_limits: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -72,10 +72,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             data. Use 0 for left-censored observations.
         right_limits: NumericArrayLike, shape = (n_samples,)
             Right limits of the interval-censored testing data.
-        train_left_limits: Optional[NumericArrayLike], shape = (n_train_samples,), default: None
+        train_left_limits: NumericArrayLike | None, shape = (n_train_samples,), default: None
             Finite, non-negative left limits of the interval-censored training
             data. Use 0 for left-censored observations.
-        train_right_limits: Optional[NumericArrayLike], shape = (n_train_samples,), default: None
+        train_right_limits: NumericArrayLike | None, shape = (n_train_samples,), default: None
             Right limits of the interval-censored data for the training set.
         predict_time_method: str, default: "Median"
             Method to predict time from the survival curve. Options are "Median", "Mean", or "RMST".
@@ -201,25 +201,25 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def brier_score(
         self,
-        target_time: Optional[Numeric] = None,
+        target_time: Numeric | None = None,
         method: str = "Tsouprou-marginal",
-        x: Optional[np.ndarray] = None,
-        x_train: Optional[np.ndarray] = None,
+        x: np.ndarray | None = None,
+        x_train: np.ndarray | None = None,
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
 
         Parameters
         ----------
-        target_time: Optional[Numeric], default: None
+        target_time: Numeric | None, default: None
             The time point at which to calculate the Brier score. If None, the
             median of the unique finite test interval bounds and, when
             available, training interval bounds is used.
         method: str, default: "Tsouprou-marginal"
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
-        x: Optional[np.ndarray], default: None
+        x: np.ndarray | None, default: None
             Covariates for the test set. Required if method is "Tsouprou-conditional".
-        x_train: Optional[np.ndarray], default: None
+        x_train: np.ndarray | None, default: None
             Covariates for the training set. Required if method is "Tsouprou-conditional".
 
         Returns
@@ -277,8 +277,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self,
         target_times: np.ndarray,
         method: str = "Tsouprou-marginal",
-        x: Optional[np.ndarray] = None,
-        x_train: Optional[np.ndarray] = None,
+        x: np.ndarray | None = None,
+        x_train: np.ndarray | None = None,
     ):
         # Check if there is no censored instance, if so, naive Brier score is applied
         method = method.lower()
@@ -311,11 +311,11 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def integrated_brier_score(
         self,
-        num_points: Optional[int] = None,
-        target_times: Optional[np.ndarray] = None,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
         method: str = "uncensored",
-        x: Optional[np.ndarray] = None,
-        x_train: Optional[np.ndarray] = None,
+        x: np.ndarray | None = None,
+        x_train: np.ndarray | None = None,
         integration_method: str = "trapz",
         draw_figure: bool = False,
     ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
@@ -345,10 +345,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             The method to use for calculating the Brier score. Options are "uncensored", "Tsouprou-conditional", and "Tsouprou-marginal".
             Note: "uncensored" method automatically ignores uncertain areas.
 
-        x: Optional[np.ndarray], default: None
+        x: np.ndarray | None, default: None
             Covariates for the test set. Required if method is "Tsouprou-conditional".
 
-        x_train: Optional[np.ndarray], default: None
+        x_train: np.ndarray | None, default: None
             Covariates for the training set. Required if method is "Tsouprou-conditional".
 
         integration_method: str, default: "trapz"
@@ -507,8 +507,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def crps(
         self,
-        num_points: Optional[int] = None,
-        target_times: Optional[np.ndarray] = None,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
     ) -> float:
         """
         Calculate the Continuous Ranked Probability Score (CRPS) from the predicted survival curve.
@@ -912,8 +912,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def coverage(
         self,
-        quantile_range: tuple[float, float] = None,
-        cov_level: float = None,
+        quantile_range: tuple[float, float] | None = None,
+        cov_level: float | None = None,
         method: str = "Turnbull",
     ) -> tuple[float, float, float]:
         """

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from tqdm import trange
 
@@ -13,8 +11,8 @@ def mean_error(
     predicted_times: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray] = None,
-    train_event_indicators: Optional[np.ndarray] = None,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
     error_type: str = "absolute",
     method: str = "Hinge",
     weighted: bool = True,
@@ -274,9 +272,9 @@ def mean_error_truncated(
         pred_rmst: np.ndarray,
         event_times: np.ndarray,
         event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray] = None,
-        train_event_indicators: Optional[np.ndarray] = None,
-        truncation_time: float = None,
+        train_event_times: np.ndarray | None = None,
+        train_event_indicators: np.ndarray | None = None,
+        truncation_time: float | None = None,
         error_type: str = "squared",
         method: str = "Pseudo_obs",
         log_scale: bool = False,
@@ -468,9 +466,9 @@ def mean_error_truncated_slow(
         pred_rmst: np.ndarray,
         event_times: np.ndarray,
         event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray] = None,
-        train_event_indicators: Optional[np.ndarray] = None,
-        truncation_time: float = None,
+        train_event_times: np.ndarray | None = None,
+        train_event_indicators: np.ndarray | None = None,
+        truncation_time: float | None = None,
         error_type: str = "squared",
         method: str = "Pseudo_obs",
         log_scale: bool = False,

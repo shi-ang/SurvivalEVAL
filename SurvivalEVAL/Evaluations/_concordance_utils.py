@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Iterator
 
 import numpy as np
 
@@ -131,7 +131,7 @@ def _check_has_any_pairs(counts: _ConcordanceCounts) -> None:
         )
 
 
-def _is_before_tau(times: np.ndarray, tau: Optional[float]) -> np.ndarray:
+def _is_before_tau(times: np.ndarray, tau: float | None) -> np.ndarray:
     """Return a boolean mask for times that pass the strict tau truncation."""
     if tau is None:
         return np.ones(times.shape, dtype=bool)

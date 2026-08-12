@@ -1,4 +1,4 @@
-from typing import Optional
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,7 @@ def single_brier_score(
     event_indicators: np.ndarray,
     train_event_times: np.ndarray,
     train_event_indicators: np.ndarray,
-    target_time: Optional[float] = None,
+    target_time: float | None = None,
     ipcw: bool = True,
 ) -> float:
     """
@@ -114,11 +114,11 @@ def brier_score_ic(
     preds: np.ndarray,
     left_limits: np.ndarray,
     right_limits: np.ndarray,
-    train_left_limits: Optional[np.ndarray] = None,
-    train_right_limits: Optional[np.ndarray] = None,
-    x: Optional[np.ndarray] = None,
-    x_train: Optional[np.ndarray] = None,
-    target_time: Optional[Numeric] = None,
+    train_left_limits: np.ndarray | None = None,
+    train_right_limits: np.ndarray | None = None,
+    x: np.ndarray | None = None,
+    x_train: np.ndarray | None = None,
+    target_time: Numeric | None = None,
     method: str = "Tsouprou-marginal",
 ) -> float:
     """
@@ -298,8 +298,8 @@ def brier_multiple_points(
     pred_mat: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray],
-    train_event_indicators: Optional[np.ndarray],
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
     target_times: np.ndarray,
     ipcw: bool = True,
 ) -> np.ndarray:
@@ -405,10 +405,10 @@ def brier_multiple_points_ic(
     left_limits: np.ndarray,
     right_limits: np.ndarray,
     target_times: np.ndarray,
-    train_left_limits: Optional[np.ndarray] = None,
-    train_right_limits: Optional[np.ndarray] = None,
-    x: Optional[np.ndarray] = None,
-    x_train: Optional[np.ndarray] = None,
+    train_left_limits: np.ndarray | None = None,
+    train_right_limits: np.ndarray | None = None,
+    x: np.ndarray | None = None,
+    x_train: np.ndarray | None = None,
     method: str = "Tsouprou-marginal",
 ) -> np.ndarray:
     """

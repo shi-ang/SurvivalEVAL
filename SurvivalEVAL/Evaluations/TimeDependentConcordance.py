@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
 from SurvivalEVAL.Evaluations._concordance_utils import (
@@ -31,7 +29,7 @@ def _normalize_time_dependent_method(method: str) -> str:
 def _select_risk_anchors(
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    tau: Optional[float],
+    tau: float | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return all event anchors and those that require predicted risk scores.
 
@@ -57,11 +55,11 @@ def concordance_time_dependent(
     risk_scores: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray] = None,
-    train_event_indicators: Optional[np.ndarray] = None,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
     method: str = "Antolini",
     ties: str = "Risk",
-    tau: Optional[float] = None,
+    tau: float | None = None,
 ) -> tuple[float, float, float]:
     """
     Calculate the time-dependent concordance index between the predicted risk scores and the true survival times.
@@ -207,9 +205,9 @@ def _time_dependent_risk_counts(
     risk_scores: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    sample_weights: Optional[np.ndarray] = None,
-    anchor_pair_weights: Optional[np.ndarray] = None,
-    tau: Optional[float] = None,
+    sample_weights: np.ndarray | None = None,
+    anchor_pair_weights: np.ndarray | None = None,
+    tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
     """Count Antolini-style time-dependent concordance pairs.

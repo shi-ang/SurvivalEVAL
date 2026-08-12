@@ -286,7 +286,7 @@ def integrated_calibration_index(
     target_time: Numeric,
     knots: int = 3,
     draw_figure: bool = False,
-    figure_range: tuple = None,
+    figure_range: tuple | None = None,
 ) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.

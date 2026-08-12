@@ -193,7 +193,7 @@ def auprc_ic(
     right: np.ndarray,
     *,
     n_quad: int = 256,
-    left_extrapolation_value: float = None,
+    left_extrapolation_value: float | None = None,
     return_details: bool = False,
 ) -> Union[float, tuple[float, np.ndarray]]:
     """

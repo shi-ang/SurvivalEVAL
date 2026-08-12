@@ -1,4 +1,6 @@
-from typing import Dict, Literal, Optional, Tuple
+from __future__ import annotations
+
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -134,7 +136,7 @@ def interval_censor_DGP_from_synthetic_times(
     *,
     method: str = "fixed",
     # fixed
-    params: Optional[Dict[str, float]] = None,
+    params: Dict[str, float] | None = None,
     seed: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """

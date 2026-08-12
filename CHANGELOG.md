@@ -10,6 +10,7 @@
 4. Reuse interval-concordance contribution matrices and avoid a floating-point tie matrix.
 5. Avoid copying compatible NumPy time-point arrays during validation and add peak-allocation, prediction-shape,
    randomized, and result-equivalence regression tests for the optimized paths.
+6. Code format: f-string and type annotation.
 
 ## 2026-06-17: Version 0.8.0
 

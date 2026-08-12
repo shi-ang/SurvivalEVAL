@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 from lifelines import KaplanMeierFitter
@@ -83,14 +83,14 @@ class TurnbullEstimator:
     verbose: bool = False
 
     # learned / derived attributes
-    tau_: Optional[np.ndarray] = field(init=False, default=None)
-    probability_dens_: Optional[np.ndarray] = field(
+    tau_: np.ndarray | None = field(init=False, default=None)
+    probability_dens_: np.ndarray | None = field(
         init=False, default=None
     )  # masses for adjacent tau intervals, followed by exact-time atoms
-    survival_times_: Optional[np.ndarray] = field(
+    survival_times_: np.ndarray | None = field(
         init=False, default=None
     )  # plotting x (tau possibly truncated)
-    survival_probabilities_: Optional[np.ndarray] = field(
+    survival_probabilities_: np.ndarray | None = field(
         init=False, default=None
     )  # step survival, length len(time_)
     n_iter_: int = field(init=False, default=0)
@@ -100,8 +100,8 @@ class TurnbullEstimator:
         self,
         left: np.ndarray,
         right: np.ndarray,
-        tau: Optional[np.ndarray] = None,
-        p_init: Optional[np.ndarray] = None,
+        tau: np.ndarray | None = None,
+        p_init: np.ndarray | None = None,
     ) -> "TurnbullEstimator":
         """
         Fit the Turnbull estimator to interval-censored data.
@@ -245,10 +245,10 @@ class TurnbullEstimatorLifelines:
     label: InitVar[str] = "Turnbull"
 
     # learned / derived attributes
-    probability_dens: Optional[np.ndarray] = field(init=False, default=None)
-    cumulative_dens: Optional[np.ndarray] = field(init=False, default=None)
-    survival_times: Optional[np.ndarray] = field(init=False, default=None)
-    survival_probabilities: Optional[np.ndarray] = field(init=False, default=None)
+    probability_dens: np.ndarray | None = field(init=False, default=None)
+    cumulative_dens: np.ndarray | None = field(init=False, default=None)
+    survival_times: np.ndarray | None = field(init=False, default=None)
+    survival_probabilities: np.ndarray | None = field(init=False, default=None)
 
     def __post_init__(self, left, right, alpha, tol, label):
         kmf = KaplanMeierFitter(alpha=alpha)

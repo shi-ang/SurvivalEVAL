@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -170,7 +170,7 @@ def validate_time_points(
 
 def check_monotonicity(
     array: NumericArrayLike,
-    direction: Optional[str] = None,
+    direction: str | None = None,
 ) -> bool:
     """
     Check whether values are monotonic along the last axis.
@@ -213,8 +213,8 @@ def make_monotonic(
     survival_curves: np.ndarray,
     times_coordinate: np.ndarray,
     method: str = "ceil",
-    seed: int = None,
-    num_bs: int = None,
+    seed: int | None = None,
+    num_bs: int | None = None,
     direction: str = "decreasing",
 ):
     """
@@ -469,7 +469,7 @@ def predict_multi_probs_from_curve(
 def align_curve_and_time_coordinates(
     curves: NumericArrayLike,
     time_coordinates: NumericArrayLike,
-    n_samples: int = None,
+    n_samples: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Validate and broadcast curve values and time coordinates to matching 2D arrays.
