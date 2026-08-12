@@ -127,7 +127,7 @@ class SurvivalEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @staticmethod
@@ -317,7 +317,7 @@ class SurvivalEvaluator:
         ):
             error = (
                 "Prediction method must be 'predict_mean_st', 'predict_median_st', or 'predict_rmst'"
-                "got '{}' instead".format(predict_method.__name__)
+                f"got '{predict_method.__name__}' instead"
             )
             raise TypeError(error)
 
@@ -374,8 +374,9 @@ class SurvivalEvaluator:
                     "target_time must have the same length as the number of samples."
                 )
         else:
-            error = "Target time must be a float, int, or 1D array, got '{}' instead".format(
-                type(target_time)
+            error = (
+                "Target time must be a float, int, or 1D array, "
+                f"got '{type(target_time)}' instead"
             )
             raise TypeError(error)
 
@@ -908,8 +909,9 @@ class SurvivalEvaluator:
         ties = _normalize_ties(ties)
 
         if risks not in {"survival", "hazard"}:
-            error = "Risks must be 'Survival' or 'Hazard', got '{}' instead".format(
-                risks
+            error = (
+                "Risks must be 'Survival' or 'Hazard', "
+                f"got '{risks}' instead"
             )
             raise ValueError(error)
 
@@ -1214,7 +1216,7 @@ class SurvivalEvaluator:
         if draw_figure:
             fig, ax = plt.subplots()
             ax.plot(target_times, b_scores, "bo-")
-            score_text = r"IBS$= {:.3f}$".format(ibs_score)
+            score_text = rf"IBS$= {ibs_score:.3f}$"
             ax.plot([], [], " ", label=score_text)
             ax.legend()
             ax.set_xlabel("Time")
@@ -1929,7 +1931,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             predict_curve = surv[i].y
             if False in (time_coordinates == surv[i].x):
                 raise KeyError(
-                    "{}-th survival curve does not have same time coordinates".format(i)
+                    f"{i}-th survival curve does not have same time coordinates"
                 )
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
@@ -2010,7 +2012,7 @@ class PointEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @property
@@ -2304,7 +2306,7 @@ class SingleTimeEvaluator:
         if self._pred_probs.ndim != 1:
             raise ValueError(
                 "predicted_probs should be a 1D array-like object, "
-                "but got a {}D array-like object".format(self._pred_probs.ndim)
+                f"but got a {self._pred_probs.ndim}D array-like object"
             )
 
         self.event_times, self.event_indicators = check_and_convert(
@@ -2334,7 +2336,7 @@ class SingleTimeEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @property

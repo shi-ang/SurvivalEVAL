@@ -69,8 +69,8 @@ def check_and_convert(*args, copy: bool = True):
         if len(args) > 1:
             if last_shape is not None:
                 assert array.shape == last_shape, (
-                    "Shapes between {}-th input array and "
-                    "{}-th input array are not consistent".format(i - 1, i)
+                    f"Shapes between {i - 1}-th input array and "
+                    f"{i}-th input array are not consistent"
                 )
             result += (array,)
             last_shape = array.shape
@@ -953,9 +953,8 @@ def _prepend_origin(
         )
     else:
         error = (
-            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-                pred_survs.ndim
-            )
+            "Predicted survival curves must be a 1D or 2D array, "
+            f"got {pred_survs.ndim} instead"
         )
         raise TypeError(error)
 
@@ -967,8 +966,9 @@ def _prepend_origin(
             (np.zeros((time_coordinates.shape[0], 1)), time_coordinates), axis=1
         )
     else:
-        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
-            time_coordinates.ndim
+        error = (
+            "Time coordinates must be a 1D or 2D array, "
+            f"got {time_coordinates.ndim} instead"
         )
         raise TypeError(error)
 
@@ -1044,14 +1044,14 @@ def zero_padding(
 
     if ndim_surv not in (1, 2):
         error = (
-            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-                ndim_surv
-            )
+            "Predicted survival curves must be a 1D or 2D array, "
+            f"got {ndim_surv} instead"
         )
         raise TypeError(error)
     if ndim_time not in (1, 2):
-        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
-            ndim_time
+        error = (
+            "Time coordinates must be a 1D or 2D array, "
+            f"got {ndim_time} instead"
         )
         raise TypeError(error)
     if pred_survs.shape[-1] == 0 or time_coordinates.shape[-1] == 0:

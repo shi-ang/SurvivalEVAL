@@ -433,7 +433,7 @@ def residuals(
             -2 * (martingale_res + event_indicators * safe_log(cox_residuals))
         )
     else:
-        raise ValueError("Unknown method {}".format(method))
+        raise ValueError(f"Unknown method {method}")
 
     if draw_figure:
         cum_haz_empirical = NelsonAalen(cox_residuals, event_indicators)
@@ -558,7 +558,7 @@ def km_calibration(
         )
         ax.plot(unique_event_times, km_curve, label="KM Curve")
         ax.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
-        score_text = r"KM-Calibration$= {:.3f}$".format(mse)
+        score_text = rf"KM-Calibration$= {mse:.3f}$"
         ax.plot([], [], " ", label=score_text)
         ax.legend()
         ax.set_xlabel("Time")
@@ -677,7 +677,7 @@ def coverage_ic(
         denom = S_L - S_R
         numer = S_overlap_left - S_overlap_right
     else:
-        raise ValueError("Unknown method: {}".format(method))
+        raise ValueError(f"Unknown method: {method}")
 
     coverage = np.zeros_like(denom, dtype=float)
     valid = denom > eps

@@ -136,7 +136,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     def concordance(

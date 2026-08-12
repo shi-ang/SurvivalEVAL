@@ -71,9 +71,7 @@ def mean_error(
     if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
@@ -268,7 +266,7 @@ def mean_error(
     else:
         raise ValueError(
             "Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-T', 'IPCW-D' "
-            "or 'Pseudo_obs'. Got '{}' instead.".format(method)
+            f"or 'Pseudo_obs'. Got '{method}' instead."
         )
 
 
@@ -350,9 +348,7 @@ def mean_error_truncated(
     if method in ["Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeier(train_event_times, train_event_indicators)
@@ -449,7 +445,7 @@ def mean_error_truncated(
     else:
         raise ValueError(
             "Method must be 'Pseudo_obs' for truncated mean error. "
-            "Got '{}' instead.".format(method)
+            f"Got '{method}' instead."
         )
     
     # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
@@ -545,9 +541,7 @@ def mean_error_truncated_slow(
     if method in ["Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeier(train_event_times, train_event_indicators)
@@ -597,7 +591,7 @@ def mean_error_truncated_slow(
     else:
         raise ValueError(
             "Method must be 'Pseudo_obs' for truncated mean error. "
-            "Got '{}' instead.".format(method)
+            f"Got '{method}' instead."
         )
     
     # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
