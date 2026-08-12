@@ -35,6 +35,10 @@ def _invert_from_survival_with_interpolator(
     ps = np.asarray(ps, float)
     t_lo, t_hi = float(t_grid[0]), float(t_grid[-1])
     out = np.empty((N, ps.size), float)
+
+    def gap(t, interpolator, target):
+        return float(interpolator(t)) - target
+
     for i in range(N):
         spl = interpolated_curve(t_grid, S[i], method)
         s_lo, s_hi = float(spl(t_lo)), float(spl(t_hi))  # s_lo >= s_hi
@@ -47,10 +51,7 @@ def _invert_from_survival_with_interpolator(
                 out[i, j] = t_hi
                 continue
 
-            def gap(t):
-                return float(spl(t)) - target
-
-            out[i, j] = brentq(gap, t_lo, t_hi, maxiter=50)
+            out[i, j] = brentq(gap, t_lo, t_hi, args=(spl, target), maxiter=50)
     return out
 
 
