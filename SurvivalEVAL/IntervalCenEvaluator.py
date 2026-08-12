@@ -10,7 +10,10 @@ from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
-from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points_ic, brier_score_ic
+from SurvivalEVAL.Evaluations.BrierScore import (
+    brier_multiple_points_ic,
+    brier_score_ic,
+)
 from SurvivalEVAL.Evaluations.Concordance import (
     concordance,
     concordance_ic,
@@ -30,6 +33,7 @@ from SurvivalEVAL.Evaluations.util import (
     predict_mean_st,
     predict_median_st,
     predict_rmst,
+    validate_time_points,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 
@@ -289,6 +293,8 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                         "x and x_train must be provided for Tsouprou-conditional method."
                     )
 
+        target_times = validate_time_points(target_times, input_name="target_times")
+
         pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 
         return brier_multiple_points_ic(
@@ -461,7 +467,10 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             time_range = target_times[-1] - target_times[0]
 
         b_scores = self.brier_score_multiple_points(
-            target_times=target_times, method=method, x=x, x_train=x_train
+            target_times=target_times,
+            method=method,
+            x=x,
+            x_train=x_train,
         )
         if np.isnan(b_scores).any():
             warnings.warn("Time-dependent Brier Score contains nan")

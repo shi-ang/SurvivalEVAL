@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## Unreleased
+
+1. Replace repeated multi-time Brier inputs with broadcast views, reuse one-dimensional censoring-survival predictions,
+   and accumulate the two error components sequentially with one dense floating-point workspace.
+2. Vectorize masked interval-censored Brier reductions and reuse the survival-status matrix for squared errors.
+3. Reduce time-dependent concordance work by selecting contributing anchors in linear time, predicting each active
+   unique anchor time once, and negating survival risks in place.
+4. Reuse interval-concordance contribution matrices and avoid a floating-point tie matrix.
+5. Avoid copying compatible NumPy time-point arrays during validation and add peak-allocation, prediction-shape,
+   randomized, and result-equivalence regression tests for the optimized paths.
+
 ## 2026-06-17: Version 0.8.0
 
 1. Add Antolini-style time-dependent concordance through the lower-level

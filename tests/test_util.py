@@ -394,6 +394,14 @@ def test_validate_time_points_rejects_negative_values():
         validate_time_points(np.array([1.0, -0.1]))
 
 
+def test_validate_time_points_reuses_compatible_numpy_array():
+    time_points = np.array([1.0, 2.0, 3.0], dtype=float)
+
+    validated = validate_time_points(time_points)
+
+    assert validated is time_points
+
+
 def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
     with pytest.warns(UserWarning, match="first time coordinate"):
         probs = predict_multi_probs_from_curve(

@@ -13,9 +13,10 @@ from sklearn.isotonic import isotonic_regression
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
-def check_and_convert(*args):
+def check_and_convert(*args, copy: bool = True):
     """
-    Makes sure that the given inputs are numpy arrays, list, tuple, panda Series, pandas DataFrames, or torch Tensors.
+    Makes sure that the given inputs are NumPy arrays, lists, tuples, pandas
+    objects, or Torch tensors.
 
     Also makes sure that the given inputs have the same shape.
 
@@ -23,8 +24,11 @@ def check_and_convert(*args):
 
     Parameters
     ----------
-    * args : tuple of objects
-             Input object to check / convert.
+    *args : tuple of objects
+        Input objects to check and convert.
+    copy : bool, default=True
+        Whether an already-compatible array must be copied. Conversion to
+        ``float64`` still allocates when the input dtype is incompatible.
 
     Returns
     -------
@@ -36,49 +40,42 @@ def check_and_convert(*args):
     """
 
     result = ()
-    last_length = ()
+    last_shape = None
     for i, arg in enumerate(args):
         if len(arg) == 0:
             error = " The input is empty. "
             error += "Please provide at least 1 element in the array."
             raise IndexError(error)
 
+        if isinstance(arg, np.ndarray):
+            array = arg.astype(np.double, copy=copy)
+        elif isinstance(arg, (list, tuple)):
+            array = np.asarray(arg, dtype=np.double)
+        elif isinstance(arg, (pd.Series, pd.DataFrame)):
+            array = arg.to_numpy(dtype=np.double, copy=copy)
+        elif isinstance(arg, torch.Tensor):
+            array = arg.cpu().numpy().astype(np.double, copy=copy)
         else:
-            if isinstance(arg, np.ndarray):
-                x = (arg.astype(np.double),)
-            elif isinstance(arg, list):
-                x = (np.asarray(arg).astype(np.double),)
-            elif isinstance(arg, tuple):
-                x = (np.asarray(arg).astype(np.double),)
-            elif isinstance(arg, pd.Series):
-                x = (arg.values.astype(np.double),)
-            elif isinstance(arg, pd.DataFrame):
-                x = (arg.values.astype(np.double),)
-            elif isinstance(arg, torch.Tensor):
-                x = (arg.cpu().numpy().astype(np.double),)
-            else:
-                error = (
-                    f"{type(arg)} is not a valid data format. Only use "
-                    "'list', 'tuple', 'np.ndarray', 'torch.Tensor', "
-                    "'pd.Series', 'pd.DataFrame'"
+            error = (
+                f"{type(arg)} is not a valid data format. Only use "
+                "'list', 'tuple', 'np.ndarray', 'torch.Tensor', "
+                "'pd.Series', 'pd.DataFrame'"
+            )
+            raise TypeError(error)
+
+        if np.isnan(array).any():
+            raise ValueError(f"The #{i + 1} argument contains null values")
+
+        if len(args) > 1:
+            if last_shape is not None:
+                assert array.shape == last_shape, (
+                    "Shapes between {}-th input array and "
+                    "{}-th input array are not consistent".format(i - 1, i)
                 )
-                raise TypeError(error)
-
-            if np.sum(np.isnan(x)) > 0.0:
-                error = "The #{} argument contains null values"
-                error = error.format(i + 1)
-                raise ValueError(error)
-
-            if len(args) > 1:
-                if i > 0:
-                    assert x[0].shape == last_length, (
-                        "Shapes between {}-th input array and "
-                        "{}-th input array are not consistent".format(i - 1, i)
-                    )
-                result += x
-                last_length = x[0].shape
-            else:
-                result = x[0]
+            result += (array,)
+            last_shape = array.shape
+        else:
+            result = array
 
     return result
 
@@ -159,7 +156,9 @@ def validate_time_points(
     if is_scalar:
         raise ValueError(f"{input_name} must be a 1-D array.")
 
-    time_points = check_and_convert(time_points).astype(float)
+    time_points = check_and_convert(time_points, copy=False).astype(
+        float, copy=False
+    )
 
     if time_points.ndim != 1:
         raise ValueError(f"{input_name} must be a 1-D array.")

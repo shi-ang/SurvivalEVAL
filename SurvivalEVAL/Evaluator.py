@@ -11,6 +11,7 @@ import pandas as pd
 from lifelines.statistics import logrank_test
 from scipy.integrate import simpson, trapezoid
 
+from SurvivalEVAL.Evaluations._concordance_utils import _normalize_ties
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
@@ -30,7 +31,11 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     integrated_calibration_index,
     one_calibration,
 )
-from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
+from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+    _normalize_time_dependent_method,
+    _select_risk_anchors,
+    concordance_time_dependent,
+)
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
@@ -850,8 +855,8 @@ class SurvivalEvaluator:
         Risk scores are evaluated at sample-level observed-event anchor times.
         If multiple observed events share the same time, that time is represented
         once per observed event anchor, not once per unique event time. The
-        evaluator preserves the lower-level column contract while skipping risk
-        prediction for anchor columns that cannot enter risk comparisons.
+        evaluator predicts each contributing unique time once, then expands it
+        to preserve the lower-level sample-level column contract.
 
         Parameters
         ----------
@@ -894,41 +899,13 @@ class SurvivalEvaluator:
             The number of total pairs.
         """
         # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
-        method = method.lower()
         risks = risks.lower()
 
         if self._NO_CENSOR:
             method = "antolini"
 
-        if method == "ipcw":
-            self._error_trainset("IPCW time-dependent concordance")
-
-        event_indicators = self.event_indicators.astype(bool)
-        anchor_times = self.event_times[event_indicators]
-
-        # Only predict risks for anchor columns the concordance counter can
-        # read: event anchors before tau with a later sample or same-time
-        # censored candidate. Final event-only blocks may still add time ties,
-        # but they do not need survival or hazard scores.
-        included_anchor_mask_by_sample = np.zeros(self.event_times.shape[0], dtype=bool)
-        for anchor_time in np.unique(anchor_times):
-            if tau is not None and anchor_time >= tau:
-                continue
-            same_time = self.event_times == anchor_time
-            has_later_sample = np.any(self.event_times > anchor_time)
-            has_same_time_censored = np.any(same_time & ~event_indicators)
-            has_candidate = has_later_sample or has_same_time_censored
-            if has_candidate:
-                included_anchor_mask_by_sample[same_time & event_indicators] = True
-
-        included_anchor_mask = included_anchor_mask_by_sample[event_indicators]
-        included_anchor_times = anchor_times[included_anchor_mask]
-
-        # Keep one column per observed event to preserve the lower-level API
-        # contract; columns for anchors without risk comparisons are never read.
-        risk_scores = np.zeros(
-            (self.event_times.shape[0], anchor_times.shape[0]), dtype=float
-        )
+        method = _normalize_time_dependent_method(method)
+        ties = _normalize_ties(ties)
 
         if risks not in {"survival", "hazard"}:
             error = "Risks must be 'Survival' or 'Hazard', got '{}' instead".format(
@@ -936,16 +913,52 @@ class SurvivalEvaluator:
             )
             raise ValueError(error)
 
-        if included_anchor_times.shape[0] > 0:
+        if method == "ipcw":
+            self._error_trainset("IPCW time-dependent concordance")
+
+        event_indicators = self.event_indicators.astype(bool, copy=False)
+        n_samples = self.event_times.shape[0]
+        anchor_times, included_anchor_mask = _select_risk_anchors(
+            self.event_times, event_indicators, tau
+        )
+        n_anchors = anchor_times.size
+        if n_anchors == 0:
+            raise ValueError(
+                "Data has no observed events, cannot estimate time-dependent concordance index."
+            )
+
+        included_anchor_times = anchor_times[included_anchor_mask]
+
+        if included_anchor_times.size > 0:
+            unique_anchor_times, inverse = np.unique(
+                included_anchor_times, return_inverse=True
+            )
             if risks == "survival":
-                included_risk_scores = -self.predict_multi_probabilities_from_curve(
-                    included_anchor_times
+                unique_risk_scores = self.predict_multi_probabilities_from_curve(
+                    unique_anchor_times
                 )
+                np.negative(unique_risk_scores, out=unique_risk_scores)
             else:
-                included_risk_scores = self.predict_multi_hazards_from_curve(
-                    included_anchor_times
+                unique_risk_scores = self.predict_multi_hazards_from_curve(
+                    unique_anchor_times
                 )
-            risk_scores[:, included_anchor_mask] = included_risk_scores
+
+            # Expand unique-time risks directly into the required sample-level
+            # anchor matrix. Inactive columns are placeholders that the pair
+            # counter never reads.
+            unique_column_by_anchor = np.zeros(n_anchors, dtype=int)
+            unique_column_by_anchor[included_anchor_mask] = inverse
+            risk_scores = np.empty((n_samples, n_anchors), dtype=float)
+            np.take(
+                unique_risk_scores,
+                unique_column_by_anchor,
+                axis=1,
+                out=risk_scores,
+            )
+            risk_scores[:, ~included_anchor_mask] = 0.0
+            del unique_risk_scores, unique_column_by_anchor, inverse
+        else:
+            risk_scores = np.zeros((n_samples, n_anchors), dtype=float)
 
         return concordance_time_dependent(
             risk_scores=risk_scores,
@@ -999,7 +1012,9 @@ class SurvivalEvaluator:
         )
 
     def brier_score_multiple_points(
-        self, target_times: np.ndarray, IPCW_weighted: bool = True
+        self,
+        target_times: np.ndarray,
+        IPCW_weighted: bool = True,
     ) -> np.ndarray:
         """
         Calculate multiple Brier scores at multiple specific times.
@@ -1022,6 +1037,8 @@ class SurvivalEvaluator:
 
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
+
+        target_times = validate_time_points(target_times, input_name="target_times")
 
         pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 

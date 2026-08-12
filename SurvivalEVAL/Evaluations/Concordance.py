@@ -614,6 +614,11 @@ def concordance_ic(
     method = method.lower()
     ties = ties.lower()
 
+    if method not in {"comparable", "probability"}:
+        raise ValueError("method must be 'comparable' or 'probability'.")
+    if ties not in {"skip", "half"}:
+        raise ValueError("'ties' must be 'skip' or 'half'.")
+
     if method == "probability":
         if left_train is None or right_train is None:
             raise ValueError(
@@ -631,29 +636,27 @@ def concordance_ic(
         S_r = tb.predict(right)
 
         w = _pairwise_w(S_l, S_r, eps=eps)
-    elif method == "comparable":
+    else:
         comparable = _get_comparable_ic(left, right, tol=eps)
         w = comparable.astype(float)
-    else:
-        raise ValueError("method must be 'comparable' or 'probability'.")
+        del comparable
 
-    # Concordant matrix based on eta
-    gt = (eta[:, None] > eta[None, :]).astype(float)
+    # Build the numerator contribution matrix in place.
+    concordant_weights = (eta[:, None] > eta[None, :]).astype(float)
     if ties == "half":
-        gt += 0.5 * (eta[:, None] == eta[None, :]).astype(float)
-        # still zero on diagonal because w_ii is 0
-    elif ties == "skip":
-        pass
-    else:
-        raise ValueError("'ties' must be 'skip' or 'half'.")
+        tied_pairs = eta[:, None] == eta[None, :]
+        concordant_weights[tied_pairs] = 0.5
+        del tied_pairs
+        # The diagonal is removed when multiplying by the zero-diagonal weights.
 
     # Numerator and denominator (sum over ordered pairs i != j)
-    num = np.sum(gt * w)
+    concordant_weights *= w
+    num = np.sum(concordant_weights)
     den = np.sum(w)
 
     c_idx = num / den if den > 0 else float("nan")
 
-    return c_idx, gt * w, w
+    return c_idx, concordant_weights, w
 
 
 def impute_times_midpoint(

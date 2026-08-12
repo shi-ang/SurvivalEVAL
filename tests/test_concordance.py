@@ -9,6 +9,7 @@ from SurvivalEVAL.Evaluations.Concordance import (
     _margin_counts,
     _right_censored_risk_counts,
     concordance,
+    concordance_ic,
 )
 
 
@@ -665,3 +666,30 @@ def test_get_comparable_ic_respects_touching_endpoint_inclusivity():
     assert not comparable[1, 0]
     assert not comparable[0, 2]
     assert not comparable[2, 0]
+
+
+@pytest.mark.parametrize(
+    ("ties", "tie_contribution", "expected_c_index"),
+    [("skip", 0.0, 2.0 / 3.0), ("half", 0.5, 5.0 / 6.0)],
+)
+def test_interval_concordance_returns_weighted_contribution_matrix(
+    ties,
+    tie_contribution,
+    expected_c_index,
+):
+    c_index, numerator, denominator = concordance_ic(
+        eta=np.array([2.0, 2.0, 1.0]),
+        left=np.array([0.0, 2.0, 4.0]),
+        right=np.array([1.0, 3.0, 5.0]),
+        ties=ties,
+    )
+
+    expected_denominator = np.array(
+        [[0.0, 1.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]
+    )
+    expected_numerator = expected_denominator.copy()
+    expected_numerator[0, 1] = tie_contribution
+
+    assert c_index == pytest.approx(expected_c_index)
+    np.testing.assert_array_equal(numerator, expected_numerator)
+    np.testing.assert_array_equal(denominator, expected_denominator)

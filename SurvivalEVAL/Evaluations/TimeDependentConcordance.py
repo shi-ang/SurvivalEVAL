@@ -11,9 +11,46 @@ from SurvivalEVAL.Evaluations._concordance_utils import (
     _finalize_counts,
     _is_before_tau,
     _iter_time_blocks,
+    _normalize_ties,
     _same_time_pair_weight,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+
+
+def _normalize_time_dependent_method(method: str) -> str:
+    """Normalize and validate a time-dependent concordance method."""
+    normalized = method.lower()
+    if normalized not in {"antolini", "naive", "ipcw"}:
+        raise ValueError(
+            f"Unsupported method: {normalized}. Supported methods are "
+            "'Antolini', 'Naive', and 'IPCW'."
+        )
+    return normalized
+
+
+def _select_risk_anchors(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    tau: Optional[float],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return all event anchors and those that require predicted risk scores.
+
+    Every event before the final observed time has a later candidate. Events
+    at the final time require risks only when that block also contains a
+    censored sample. Final event-only blocks can contribute time ties, but the
+    concordance counter never reads their risk columns.
+    """
+    anchor_times = event_times[event_indicators]
+    if anchor_times.size == 0:
+        return anchor_times, np.zeros(0, dtype=bool)
+
+    final_time = np.max(event_times)
+    included = anchor_times < final_time
+    if np.any((event_times == final_time) & ~event_indicators):
+        included |= anchor_times == final_time
+    if tau is not None:
+        included &= anchor_times < tau
+    return anchor_times, included
 
 
 def concordance_time_dependent(
@@ -103,8 +140,8 @@ def concordance_time_dependent(
             "The number of anchor times (columns in risk_scores) must match the number of observed events."
         )
 
-    method = method.lower()
-    ties = ties.lower()
+    method = _normalize_time_dependent_method(method)
+    ties = _normalize_ties(ties)
 
     if method == "antolini" or method == "naive":
         sample_weights = None
@@ -153,11 +190,6 @@ def concordance_time_dependent(
         anchor_pair_weights[observed_anchors] = 1 / np.square(
             censoring_survival[observed_anchors]
         )
-    else:
-        raise ValueError(
-            f"Unsupported method: {method}. Supported methods are 'Antolini', 'Naive', and 'IPCW'."
-        )
-
     counts = _time_dependent_risk_counts(
         risk_scores=risk_scores,
         event_times=event_times,
