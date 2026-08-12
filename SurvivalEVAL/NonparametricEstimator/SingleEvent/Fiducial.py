@@ -9,7 +9,7 @@ This module provides a fiducial inference method for interval-censored survival 
 from __future__ import annotations
 
 import warnings
-from typing import Dict, Literal
+from typing import Literal
 
 import numpy as np
 import osqp
@@ -478,7 +478,7 @@ def fit_fiducial_interval_censor(
     seed: int = 123,
     solver: Literal["osqp", "scipy"] = "osqp",
     enforce_monotonicity: bool = False,
-) -> Dict:
+) -> dict:
     """
     Fit fiducial inference for interval-censored data.
 

@@ -10,7 +10,7 @@ Description:
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import numpy as np
 from scipy.optimize import brentq
@@ -74,9 +74,9 @@ def calibration_slope_right_censor(
     y = np.asarray(observed_times, float)  # observation time
     P = np.asarray(predictions, float)
     t = np.asarray(time_grid, float)  # time grid
-    assert (
-        P.ndim == 2 and P.shape[0] == y.shape[0] and P.shape[1] == t.shape[0]
-    ), "shape unmatch"
+    assert P.ndim == 2 and P.shape[0] == y.shape[0] and P.shape[1] == t.shape[0], (
+        "shape unmatch"
+    )
     assert np.all(np.diff(t) >= 0), "time_grid must monotonic increasing"
     clip_p = 1e-6
     ps = np.clip(np.asarray(ps, float), clip_p, 1.0 - clip_p)
@@ -149,9 +149,9 @@ def calibration_slope_interval_censor(
     t = np.asarray(time_grid, float)
 
     # basic checks
-    assert (
-        F.ndim == 2 and F.shape[0] == L.shape[0] and F.shape[1] == t.shape[0]
-    ), "shape mismatch"
+    assert F.ndim == 2 and F.shape[0] == L.shape[0] and F.shape[1] == t.shape[0], (
+        "shape mismatch"
+    )
     assert np.all(np.diff(t) >= 0), "time_grid must be increasing"
     ps = np.clip(np.asarray(ps, float), clip_p, 1.0 - clip_p)
 
@@ -201,7 +201,7 @@ def calibration_slope_interval_censor(
 
 def cov(
     cdf: np.ndarray, t_grid: np.ndarray, return_details: bool = False
-) -> Union[float, tuple[float, np.ndarray]]:
+) -> float | tuple[float, np.ndarray]:
     """
     Compute the coefficient of variation of event time from a discretized CDF.
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 import numpy as np
 
@@ -27,7 +27,7 @@ class _ConcordanceCounts:
     risk_tie_pairs: float = 0.0
     time_tie_pairs: float = 0.0
 
-    def __iadd__(self, other: "_ConcordanceCounts") -> "_ConcordanceCounts":
+    def __iadd__(self, other: _ConcordanceCounts) -> _ConcordanceCounts:
         """Add another count object in place.
 
         Parameters

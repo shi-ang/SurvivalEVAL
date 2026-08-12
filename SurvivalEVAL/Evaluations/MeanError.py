@@ -3,8 +3,12 @@ from __future__ import annotations
 import numpy as np
 from tqdm import trange
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, KaplanMeierArea, km_mean
 from SurvivalEVAL.Evaluations.util import predict_rmst
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
+    KaplanMeierArea,
+    km_mean,
+)
 
 
 def mean_error(

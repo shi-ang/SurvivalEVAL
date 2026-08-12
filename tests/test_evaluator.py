@@ -37,7 +37,7 @@ def evaluator_data():
     n_train = 120
     time_grid = np.linspace(0.0, 25.0, 80)
 
-    train_rates, train_times, train_indicators = _sample_interval_data(rng, n_train)
+    _train_rates, train_times, train_indicators = _sample_interval_data(rng, n_train)
     test_rates, test_times, test_indicators = _sample_interval_data(rng, n_test)
 
     pred_rates = test_rates * rng.uniform(0.8, 1.2, size=n_test)

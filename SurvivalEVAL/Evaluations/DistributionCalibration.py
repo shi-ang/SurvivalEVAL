@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Union
-
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.integrate import trapezoid
@@ -121,13 +119,13 @@ def d_cal_ic(
     binning: np.ndarray
         The binning histogram of the D-Calibration test.
     """
-    assert len(pred_probs_left) == len(
-        pred_probs_right
-    ), "The length of pred_probs_left and pred_probs_right should have same length."
+    assert len(pred_probs_left) == len(pred_probs_right), (
+        "The length of pred_probs_left and pred_probs_right should have same length."
+    )
 
-    assert np.all(
-        pred_probs_left >= pred_probs_right
-    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert np.all(pred_probs_left >= pred_probs_right), (
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    )
 
     assert (
         np.all(pred_probs_left >= 0)
@@ -153,7 +151,7 @@ def ksd_calibration(
     pred_probs: np.ndarray,
     event_indicators: np.ndarray,
     return_details: bool = False,
-) -> Union[tuple[float, float], tuple[float, dict]]:
+) -> tuple[float, float] | tuple[float, dict]:
     """
     Calculate the K-S D-Calibration score.
 
@@ -180,9 +178,9 @@ def ksd_calibration(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs) == len(
-        event_indicators
-    ), "The length of pred_probs and event_indicators should have same length."
+    assert len(pred_probs) == len(event_indicators), (
+        "The length of pred_probs and event_indicators should have same length."
+    )
 
     n = len(pred_probs)
     km = KaplanMeier(pred_probs, event_indicators)
@@ -253,13 +251,13 @@ def ksd_cal_ic(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs_left) == len(
-        pred_probs_right
-    ), "The length of pred_probs_left and pred_probs_right should have same length."
+    assert len(pred_probs_left) == len(pred_probs_right), (
+        "The length of pred_probs_left and pred_probs_right should have same length."
+    )
 
-    assert np.all(
-        pred_probs_left >= pred_probs_right
-    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert np.all(pred_probs_left >= pred_probs_right), (
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    )
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
@@ -438,7 +436,7 @@ def residuals(
     if draw_figure:
         cum_haz_empirical = NelsonAalen(cox_residuals, event_indicators)
         max_res = np.max(cox_residuals)
-        fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
+        _fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
         ax[0].plot(
             cum_haz_empirical.survival_times,
             cum_haz_empirical.cumulative_hazard,
@@ -483,7 +481,7 @@ def km_calibration(
     event_indicators: np.ndarray,
     interpolation_method: str = "Linear",
     draw_figure: bool = False,
-) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
     The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.
@@ -723,9 +721,9 @@ def discrepancy_to_uniform(
     if x.ndim != 1 or cdf.ndim != 1 or x.size != cdf.size:
         raise ValueError("x and cdf must be 1D arrays of the same length.")
 
-    assert np.all(cdf >= 0) and np.all(
-        cdf <= 1
-    ), "The cdf values must be in the range [0, 1]."
+    assert np.all(cdf >= 0) and np.all(cdf <= 1), (
+        "The cdf values must be in the range [0, 1]."
+    )
 
     if not (np.all(np.diff(x) >= 0) and np.all(np.diff(cdf) >= 0)):
         raise ValueError("x and cdf must be nondecreasing.")

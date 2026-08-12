@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -81,7 +80,7 @@ def check_and_convert(*args, copy: bool = True):
 
 
 def validate_time_point(
-    time_point: Union[int, float],
+    time_point: float,
     input_name: str = "target_time",
 ) -> float:
     """Validate a nonnegative scalar time input.
@@ -334,7 +333,7 @@ def make_monotonic(
 
 def interpolated_curve(
     times_coordinate: np.ndarray, curve: np.ndarray, interpolation: str = "Linear"
-) -> Union[interp1d, PchipInterpolator]:
+) -> interp1d | PchipInterpolator:
     interpolation = interpolation.lower()
     if interpolation == "linear":
         spline = interp1d(
@@ -350,7 +349,7 @@ def interpolated_curve(
 def predict_prob_from_curve(
     survival_curve: np.ndarray,
     times_coordinate: np.ndarray,
-    target_time: Union[int, float],
+    target_time: float,
     interpolation: str = "Linear",
 ) -> float:
     """
@@ -532,7 +531,7 @@ def predict_rmst(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the restricted mean survival time (RMST) from the survival curve.
     The restricted mean survival time is defined as the area under the survival curve up to a certain time point.
@@ -588,7 +587,7 @@ def predict_mean_st(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the mean survival time(s) from the survival curve for a group of samples.
     The mean survival time is calculated as the area under the survival curve, which is the RMST + residual area.
@@ -638,7 +637,7 @@ def predict_median_st(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the median survival time(s) from the survival curve for a group of samples.
     The median survival time is defined as the time point where the survival curve crosses 0.5.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Union
 
 import numpy as np
 from lifelines import KaplanMeierFitter
@@ -102,7 +101,7 @@ class TurnbullEstimator:
         right: np.ndarray,
         tau: np.ndarray | None = None,
         p_init: np.ndarray | None = None,
-    ) -> "TurnbullEstimator":
+    ) -> TurnbullEstimator:
         """
         Fit the Turnbull estimator to interval-censored data.
         Parameters
@@ -201,13 +200,13 @@ class TurnbullEstimator:
         return self
 
     def predict(
-        self, prediction_times: Union[int, float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+        self, prediction_times: float | np.ndarray
+    ) -> float | np.ndarray:
         """
         Predict survival probabilities at given times using the fitted Turnbull estimator.
         Parameters
         ----------
-        prediction_times: int | float | np.ndarray
+        prediction_times: float | np.ndarray
             Time(s) at which to predict survival probabilities.
         Returns
         -------
@@ -272,13 +271,13 @@ class TurnbullEstimatorLifelines:
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
     def predict(
-        self, prediction_times: Union[int, float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+        self, prediction_times: float | np.ndarray
+    ) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: int | float | np.ndarray
+        prediction_times: float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------

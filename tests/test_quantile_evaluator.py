@@ -29,7 +29,7 @@ def quantile_evaluator():
 
     quantile_levels = np.linspace(0.05, 0.95, 10)
 
-    train_rates, train_times, train_indicators = _generate_dataset(rng, n_train)
+    _train_rates, train_times, train_indicators = _generate_dataset(rng, n_train)
     test_rates, test_times, test_indicators = _generate_dataset(rng, n_test)
 
     rate_scale = rng.lognormal(mean=0.0, sigma=0.1, size=n_test)

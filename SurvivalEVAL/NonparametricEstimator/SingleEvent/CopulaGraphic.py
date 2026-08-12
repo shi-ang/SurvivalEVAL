@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Union
 
 import numpy as np
 
@@ -50,7 +49,7 @@ class CopulaGraphic:
         self.population_count = np.flip(np.flip(unique_times[1]).cumsum())
 
         event_counter = np.append(0, unique_times[1].cumsum()[:-1])
-        event_ind = list()
+        event_ind = []
         for i in range(np.size(event_counter[:-1])):
             event_ind.append(event_counter[i])
             event_ind.append(event_counter[i + 1])
@@ -79,7 +78,7 @@ class CopulaGraphic:
                 ) ** (alpha + 1)
                 diff_[-1] = 0
                 self.survival_probabilities = np.exp(
-                    -np.cumsum(diff_) ** (1 / (1 + alpha))
+                    -(np.cumsum(diff_) ** (1 / (1 + alpha)))
                 )
             elif type == "frank":
                 log_diff_ = np.log(
@@ -110,14 +109,12 @@ class CopulaGraphic:
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(
-        self, prediction_times: Union[int, float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+    def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: int | float | np.ndarray
+        prediction_times: float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------

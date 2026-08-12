@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -91,9 +91,9 @@ def concordance(
 
     event_indicators = event_indicators.astype(bool)
 
-    assert (
-        len(predicted_times) == len(event_times) == len(event_indicators)
-    ), "The lengths of the predicted times and labels must be the same."
+    assert len(predicted_times) == len(event_times) == len(event_indicators), (
+        "The lengths of the predicted times and labels must be the same."
+    )
 
     method = method.lower()
     ties = ties.lower()
@@ -398,9 +398,10 @@ def _iter_comparable_event_pairs(
             candidate_indices = np.concatenate((same_time_censored, later_samples))
             for anchor_index in event_anchors:
                 if candidate_indices.shape[0] > 0:
-                    yield np.full(
-                        candidate_indices.shape[0], anchor_index, dtype=int
-                    ), candidate_indices
+                    yield (
+                        np.full(candidate_indices.shape[0], anchor_index, dtype=int),
+                        candidate_indices,
+                    )
 
 
 def _get_comparable_ic(

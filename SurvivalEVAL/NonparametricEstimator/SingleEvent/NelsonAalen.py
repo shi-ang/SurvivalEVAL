@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Union
 
 import numpy as np
 
@@ -28,7 +27,7 @@ class NelsonAalen:
         self.population_count = np.flip(np.flip(unique_times[1]).cumsum())
 
         event_counter = np.append(0, unique_times[1].cumsum()[:-1])
-        event_ind = list()
+        event_ind = []
         for i in range(np.size(event_counter[:-1])):
             event_ind.append(event_counter[i])
             event_ind.append(event_counter[i + 1])
@@ -54,14 +53,12 @@ class NelsonAalen:
             self.cumulative_hazard = np.insert(self.cumulative_hazard, 0, 0.0)
             self.survival_probabilities = np.insert(self.survival_probabilities, 0, 1.0)
 
-    def predict(
-        self, prediction_times: Union[int, float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+    def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the cumulative hazard based on the survival times.
         Parameters
         ----------
-        prediction_times: int | float | np.ndarray
+        prediction_times: float | np.ndarray
             Time(s) at which to predict the cumulative hazard.
         Returns
         -------
@@ -89,13 +86,13 @@ class NelsonAalen:
         return cumulative_hazard
 
     def predict_survival(
-        self, prediction_times: Union[int, float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+        self, prediction_times: float | np.ndarray
+    ) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters
         ----------
-        prediction_times: int | float | np.ndarray
+        prediction_times: float | np.ndarray
             Time(s) at which to predict the survival probabilities.
         Returns
         -------

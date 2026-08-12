@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from abc import ABC
 from functools import cached_property
-from typing import Callable, Union
+from typing import Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -328,7 +328,7 @@ class SurvivalEvaluator:
 
     def predict_probability_from_curve(
         self,
-        target_time: Union[float, int, np.ndarray],
+        target_time: float | np.ndarray,
     ) -> np.ndarray:
         """
         Calculate the survival probability at a given time point from a predicted curve.
@@ -339,7 +339,7 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        target_time: Union[float, int, np.ndarray], shape = (n_samples, )
+        target_time: float | np.ndarray, shape = (n_samples, )
             Time point(s) at which the survival probability is to be predicted.
             If float or int, the same time point is used for all samples. If
             array-like, each sample will have its own target time. The length
@@ -576,7 +576,7 @@ class SurvivalEvaluator:
 
     def plot_survival_curves(
         self,
-        curve_indices: Union[int, list[int]],
+        curve_indices: int | list[int],
         color: str | list[str] | None = None,
         x_lim: float | tuple[float, float] | None = None,
         y_lim: float | tuple[float, float] | None = None,
@@ -589,7 +589,7 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        curve_indices: Union[int, list[int]]
+        curve_indices: int | list[int]
             Index(ces) of the curves to be plotted.
         color: str | list[str] | None
             Color(s) of the curves to be plotted. If None, default color will be used.
@@ -650,7 +650,7 @@ class SurvivalEvaluator:
 
     def plot_quantile_curves(
         self,
-        curve_indices: Union[int, list[int]],
+        curve_indices: int | list[int],
         color: str | list[str] | None = None,
         x_lim: float | tuple[float, float] | None = None,
         y_lim: float | tuple[float, float] | None = None,
@@ -663,7 +663,7 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        curve_indices: Union[int, list[int]]
+        curve_indices: int | list[int]
             Index(ces) of the curves to be plotted.
         color: str | list[str] | None
             Color(s) of the curves to be plotted. If None, default color will be used.
@@ -1061,7 +1061,7 @@ class SurvivalEvaluator:
         IPCW_weighted: bool = True,
         integration_method: str = "trapz",
         draw_figure: bool = False,
-    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated Brier score (IBS) from the predicted survival curve.
 
@@ -1370,7 +1370,7 @@ class SurvivalEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
         Parameters
@@ -1528,7 +1528,7 @@ class SurvivalEvaluator:
 
     def d_calibration(
         self, num_bins: int = 10, return_details: bool = False
-    ) -> Union[tuple[float, np.ndarray], tuple[float, dict]]:
+    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
@@ -1624,7 +1624,7 @@ class SurvivalEvaluator:
 
     def ksd_calibration(
         self, return_details: bool = False
-    ) -> Union[tuple[float, float], tuple[float, dict]]:
+    ) -> tuple[float, float] | tuple[float, dict]:
         """
         Calculate the KSD calibration score from the predicted survival curve.
         Parameters
@@ -1692,7 +1692,7 @@ class SurvivalEvaluator:
 
     def km_calibration(
         self, draw_figure: bool = False
-    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
         Parameters
@@ -1832,7 +1832,7 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         predicted_survival_curves = surv.values.T
         # Pycox models can sometimes obtain -0 as survival probabilities. Need to convert that to 0.
         predicted_survival_curves[predicted_survival_curves < 0] = 0
-        super(PycoxEvaluator, self).__init__(
+        super().__init__(
             predicted_survival_curves,
             time_coordinates,
             event_times,
@@ -1878,7 +1878,7 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
         """
-        super(LifelinesEvaluator, self).__init__(
+        super().__init__(
             surv,
             event_times,
             event_indicators,
@@ -1951,7 +1951,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
                 max_prob_at_end = np.max(reference_end_probabilities)
                 replacement_probability = max(0.1 * max_prob_at_end + 0.9, 0.99)
             predicted_curves[idx_need_fix, -1] = replacement_probability
-        super(ScikitSurvivalEvaluator, self).__init__(
+        super().__init__(
             predicted_curves,
             time_coordinates,
             event_times,
@@ -2278,7 +2278,7 @@ class SingleTimeEvaluator:
         pred_probs: NumericArrayLike,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        target_time: float | int | None = None,
+        target_time: float | None = None,
         train_event_times: NumericArrayLike | None = None,
         train_event_indicators: NumericArrayLike | None = None,
     ):
@@ -2402,7 +2402,7 @@ class SingleTimeEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -2504,7 +2504,7 @@ class SingleTimeEvaluator:
         knots: int = 3,
         draw_figure: bool | None = True,
         figure_range: tuple | None = None,
-    ) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
@@ -2582,7 +2582,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             raise NotImplementedError(
                 "RMST prediction time method is not implemented for quantile curves."
             )
-        super(QuantileRegEvaluator, self).__init__(
+        super().__init__(
             survival_level,
             pred_regs,
             event_times,
