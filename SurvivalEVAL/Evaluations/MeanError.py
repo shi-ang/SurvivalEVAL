@@ -61,10 +61,10 @@ def mean_error(
     -------
     Value for the calculated mean error.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
     error_type = error_type.lower()
     method = method.lower()
@@ -105,7 +105,7 @@ def mean_error(
             )
         else:
             errors = event_times[event_indicators] - predicted_times[event_indicators]
-        return error_func(errors).mean()
+        return float(np.mean(error_func(errors), dtype=float))
     elif method == "hinge":
         # consider only the early prediction error
         # if prediction is higher than the censored time, it is not penalized
@@ -187,7 +187,7 @@ def mean_error(
     elif method == "ipcw-d":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
-        inverse_train_event_indicators = 1 - train_event_indicators
+        inverse_train_event_indicators = ~train_event_indicators
 
         ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
         ipc_pred = ipc_model.predict(event_times)
@@ -324,10 +324,10 @@ def mean_error_truncated(
     mean_error: float
         Mean error value.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
         n_train = train_event_times.size
 
     if truncation_time is None:
@@ -464,7 +464,7 @@ def mean_error_truncated(
     else:
         errors = true_rmst - pred_rmst
 
-    return float(np.mean(error_func(errors)))
+    return float(np.mean(error_func(errors), dtype=float))
 
 def mean_error_truncated_slow(
         pred_rmst: np.ndarray,
@@ -518,10 +518,10 @@ def mean_error_truncated_slow(
     mean_error: float
         Mean error value.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
         n_train = train_event_times.size
 
     if truncation_time is None:
@@ -610,7 +610,7 @@ def mean_error_truncated_slow(
     else:
         errors = true_rmst - pred_rmst
 
-    return float(np.mean(error_func(errors)))
+    return float(np.mean(error_func(errors), dtype=float))
 
 
 
@@ -696,7 +696,7 @@ def inclusion_rate(
     """
     L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
     inside, _ = _compute_inside_mask(L, R, t_hat)
-    return float(np.mean(inside))
+    return float(np.mean(inside, dtype=float))
 
 
 def mean_error_ic(
@@ -761,7 +761,7 @@ def mean_error_ic(
     error_to_R = np.where(is_right_cens, np.inf, error_func(t_hat - R))
     d_i = np.where(outside, np.minimum(error_to_L, error_to_R), 0.0)
 
-    return float(np.mean(d_i))
+    return float(np.mean(d_i, dtype=float))
 
 
 if __name__ == "__main__":

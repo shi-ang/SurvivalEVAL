@@ -112,7 +112,7 @@ def concordance_time_dependent(
     num_total_pairs: float
         The number of total pairs.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
 
     if risk_scores.ndim != 2:
         raise ValueError(
@@ -149,7 +149,7 @@ def concordance_time_dependent(
             raise ValueError(
                 "train_event_times and train_event_indicators must be provided for IPCW method."
             )
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)

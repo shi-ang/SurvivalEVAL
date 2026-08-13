@@ -38,9 +38,10 @@ def d_calibration(
         The binning histogram of the D-Calibration test.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
-    censor_indicators = 1 - event_indicators
+    event_indicators = event_indicators.astype(bool, copy=False)
+    censor_indicators = ~event_indicators
 
-    event_probs = pred_probs[event_indicators.astype(bool)]
+    event_probs = pred_probs[event_indicators]
     event_position = np.digitize(event_probs, quantile)
     event_position[event_position == 0] = 1  # class probability==1 to the first bin
 
@@ -48,7 +49,7 @@ def d_calibration(
     for i in range(len(event_position)):
         event_hist[event_position[i] - 1] += 1
 
-    censored_probs = pred_probs[censor_indicators.astype(bool)]
+    censored_probs = pred_probs[censor_indicators]
 
     censor_hist = np.zeros([num_bins])
     if len(censored_probs) > 0:
@@ -405,6 +406,7 @@ def residuals(
         The calculated residuals.
     """
     cox_residuals = -np.log(pred_probs)
+    event_indicators = event_indicators.astype(bool, copy=False)
     method = method.lower()
 
     if method == "coxsnell":
@@ -416,7 +418,7 @@ def residuals(
         # (1) use the mean of the unit exponential distribution, which is 1,
         # or (2) use the median of the unit exponential distribution, which is ln(2).
         excess_residual = 1 if method == "modified coxsnell-v1" else np.log(2)
-        residuals = cox_residuals + excess_residual * (1 - event_indicators)
+        residuals = cox_residuals + excess_residual * (~event_indicators)
     elif method == "martingale":
         residuals = event_indicators - cox_residuals
     elif method == "deviance":
@@ -451,7 +453,6 @@ def residuals(
 
         # use solid scatter points for uncensored instances and hollow scatter points for censored instances
         idx = np.arange(len(residuals))
-        event_indicators = event_indicators.astype(bool)
         ax[1].scatter(
             idx[event_indicators],
             residuals[event_indicators],

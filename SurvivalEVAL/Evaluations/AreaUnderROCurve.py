@@ -45,7 +45,7 @@ def auc(
 
     # get the binary status of the test data, given the target time
     binary_status = (
-        (event_times <= target_time) & event_indicators.astype(bool)
+        (event_times <= target_time) & event_indicators.astype(bool, copy=False)
     ).astype(int)
 
     # check if the binary status is all zeros or all ones

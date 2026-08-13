@@ -29,6 +29,34 @@ def test_single_brier_score_treats_censored_at_target_time_as_event_free(
     assert score == pytest.approx(0.03)
 
 
+def test_single_brier_score_matches_float64_for_float32_inputs() -> None:
+    preds = np.array([0.2, 0.4, 0.8], dtype=np.float32)
+    event_times = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    event_indicators = np.array([True, False, True])
+
+    result = single_brier_score(
+        preds,
+        event_times,
+        event_indicators,
+        train_event_times=event_times,
+        train_event_indicators=event_indicators,
+        target_time=2.0,
+        ipcw=False,
+    )
+    expected = single_brier_score(
+        preds.astype(np.float64),
+        event_times.astype(np.float64),
+        event_indicators,
+        train_event_times=event_times.astype(np.float64),
+        train_event_indicators=event_indicators,
+        target_time=2.0,
+        ipcw=False,
+    )
+
+    assert isinstance(result, float)
+    assert result == pytest.approx(expected)
+
+
 @pytest.mark.parametrize("ipcw", [True, False])
 def test_brier_multiple_points_treats_censored_at_target_time_as_event_free(
     ipcw: bool,

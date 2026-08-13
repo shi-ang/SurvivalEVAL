@@ -50,15 +50,15 @@ def single_brier_score(
     if target_time is None:
         target_time = np.median(event_times)
 
-    event_indicators = event_indicators.astype(bool)
-    # train_event_indicators = train_event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     event_before_or_at_target = (event_times <= target_time) & event_indicators
     event_free_at_target = (event_times > target_time) | (
         (event_times == target_time) & ~event_indicators
     )
 
     if ipcw:
-        inverse_train_event_indicators = 1 - train_event_indicators
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
+        inverse_train_event_indicators = ~train_event_indicators
         ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
 
         ipc_pred = ipc_model.predict(event_times)
@@ -81,9 +81,10 @@ def single_brier_score(
         weight_cat1 = event_before_or_at_target
         weight_cat2 = event_free_at_target
 
-    b_score = (
+    sample_errors = (
         np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
-    ).mean()
+    )
+    b_score = float(np.mean(sample_errors, dtype=float))
     ###########################
     # Here we are ordering event times and then using predict with level.chaos = 1 which returns
     # predictions ordered by time.
@@ -287,7 +288,7 @@ def _columnwise_mean_excluding(
     values[excluded] = 0.0
     included_counts = values.shape[0] - np.count_nonzero(excluded, axis=0)
     return np.divide(
-        values.sum(axis=0),
+        values.sum(axis=0, dtype=float),
         included_counts,
         out=np.full(values.shape[1], np.nan, dtype=float),
         where=included_counts > 0,
@@ -390,7 +391,7 @@ def brier_multiple_points(
     censored_at_target &= ~event_indicators_column
     event_free_at_target |= censored_at_target
     del censored_at_target
-    component_error = np.subtract(1.0, pred_mat)
+    component_error = np.subtract(1.0, pred_mat, dtype=float)
     np.square(component_error, out=component_error)
     component_error *= event_free_at_target
     if ipcw:

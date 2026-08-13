@@ -11,6 +11,8 @@
 5. Avoid copying compatible NumPy time-point arrays during validation and add peak-allocation, prediction-shape,
    randomized, and result-equivalence regression tests for the optimized paths.
 6. Code format: f-string and type annotation.
+7. Preserve compatible `float32` and `float64` input storage across evaluators, keep event indicators boolean, and
+   avoid copying compatible read-only arrays, memory maps, pandas objects, and CPU Torch tensors unless requested.
 
 ## 2026-06-17: Version 0.8.0
 

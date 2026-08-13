@@ -89,7 +89,7 @@ def concordance(
     # So at first we should transfer the predicted time -> risk score.
     # The risk score should be higher for subjects that live shorter (i.e. lower average survival time).
 
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
 
     assert len(predicted_times) == len(event_times) == len(event_indicators), (
         "The lengths of the predicted times and labels must be the same."
@@ -108,7 +108,7 @@ def concordance(
             error = "If 'Uno' or 'IPCW' is chosen, training set information must be provided."
             raise ValueError(error)
 
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)
@@ -155,7 +155,7 @@ def concordance(
             error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)
 
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
         km_linear_zero = -1 / (

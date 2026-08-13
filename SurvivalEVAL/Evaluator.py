@@ -39,6 +39,7 @@ from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
+    check_and_convert_event_data,
     fit_least_squares,
     predict_mean_st,
     predict_median_st,
@@ -94,7 +95,9 @@ class SurvivalEvaluator:
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
-        event_times, event_indicators = check_and_convert(event_times, event_indicators)
+        event_times, event_indicators = check_and_convert_event_data(
+            event_times, event_indicators
+        )
         self.event_times = event_times
         self.event_indicators = event_indicators
         self.set_prediction_inputs(
@@ -102,7 +105,7 @@ class SurvivalEvaluator:
         )
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -255,7 +258,11 @@ class SurvivalEvaluator:
             np.isclose(self._time_coordinates[..., 0], 0.0)
         ):
             pred_survs = np.concatenate(
-                (np.ones((*pred_survs.shape[:-1], 1)), pred_survs), axis=-1
+                (
+                    np.ones((*pred_survs.shape[:-1], 1), dtype=pred_survs.dtype),
+                    pred_survs,
+                ),
+                axis=-1,
             )
         self.set_prediction_inputs(pred_survs, self._time_coordinates)
 
@@ -274,7 +281,13 @@ class SurvivalEvaluator:
             np.isclose(time_coordinates[..., 0], 0.0)
         ):
             time_coordinates = np.concatenate(
-                (np.zeros((*time_coordinates.shape[:-1], 1)), time_coordinates),
+                (
+                    np.zeros(
+                        (*time_coordinates.shape[:-1], 1),
+                        dtype=time_coordinates.dtype,
+                    ),
+                    time_coordinates,
+                ),
                 axis=-1,
             )
         self.set_prediction_inputs(self._pred_survs, time_coordinates)
@@ -1706,14 +1719,18 @@ class SurvivalEvaluator:
             survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         if self.ndim_time == 1:
-            average_survival_curve = np.mean(self._pred_survs, axis=0)
+            average_survival_curve = np.mean(
+                self._pred_survs, axis=0, dtype=float
+            )
             calibration_times = self._time_coordinates
         else:
             calibration_times = np.unique(self.event_times[self.event_indicators == 1])
             sample_survival_curves = self.predict_multi_probabilities_from_curve(
                 calibration_times
             )
-            average_survival_curve = np.mean(sample_survival_curves, axis=0)
+            average_survival_curve = np.mean(
+                sample_survival_curves, axis=0, dtype=float
+            )
 
         return km_calibration(
             average_survival_curve=average_survival_curve,
@@ -1829,9 +1846,10 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             Options: "Linear" (default), "Pchip".
         """
         time_coordinates = surv.index.values
-        predicted_survival_curves = surv.values.T
-        # Pycox models can sometimes obtain -0 as survival probabilities. Need to convert that to 0.
-        predicted_survival_curves[predicted_survival_curves < 0] = 0
+        predicted_survival_curves = surv.to_numpy(copy=False).T
+        # Do not mutate the caller's DataFrame when correcting numerical noise.
+        if np.any(predicted_survival_curves < 0):
+            predicted_survival_curves = np.maximum(predicted_survival_curves, 0)
         super().__init__(
             predicted_survival_curves,
             time_coordinates,
@@ -1935,11 +1953,6 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
                 )
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
-        if time_coordinates[0] != 0:
-            time_coordinates = np.concatenate([np.array([0]), time_coordinates], 0)
-            predicted_curves = np.concatenate(
-                [np.ones([len(predicted_curves), 1]), predicted_curves], 1
-            )
         # Ensure flat all-one curves have a finite extrapolated event time.
         end_probabilities = predicted_curves[:, -1]
         idx_need_fix = end_probabilities == 1
@@ -1993,14 +2006,13 @@ class PointEvaluator:
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
-        self._pred_times = check_and_convert(pred_times)
-
-        self.event_times, self.event_indicators = check_and_convert(
+        self.event_times, self.event_indicators = check_and_convert_event_data(
             event_times, event_indicators
         )
+        self.pred_times = pred_times
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -2021,7 +2033,9 @@ class PointEvaluator:
 
     @pred_times.setter
     def pred_times(self, pred_times):
-        print("Setter called. Resetting pred_times.")
+        pred_times = check_and_convert(pred_times)
+        if pred_times.shape != self.event_times.shape:
+            raise ValueError("pred_times and event_times must have the same shape.")
         self._pred_times = pred_times
 
     def concordance(
@@ -2302,19 +2316,13 @@ class SingleTimeEvaluator:
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
-        self._pred_probs = check_and_convert(pred_probs)
-        if self._pred_probs.ndim != 1:
-            raise ValueError(
-                "predicted_probs should be a 1D array-like object, "
-                f"but got a {self._pred_probs.ndim}D array-like object"
-            )
-
-        self.event_times, self.event_indicators = check_and_convert(
+        self.event_times, self.event_indicators = check_and_convert_event_data(
             event_times, event_indicators
         )
+        self.pred_probs = pred_probs
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -2345,7 +2353,14 @@ class SingleTimeEvaluator:
 
     @pred_probs.setter
     def pred_probs(self, pred_probs):
-        print("Setter called. Resetting pred_probs.")
+        pred_probs = check_and_convert(pred_probs)
+        if pred_probs.ndim != 1:
+            raise ValueError(
+                "predicted_probs should be a 1D array-like object, "
+                f"but got a {pred_probs.ndim}D array-like object"
+            )
+        if pred_probs.shape != self.event_times.shape:
+            raise ValueError("pred_probs and event_times must have the same shape.")
         self._pred_probs = pred_probs
 
     def auc(
@@ -2614,7 +2629,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             unique_times,
             interpolate=self.interpolation,
         )
-        avg_surv = np.mean(survival_curves, axis=0)
+        avg_surv = np.mean(survival_curves, axis=0, dtype=float)
 
         return km_calibration(
             average_survival_curve=avg_surv,

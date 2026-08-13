@@ -4,9 +4,16 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytest
 
-from SurvivalEVAL import ScikitSurvivalEvaluator, SurvivalEvaluator
+from SurvivalEVAL import (
+    PointEvaluator,
+    PycoxEvaluator,
+    ScikitSurvivalEvaluator,
+    SingleTimeEvaluator,
+    SurvivalEvaluator,
+)
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
 
 
@@ -28,6 +35,92 @@ def _sample_interval_data(rng: np.random.Generator, n_samples: int):
     raise RuntimeError(
         "Failed to generate interval data with both events and censoring."
     )
+
+
+def test_survival_evaluator_reuses_compatible_read_only_inputs():
+    pred_survs = np.array([[1.0, 0.8, 0.5], [1.0, 0.7, 0.4]], dtype=np.float32)
+    time_coordinates = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    event_times = np.array([1.0, 2.0], dtype=np.float32)
+    event_indicators = np.array([True, False])
+    for values in (pred_survs, time_coordinates, event_times, event_indicators):
+        values.flags.writeable = False
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        event_times=event_times,
+        event_indicators=event_indicators,
+    )
+
+    assert evaluator.pred_survs is pred_survs
+    assert evaluator.time_coordinates is time_coordinates
+    assert evaluator.event_times is event_times
+    assert evaluator.event_indicators is event_indicators
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(1.0), [0.8, 0.7]
+    )
+
+
+def test_pycox_evaluator_reuses_valid_dataframe_storage():
+    predictions = pd.DataFrame(
+        np.array([[1.0, 1.0], [0.8, 0.7], [0.5, 0.4]], dtype=np.float32),
+        index=np.array([0.0, 1.0, 2.0], dtype=np.float32),
+    )
+
+    evaluator = PycoxEvaluator(
+        predictions,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([True, False]),
+    )
+
+    assert np.shares_memory(evaluator.pred_survs, predictions.to_numpy(copy=False))
+    assert evaluator.pred_survs.dtype == np.float32
+
+
+def test_pycox_evaluator_does_not_mutate_dataframe_when_clipping():
+    predictions = pd.DataFrame(
+        np.array([[1.0, 1.0], [0.8, 0.7], [0.5, -1e-6]], dtype=np.float32),
+        index=np.array([0.0, 1.0, 2.0], dtype=np.float32),
+    )
+    original = predictions.copy()
+
+    evaluator = PycoxEvaluator(
+        predictions,
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([True, False]),
+    )
+
+    pd.testing.assert_frame_equal(predictions, original)
+    assert evaluator.pred_survs[1, -1] == 0
+
+
+def test_point_and_single_time_setters_use_input_conversion_contract():
+    event_times = np.array([1.0, 2.0], dtype=np.float32)
+    event_indicators = np.array([True, False])
+    point_predictions = np.array([1.5, 2.5], dtype=np.float32)
+    probability_predictions = np.array([0.8, 0.6], dtype=np.float32)
+    point_predictions.flags.writeable = False
+    probability_predictions.flags.writeable = False
+
+    point_evaluator = PointEvaluator(
+        point_predictions, event_times, event_indicators
+    )
+    probability_evaluator = SingleTimeEvaluator(
+        probability_predictions, event_times, event_indicators
+    )
+
+    assert point_evaluator.pred_times is point_predictions
+    assert probability_evaluator.pred_probs is probability_predictions
+
+    point_evaluator.pred_times = [2, 3]
+    probability_evaluator.pred_probs = [0, 1]
+    assert point_evaluator.pred_times.dtype == np.float64
+    assert probability_evaluator.pred_probs.dtype == np.float64
+
+    with pytest.raises(ValueError, match="same shape"):
+        point_evaluator.pred_times = [1]
+    with pytest.raises(ValueError, match="same shape"):
+        probability_evaluator.pred_probs = [0.5]
 
 
 @pytest.fixture
@@ -269,6 +362,28 @@ def test_scikit_survival_evaluator_handles_all_one_curves():
 
     np.testing.assert_allclose(evaluator.pred_survs[:, -1], 0.99)
     assert np.all(np.isfinite(evaluator.predicted_event_times))
+
+
+def test_scikit_survival_evaluator_preserves_float32_inputs():
+    curves = [
+        _StepFunction(
+            np.array([1.0, 2.0, 3.0], dtype=np.float32),
+            np.array([0.9, 0.7, 0.4], dtype=np.float32),
+        ),
+        _StepFunction(
+            np.array([1.0, 2.0, 3.0], dtype=np.float32),
+            np.array([0.8, 0.6, 0.3], dtype=np.float32),
+        ),
+    ]
+
+    evaluator = ScikitSurvivalEvaluator(
+        surv=curves,
+        event_times=np.array([1.0, 2.0], dtype=np.float32),
+        event_indicators=np.array([True, False]),
+    )
+
+    assert evaluator.pred_survs.dtype == np.float32
+    assert evaluator.time_coordinates.dtype == np.float32
 
 
 def test_scikit_survival_evaluator_preserves_mixed_batch_repair():
@@ -628,6 +743,23 @@ def test_pred_survs_setter_accepts_raw_curves_after_zero_padding():
     assert evaluator.pred_survs.shape == (2, 4)
     np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
     np.testing.assert_allclose(evaluator.time_coordinates, [0.0, 1.0, 2.0, 3.0])
+
+
+def test_prediction_setters_preserve_float32_when_padding():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6], [0.9, 0.7]], dtype=np.float32),
+        time_coordinates=np.array([1.0, 2.0], dtype=np.float32),
+        event_times=np.array([1.0, 2.0], dtype=np.float32),
+        event_indicators=np.array([True, False]),
+    )
+
+    evaluator.pred_survs = np.array(
+        [[0.7, 0.4], [0.8, 0.5]], dtype=np.float32
+    )
+    evaluator.time_coordinates = np.array([2.0, 4.0], dtype=np.float32)
+
+    assert evaluator.pred_survs.dtype == np.float32
+    assert evaluator.time_coordinates.dtype == np.float32
 
 
 def test_time_coordinates_setter_accepts_raw_grid_after_zero_padding():
