@@ -47,6 +47,31 @@ class _ConcordanceCounts:
         return self
 
 
+class _FenwickTree:
+    """Maintain weighted prefix sums with logarithmic updates and queries."""
+
+    def __init__(self, size: int) -> None:
+        if size <= 0:
+            raise ValueError("Fenwick tree size must be positive.")
+        self._tree = np.zeros(size + 1, dtype=float)
+
+    def add(self, index: int, value: float) -> None:
+        """Add ``value`` to one zero-based position."""
+        position = index + 1
+        while position < self._tree.shape[0]:
+            self._tree[position] += value
+            position += position & -position
+
+    def prefix_sum(self, stop: int) -> float:
+        """Return the sum over zero-based positions in ``[0, stop)``."""
+        total = 0.0
+        position = stop
+        while position > 0:
+            total += self._tree[position]
+            position -= position & -position
+        return total
+
+
 def _finalize_counts(
     counts: _ConcordanceCounts, ties: str
 ) -> tuple[float, float, float]:
