@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from tqdm import trange
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier, KaplanMeierArea, km_mean
 from SurvivalEVAL.Evaluations.util import predict_rmst
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+    KaplanMeier,
+    KaplanMeierArea,
+    km_mean,
+)
 
 
 def mean_error(
     predicted_times: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray] = None,
-    train_event_indicators: Optional[np.ndarray] = None,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
     error_type: str = "absolute",
     method: str = "Hinge",
     weighted: bool = True,
@@ -59,10 +61,10 @@ def mean_error(
     -------
     Value for the calculated mean error.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
     error_type = error_type.lower()
     method = method.lower()
@@ -71,9 +73,7 @@ def mean_error(
     if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
@@ -105,7 +105,7 @@ def mean_error(
             )
         else:
             errors = event_times[event_indicators] - predicted_times[event_indicators]
-        return error_func(errors).mean()
+        return float(np.mean(error_func(errors), dtype=float))
     elif method == "hinge":
         # consider only the early prediction error
         # if prediction is higher than the censored time, it is not penalized
@@ -187,7 +187,7 @@ def mean_error(
     elif method == "ipcw-d":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
-        inverse_train_event_indicators = 1 - train_event_indicators
+        inverse_train_event_indicators = ~train_event_indicators
 
         ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
         ipc_pred = ipc_model.predict(event_times)
@@ -268,7 +268,7 @@ def mean_error(
     else:
         raise ValueError(
             "Method must be one of 'Uncensored', 'Hinge', 'Margin', 'IPCW-T', 'IPCW-D' "
-            "or 'Pseudo_obs'. Got '{}' instead.".format(method)
+            f"or 'Pseudo_obs'. Got '{method}' instead."
         )
 
 
@@ -276,9 +276,9 @@ def mean_error_truncated(
         pred_rmst: np.ndarray,
         event_times: np.ndarray,
         event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray] = None,
-        train_event_indicators: Optional[np.ndarray] = None,
-        truncation_time: float = None,
+        train_event_times: np.ndarray | None = None,
+        train_event_indicators: np.ndarray | None = None,
+        truncation_time: float | None = None,
         error_type: str = "squared",
         method: str = "Pseudo_obs",
         log_scale: bool = False,
@@ -324,10 +324,10 @@ def mean_error_truncated(
     mean_error: float
         Mean error value.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
         n_train = train_event_times.size
 
     if truncation_time is None:
@@ -350,9 +350,7 @@ def mean_error_truncated(
     if method in ["Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeier(train_event_times, train_event_indicators)
@@ -449,7 +447,7 @@ def mean_error_truncated(
     else:
         raise ValueError(
             "Method must be 'Pseudo_obs' for truncated mean error. "
-            "Got '{}' instead.".format(method)
+            f"Got '{method}' instead."
         )
     
     # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
@@ -466,15 +464,15 @@ def mean_error_truncated(
     else:
         errors = true_rmst - pred_rmst
 
-    return float(np.mean(error_func(errors)))
+    return float(np.mean(error_func(errors), dtype=float))
 
 def mean_error_truncated_slow(
         pred_rmst: np.ndarray,
         event_times: np.ndarray,
         event_indicators: np.ndarray,
-        train_event_times: Optional[np.ndarray] = None,
-        train_event_indicators: Optional[np.ndarray] = None,
-        truncation_time: float = None,
+        train_event_times: np.ndarray | None = None,
+        train_event_indicators: np.ndarray | None = None,
+        truncation_time: float | None = None,
         error_type: str = "squared",
         method: str = "Pseudo_obs",
         log_scale: bool = False,
@@ -520,10 +518,10 @@ def mean_error_truncated_slow(
     mean_error: float
         Mean error value.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
     n_test = event_times.size
     if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
         n_train = train_event_times.size
 
     if truncation_time is None:
@@ -545,9 +543,7 @@ def mean_error_truncated_slow(
     if method in ["Pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
-                "If method is '{}', training set values must be included.".format(
-                    method
-                )
+                f"If method is '{method}', training set values must be included."
             )
 
         km_model = KaplanMeier(train_event_times, train_event_indicators)
@@ -597,7 +593,7 @@ def mean_error_truncated_slow(
     else:
         raise ValueError(
             "Method must be 'Pseudo_obs' for truncated mean error. "
-            "Got '{}' instead.".format(method)
+            f"Got '{method}' instead."
         )
     
     # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
@@ -614,7 +610,7 @@ def mean_error_truncated_slow(
     else:
         errors = true_rmst - pred_rmst
 
-    return float(np.mean(error_func(errors)))
+    return float(np.mean(error_func(errors), dtype=float))
 
 
 
@@ -700,7 +696,7 @@ def inclusion_rate(
     """
     L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
     inside, _ = _compute_inside_mask(L, R, t_hat)
-    return float(np.mean(inside))
+    return float(np.mean(inside, dtype=float))
 
 
 def mean_error_ic(
@@ -765,7 +761,7 @@ def mean_error_ic(
     error_to_R = np.where(is_right_cens, np.inf, error_func(t_hat - R))
     d_i = np.where(outside, np.minimum(error_to_L, error_to_R), 0.0)
 
-    return float(np.mean(d_i))
+    return float(np.mean(d_i, dtype=float))
 
 
 if __name__ == "__main__":

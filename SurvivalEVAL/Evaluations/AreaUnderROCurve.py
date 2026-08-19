@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from sklearn.metrics import roc_auc_score
 
@@ -6,7 +8,7 @@ def auc(
     predict_probs: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    target_time: float = None,
+    target_time: float | None = None,
 ) -> float:
     """
     Calculate the Area Under the Curve (AUC) for the survival model.
@@ -43,7 +45,7 @@ def auc(
 
     # get the binary status of the test data, given the target time
     binary_status = (
-        (event_times <= target_time) & event_indicators.astype(bool)
+        (event_times <= target_time) & event_indicators.astype(bool, copy=False)
     ).astype(int)
 
     # check if the binary status is all zeros or all ones

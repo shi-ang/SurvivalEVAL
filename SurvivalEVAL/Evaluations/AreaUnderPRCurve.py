@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Union
-
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -119,7 +117,7 @@ def auprc_right_censor(
     event_indicators: np.ndarray,
     n_quad: int = 256,
     return_details: bool = False,
-) -> Union[float, tuple[float, np.ndarray]]:
+) -> float | tuple[float, np.ndarray]:
     """
     AUPRC formula for uncensored and right-censored scenarios
 
@@ -193,9 +191,9 @@ def auprc_ic(
     right: np.ndarray,
     *,
     n_quad: int = 256,
-    left_extrapolation_value: float = None,
+    left_extrapolation_value: float | None = None,
     return_details: bool = False,
-) -> Union[float, tuple[float, np.ndarray]]:
+) -> float | tuple[float, np.ndarray]:
     """
     Per-patient Survival-AUPRC for INTERVAL-censored samples:
         AUPRC([left,right]; F) = ∫_0^1 [ F(right/t) - F(left*t) ] dt

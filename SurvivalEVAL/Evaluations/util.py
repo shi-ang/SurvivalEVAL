@@ -1,90 +1,148 @@
 from __future__ import annotations
 
 import warnings
-from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
 import torch
-from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
 from sklearn.isotonic import isotonic_regression
 
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
-def check_and_convert(*args):
-    """
-    Makes sure that the given inputs are numpy arrays, list, tuple, panda Series, pandas DataFrames, or torch Tensors.
+def _as_numpy_array(values: NumericArrayLike, input_name: str) -> np.ndarray:
+    """Return a NumPy view of a supported array-like input when possible."""
+    if isinstance(values, np.ndarray):
+        array = values
+    elif isinstance(values, (list, tuple)):
+        array = np.asarray(values)
+    elif isinstance(values, (pd.Series, pd.DataFrame)):
+        array = values.to_numpy(copy=False)
+        pandas_dtypes = (
+            (values.dtype,) if isinstance(values, pd.Series) else values.dtypes
+        )
+        if array.dtype == object and all(
+            pd.api.types.is_numeric_dtype(dtype)
+            and not pd.api.types.is_complex_dtype(dtype)
+            for dtype in pandas_dtypes
+        ):
+            array = values.to_numpy(dtype=np.float64, na_value=np.nan, copy=False)
+    elif isinstance(values, torch.Tensor):
+        array = values.detach().cpu().numpy()
+    else:
+        raise TypeError(
+            f"{input_name} has unsupported type {type(values).__name__}. Use a "
+            "list, tuple, NumPy array, pandas Series or DataFrame, or Torch tensor."
+        )
+    return array
 
-    Also makes sure that the given inputs have the same shape.
 
-    Then convert the inputs to numpy array.
+def _validate_numeric_array(array: np.ndarray, input_name: str) -> None:
+    """Validate basic properties shared by all numeric array inputs."""
+    if array.ndim == 0:
+        raise TypeError(f"{input_name} must be an array-like object, not a scalar.")
+    if array.size == 0:
+        raise IndexError(f"{input_name} must contain at least one element.")
+
+    is_real_numeric = any(
+        np.issubdtype(array.dtype, dtype)
+        for dtype in (np.bool_, np.integer, np.floating)
+    )
+    if not is_real_numeric:
+        raise TypeError(f"{input_name} must contain real numeric values.")
+    if np.issubdtype(array.dtype, np.floating) and np.isnan(array).any():
+        raise ValueError(f"{input_name} contains null values.")
+
+
+def _as_continuous_array(
+    values: NumericArrayLike, *, copy: bool = False, input_name: str = "input"
+) -> np.ndarray:
+    """Convert continuous numeric input without copying compatible floats."""
+    array = _as_numpy_array(values, input_name)
+    _validate_numeric_array(array, input_name)
+    supported_dtypes = (np.dtype(np.float32), np.dtype(np.float64))
+    dtype = array.dtype if array.dtype in supported_dtypes else np.dtype(np.float64)
+
+    if copy:
+        return np.array(array, dtype=dtype, copy=True)
+    if array.dtype != dtype:
+        return array.astype(dtype, copy=False)
+    return array
+
+
+def _check_matching_shapes(
+    arrays: tuple[np.ndarray, ...], names: tuple[str, ...]
+) -> None:
+    expected_shape = arrays[0].shape
+    for array, name in zip(arrays[1:], names[1:]):
+        if array.shape != expected_shape:
+            raise ValueError(
+                f"{names[0]} and {name} must have the same shape; got "
+                f"{expected_shape} and {array.shape}."
+            )
+
+
+def check_and_convert(
+    *args: NumericArrayLike, copy: bool = False
+) -> np.ndarray | tuple[np.ndarray, ...]:
+    """Convert continuous numeric inputs to NumPy arrays with matching shapes.
+
+    Compatible ``float32`` and ``float64`` NumPy inputs are reused, including
+    read-only, non-contiguous, and memory-mapped arrays. Other real numeric
+    dtypes are promoted to ``float64``. Compatible CPU Torch tensors are
+    detached and may share storage with the returned array; moving a tensor
+    from another device necessarily allocates host memory.
 
     Parameters
     ----------
-    * args : tuple of objects
-             Input object to check / convert.
+    *args
+        Numeric lists, tuples, NumPy arrays, pandas objects, or Torch tensors.
+    copy : bool, default=False
+        Force independent NumPy storage for every returned array.
 
     Returns
     -------
-    * result : tuple of numpy arrays
-               The converted and validated arg.
-
-    If the input isn't numpy arrays, list or pandas DataFrames, it will
-    fail and ask to provide the valid format.
+    np.ndarray or tuple[np.ndarray, ...]
+        One array for one input, otherwise a tuple of same-shaped arrays.
     """
+    arrays = tuple(
+        _as_continuous_array(arg, copy=copy, input_name=f"argument #{i}")
+        for i, arg in enumerate(args, start=1)
+    )
+    if not arrays:
+        return ()
+    if len(arrays) > 1:
+        names = tuple(f"argument #{i}" for i in range(1, len(arrays) + 1))
+        _check_matching_shapes(arrays, names)
+        return arrays
+    return arrays[0]
 
-    result = ()
-    last_length = ()
-    for i, arg in enumerate(args):
-        if len(arg) == 0:
-            error = " The input is empty. "
-            error += "Please provide at least 1 element in the array."
-            raise IndexError(error)
 
-        else:
-            if isinstance(arg, np.ndarray):
-                x = (arg.astype(np.double),)
-            elif isinstance(arg, list):
-                x = (np.asarray(arg).astype(np.double),)
-            elif isinstance(arg, tuple):
-                x = (np.asarray(arg).astype(np.double),)
-            elif isinstance(arg, pd.Series):
-                x = (arg.values.astype(np.double),)
-            elif isinstance(arg, pd.DataFrame):
-                x = (arg.values.astype(np.double),)
-            elif isinstance(arg, torch.Tensor):
-                x = (arg.cpu().numpy().astype(np.double),)
-            else:
-                error = (
-                    f"{type(arg)} is not a valid data format. Only use "
-                    "'list', 'tuple', 'np.ndarray', 'torch.Tensor', "
-                    "'pd.Series', 'pd.DataFrame'"
-                )
-                raise TypeError(error)
+def check_and_convert_event_data(
+    event_times: NumericArrayLike,
+    event_indicators: NumericArrayLike,
+    *,
+    copy: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert event times and return validated binary indicators as booleans."""
+    times = _as_continuous_array(event_times, copy=copy, input_name="event_times")
+    indicators = _as_numpy_array(event_indicators, "event_indicators")
+    _validate_numeric_array(indicators, "event_indicators")
 
-            if np.sum(np.isnan(x)) > 0.0:
-                error = "The #{} argument contains null values"
-                error = error.format(i + 1)
-                raise ValueError(error)
+    if not np.issubdtype(indicators.dtype, np.bool_):
+        if not np.all((indicators == 0) | (indicators == 1)):
+            raise ValueError("event_indicators must contain only 0 and 1.")
+        indicators = indicators.astype(bool, copy=False)
+    elif copy:
+        indicators = indicators.copy()
 
-            if len(args) > 1:
-                if i > 0:
-                    assert x[0].shape == last_length, (
-                        "Shapes between {}-th input array and "
-                        "{}-th input array are not consistent".format(i - 1, i)
-                    )
-                result += x
-                last_length = x[0].shape
-            else:
-                result = x[0]
-
-    return result
+    _check_matching_shapes((times, indicators), ("event_times", "event_indicators"))
+    return times, indicators
 
 
 def validate_time_point(
-    time_point: Union[int, float],
+    time_point: float,
     input_name: str = "target_time",
 ) -> float:
     """Validate a nonnegative scalar time input.
@@ -159,7 +217,7 @@ def validate_time_points(
     if is_scalar:
         raise ValueError(f"{input_name} must be a 1-D array.")
 
-    time_points = check_and_convert(time_points).astype(float)
+    time_points = check_and_convert(time_points, copy=False)
 
     if time_points.ndim != 1:
         raise ValueError(f"{input_name} must be a 1-D array.")
@@ -171,7 +229,7 @@ def validate_time_points(
 
 def check_monotonicity(
     array: NumericArrayLike,
-    direction: Optional[str] = None,
+    direction: str | None = None,
 ) -> bool:
     """
     Check whether values are monotonic along the last axis.
@@ -214,8 +272,8 @@ def make_monotonic(
     survival_curves: np.ndarray,
     times_coordinate: np.ndarray,
     method: str = "ceil",
-    seed: int = None,
-    num_bs: int = None,
+    seed: int | None = None,
+    num_bs: int | None = None,
     direction: str = "decreasing",
 ):
     """
@@ -257,8 +315,12 @@ def make_monotonic(
     if direction not in {"increasing", "decreasing"}:
         raise ValueError("direction must be one of ['increasing', 'decreasing']")
 
-    survival_curves = np.asarray(survival_curves, dtype=float)
-    times_coordinate = np.asarray(times_coordinate, dtype=float)
+    survival_curves = _as_continuous_array(
+        survival_curves, input_name="survival_curves"
+    )
+    times_coordinate = _as_continuous_array(
+        times_coordinate, input_name="times_coordinate"
+    )
     if survival_curves.ndim not in (1, 2):
         raise ValueError("survival_curves must be a 1-D or 2-D array.")
     if times_coordinate.ndim != 1:
@@ -335,7 +397,7 @@ def make_monotonic(
 
 def interpolated_curve(
     times_coordinate: np.ndarray, curve: np.ndarray, interpolation: str = "Linear"
-) -> Union[interp1d, PchipInterpolator]:
+) -> interp1d | PchipInterpolator:
     interpolation = interpolation.lower()
     if interpolation == "linear":
         spline = interp1d(
@@ -351,7 +413,7 @@ def interpolated_curve(
 def predict_prob_from_curve(
     survival_curve: np.ndarray,
     times_coordinate: np.ndarray,
-    target_time: Union[int, float],
+    target_time: float,
     interpolation: str = "Linear",
 ) -> float:
     """
@@ -470,7 +532,7 @@ def predict_multi_probs_from_curve(
 def align_curve_and_time_coordinates(
     curves: NumericArrayLike,
     time_coordinates: NumericArrayLike,
-    n_samples: int = None,
+    n_samples: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Validate and broadcast curve values and time coordinates to matching 2D arrays.
@@ -498,8 +560,10 @@ def align_curve_and_time_coordinates(
     aligned_time_coordinates: np.ndarray, shape = (n_samples, n_time_points)
         Time coordinates with shared rows broadcast across samples.
     """
-    curves = np.asarray(curves, dtype=float)
-    time_coordinates = np.asarray(time_coordinates, dtype=float)
+    curves = _as_continuous_array(curves, input_name="curves")
+    time_coordinates = _as_continuous_array(
+        time_coordinates, input_name="time_coordinates"
+    )
 
     if curves.ndim not in (1, 2) or time_coordinates.ndim not in (1, 2):
         raise ValueError("curves and time_coordinates must be 1D or 2D arrays.")
@@ -533,7 +597,7 @@ def predict_rmst(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the restricted mean survival time (RMST) from the survival curve.
     The restricted mean survival time is defined as the area under the survival curve up to a certain time point.
@@ -571,9 +635,11 @@ def predict_rmst(
     if interpolation == "none":
         width = np.diff(time_grids, axis=1)
         areas = width * curves[:, :-1]
-        rmst = np.sum(areas, axis=1)
+        rmst = np.sum(areas, axis=1, dtype=float)
     elif interpolation == "linear":
-        rmst = trapezoid(curves, time_grids, axis=1)
+        width = np.diff(time_grids, axis=1)
+        endpoint_sum = curves[:, :-1] + curves[:, 1:]
+        rmst = 0.5 * np.sum(width * endpoint_sum, axis=1, dtype=float)
     elif interpolation == "pchip":
         rmst = np.empty(curves.shape[0])
         for i in range(curves.shape[0]):
@@ -589,7 +655,7 @@ def predict_mean_st(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the mean survival time(s) from the survival curve for a group of samples.
     The mean survival time is calculated as the area under the survival curve, which is the RMST + residual area.
@@ -639,7 +705,7 @@ def predict_median_st(
     survival_curves: np.ndarray,
     times_coordinates: np.ndarray,
     interpolation: str = "Linear",
-) -> Union[float, np.ndarray]:
+) -> float | np.ndarray:
     """
     Get the median survival time(s) from the survival curve for a group of samples.
     The median survival time is defined as the time point where the survival curve crosses 0.5.
@@ -947,29 +1013,36 @@ def _prepend_origin(
     """
     # Preserve whether the survival input represents one curve or many rows.
     if pred_survs.ndim == 1:
-        padded_survs = np.concatenate(([1.0], pred_survs))
+        padded_survs = np.concatenate((np.ones(1, dtype=pred_survs.dtype), pred_survs))
     elif pred_survs.ndim == 2:
         padded_survs = np.concatenate(
-            (np.ones((pred_survs.shape[0], 1)), pred_survs), axis=1
+            (np.ones((pred_survs.shape[0], 1), dtype=pred_survs.dtype), pred_survs),
+            axis=1,
         )
     else:
         error = (
-            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-                pred_survs.ndim
-            )
+            "Predicted survival curves must be a 1D or 2D array, "
+            f"got {pred_survs.ndim} instead"
         )
         raise TypeError(error)
 
     # Preserve whether time coordinates are shared or sample-specific.
     if time_coordinates.ndim == 1:
-        padded_times = np.concatenate(([0.0], time_coordinates))
+        padded_times = np.concatenate(
+            (np.zeros(1, dtype=time_coordinates.dtype), time_coordinates)
+        )
     elif time_coordinates.ndim == 2:
         padded_times = np.concatenate(
-            (np.zeros((time_coordinates.shape[0], 1)), time_coordinates), axis=1
+            (
+                np.zeros((time_coordinates.shape[0], 1), dtype=time_coordinates.dtype),
+                time_coordinates,
+            ),
+            axis=1,
         )
     else:
-        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
-            time_coordinates.ndim
+        error = (
+            "Time coordinates must be a 1D or 2D array, "
+            f"got {time_coordinates.ndim} instead"
         )
         raise TypeError(error)
 
@@ -1045,14 +1118,14 @@ def zero_padding(
 
     if ndim_surv not in (1, 2):
         error = (
-            "Predicted survival curves must be a 1D or 2D array, got {} instead".format(
-                ndim_surv
-            )
+            "Predicted survival curves must be a 1D or 2D array, "
+            f"got {ndim_surv} instead"
         )
         raise TypeError(error)
     if ndim_time not in (1, 2):
-        error = "Time coordinates must be a 1D or 2D array, got {} instead".format(
-            ndim_time
+        error = (
+            "Time coordinates must be a 1D or 2D array, "
+            f"got {ndim_time} instead"
         )
         raise TypeError(error)
     if pred_survs.shape[-1] == 0 or time_coordinates.shape[-1] == 0:

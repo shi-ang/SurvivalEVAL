@@ -9,8 +9,8 @@ from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 def pp_plot(
     obs: NumericArrayLike,
     exp: NumericArrayLike,
-    xlim: tuple = None,
-    ylim: tuple = None,
+    xlim: tuple | None = None,
+    ylim: tuple | None = None,
     color: str = "blue",
     **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:

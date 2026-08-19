@@ -6,8 +6,10 @@ Pure-Python implementation of Algorithm 1 from:
 This module provides a fiducial inference method for interval-censored survival data.
 """
 
+from __future__ import annotations
+
 import warnings
-from typing import Dict, Literal, Optional
+from typing import Literal
 
 import numpy as np
 import osqp
@@ -136,8 +138,8 @@ def _linear_interpolation_qp(
     lam: float,
     rng: np.random.Generator,
     solver: str = "osqp",
-    osqp_solver: Optional[object] = None,
-) -> tuple[np.ndarray, Optional[object]]:
+    osqp_solver: object | None = None,
+) -> tuple[np.ndarray, object | None]:
     """
     Solve the quadratic programming problem for linear interpolation.
 
@@ -222,7 +224,7 @@ def _solve_qp_osqp(
     q: np.ndarray,
     lb: np.ndarray,
     ub: np.ndarray,
-    solver: Optional[object] = None,
+    solver: object | None = None,
 ) -> tuple[np.ndarray, object]:
     """
     Solve QP using OSQP with warm-starting.
@@ -469,14 +471,14 @@ def fit_fiducial_interval_censor(
     alpha: float = 0.05,
     ngrid: int = 100,
     ntest: int = 200,
-    grid_low: Optional[float] = None,
-    grid_high: Optional[float] = None,
-    grid_high_override: Optional[float] = None,
+    grid_low: float | None = None,
+    grid_high: float | None = None,
+    grid_high_override: float | None = None,
     lam: float = 1.0,
     seed: int = 123,
     solver: Literal["osqp", "scipy"] = "osqp",
     enforce_monotonicity: bool = False,
-) -> Dict:
+) -> dict:
     """
     Fit fiducial inference for interval-censored data.
 

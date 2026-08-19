@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, Optional
 
 import numpy as np
 
@@ -27,7 +27,7 @@ class _ConcordanceCounts:
     risk_tie_pairs: float = 0.0
     time_tie_pairs: float = 0.0
 
-    def __iadd__(self, other: "_ConcordanceCounts") -> "_ConcordanceCounts":
+    def __iadd__(self, other: _ConcordanceCounts) -> _ConcordanceCounts:
         """Add another count object in place.
 
         Parameters
@@ -68,7 +68,7 @@ def _finalize_counts(
     total_pairs: float
         The total pair count after applying the requested tie policy.
     """
-    ties = ties.lower()
+    ties = _normalize_ties(ties)
 
     concordant_pairs = counts.concordant
     if ties == "none":
@@ -87,12 +87,19 @@ def _finalize_counts(
             + counts.time_tie_pairs
         )
         concordant_pairs += 0.5 * (counts.risk_tie_pairs + counts.time_tie_pairs)
-    else:
-        error = "Please enter one of 'None', 'Time', 'Risk', or 'All' for handling ties for concordance."
-        raise ValueError(error)
-
     c_index = concordant_pairs / total_pairs if total_pairs != 0 else float("nan")
     return c_index, concordant_pairs, total_pairs
+
+
+def _normalize_ties(ties: str) -> str:
+    """Normalize and validate a concordance tie policy."""
+    normalized = ties.lower()
+    if normalized not in {"none", "time", "risk", "all"}:
+        raise ValueError(
+            "Please enter one of 'None', 'Time', 'Risk', or 'All' for "
+            "handling ties for concordance."
+        )
+    return normalized
 
 
 def _check_has_any_pairs(counts: _ConcordanceCounts) -> None:
@@ -124,7 +131,7 @@ def _check_has_any_pairs(counts: _ConcordanceCounts) -> None:
         )
 
 
-def _is_before_tau(times: np.ndarray, tau: Optional[float]) -> np.ndarray:
+def _is_before_tau(times: np.ndarray, tau: float | None) -> np.ndarray:
     """Return a boolean mask for times that pass the strict tau truncation."""
     if tau is None:
         return np.ones(times.shape, dtype=bool)

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional, Union
-
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.integrate import trapezoid
@@ -40,9 +38,10 @@ def d_calibration(
         The binning histogram of the D-Calibration test.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
-    censor_indicators = 1 - event_indicators
+    event_indicators = event_indicators.astype(bool, copy=False)
+    censor_indicators = ~event_indicators
 
-    event_probs = pred_probs[event_indicators.astype(bool)]
+    event_probs = pred_probs[event_indicators]
     event_position = np.digitize(event_probs, quantile)
     event_position[event_position == 0] = 1  # class probability==1 to the first bin
 
@@ -50,7 +49,7 @@ def d_calibration(
     for i in range(len(event_position)):
         event_hist[event_position[i] - 1] += 1
 
-    censored_probs = pred_probs[censor_indicators.astype(bool)]
+    censored_probs = pred_probs[censor_indicators]
 
     censor_hist = np.zeros([num_bins])
     if len(censored_probs) > 0:
@@ -121,13 +120,13 @@ def d_cal_ic(
     binning: np.ndarray
         The binning histogram of the D-Calibration test.
     """
-    assert len(pred_probs_left) == len(
-        pred_probs_right
-    ), "The length of pred_probs_left and pred_probs_right should have same length."
+    assert len(pred_probs_left) == len(pred_probs_right), (
+        "The length of pred_probs_left and pred_probs_right should have same length."
+    )
 
-    assert np.all(
-        pred_probs_left >= pred_probs_right
-    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert np.all(pred_probs_left >= pred_probs_right), (
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    )
 
     assert (
         np.all(pred_probs_left >= 0)
@@ -153,7 +152,7 @@ def ksd_calibration(
     pred_probs: np.ndarray,
     event_indicators: np.ndarray,
     return_details: bool = False,
-) -> Union[tuple[float, float], tuple[float, dict]]:
+) -> tuple[float, float] | tuple[float, dict]:
     """
     Calculate the K-S D-Calibration score.
 
@@ -180,9 +179,9 @@ def ksd_calibration(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs) == len(
-        event_indicators
-    ), "The length of pred_probs and event_indicators should have same length."
+    assert len(pred_probs) == len(event_indicators), (
+        "The length of pred_probs and event_indicators should have same length."
+    )
 
     n = len(pred_probs)
     km = KaplanMeier(pred_probs, event_indicators)
@@ -253,13 +252,13 @@ def ksd_cal_ic(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs_left) == len(
-        pred_probs_right
-    ), "The length of pred_probs_left and pred_probs_right should have same length."
+    assert len(pred_probs_left) == len(pred_probs_right), (
+        "The length of pred_probs_left and pred_probs_right should have same length."
+    )
 
-    assert np.all(
-        pred_probs_left >= pred_probs_right
-    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    assert np.all(pred_probs_left >= pred_probs_right), (
+        "The left survival probabilities should be greater than or equal to the right survival probabilities."
+    )
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
@@ -407,6 +406,7 @@ def residuals(
         The calculated residuals.
     """
     cox_residuals = -np.log(pred_probs)
+    event_indicators = event_indicators.astype(bool, copy=False)
     method = method.lower()
 
     if method == "coxsnell":
@@ -418,7 +418,7 @@ def residuals(
         # (1) use the mean of the unit exponential distribution, which is 1,
         # or (2) use the median of the unit exponential distribution, which is ln(2).
         excess_residual = 1 if method == "modified coxsnell-v1" else np.log(2)
-        residuals = cox_residuals + excess_residual * (1 - event_indicators)
+        residuals = cox_residuals + excess_residual * (~event_indicators)
     elif method == "martingale":
         residuals = event_indicators - cox_residuals
     elif method == "deviance":
@@ -433,12 +433,12 @@ def residuals(
             -2 * (martingale_res + event_indicators * safe_log(cox_residuals))
         )
     else:
-        raise ValueError("Unknown method {}".format(method))
+        raise ValueError(f"Unknown method {method}")
 
     if draw_figure:
         cum_haz_empirical = NelsonAalen(cox_residuals, event_indicators)
         max_res = np.max(cox_residuals)
-        fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
+        _fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
         ax[0].plot(
             cum_haz_empirical.survival_times,
             cum_haz_empirical.cumulative_hazard,
@@ -453,7 +453,6 @@ def residuals(
 
         # use solid scatter points for uncensored instances and hollow scatter points for censored instances
         idx = np.arange(len(residuals))
-        event_indicators = event_indicators.astype(bool)
         ax[1].scatter(
             idx[event_indicators],
             residuals[event_indicators],
@@ -483,7 +482,7 @@ def km_calibration(
     event_indicators: np.ndarray,
     interpolation_method: str = "Linear",
     draw_figure: bool = False,
-) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
     The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.
@@ -558,7 +557,7 @@ def km_calibration(
         )
         ax.plot(unique_event_times, km_curve, label="KM Curve")
         ax.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
-        score_text = r"KM-Calibration$= {:.3f}$".format(mse)
+        score_text = rf"KM-Calibration$= {mse:.3f}$"
         ax.plot([], [], " ", label=score_text)
         ax.legend()
         ax.set_xlabel("Time")
@@ -574,8 +573,8 @@ def coverage_ic(
     pred_r: np.ndarray,
     obs_l: np.ndarray,
     obs_r: np.ndarray,
-    obs_l_train: Optional[np.ndarray] = None,
-    obs_r_train: Optional[np.ndarray] = None,
+    obs_l_train: np.ndarray | None = None,
+    obs_r_train: np.ndarray | None = None,
     cov_level: float = 0.95,
     method: str = "Turnbull",
     eps: float = 1e-12,
@@ -677,7 +676,7 @@ def coverage_ic(
         denom = S_L - S_R
         numer = S_overlap_left - S_overlap_right
     else:
-        raise ValueError("Unknown method: {}".format(method))
+        raise ValueError(f"Unknown method: {method}")
 
     coverage = np.zeros_like(denom, dtype=float)
     valid = denom > eps
@@ -699,7 +698,7 @@ def coverage_ic(
 
 
 def discrepancy_to_uniform(
-    x: np.ndarray, cdf: np.ndarray, x_support: Optional[tuple[float, float]] = None
+    x: np.ndarray, cdf: np.ndarray, x_support: tuple[float, float] | None = None
 ) -> float:
     """
     Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
@@ -712,7 +711,7 @@ def discrepancy_to_uniform(
         The support points of the empirical CDF.
     cdf: np.ndarray
         The values of the empirical CDF at the support points.
-    x_support: Optional[tuple[float, float]]
+    x_support: tuple[float, float] | None
         The support points of the uniform distribution. If None, it is assumed to be [0, 1].
     Returns
     -------
@@ -723,9 +722,9 @@ def discrepancy_to_uniform(
     if x.ndim != 1 or cdf.ndim != 1 or x.size != cdf.size:
         raise ValueError("x and cdf must be 1D arrays of the same length.")
 
-    assert np.all(cdf >= 0) and np.all(
-        cdf <= 1
-    ), "The cdf values must be in the range [0, 1]."
+    assert np.all(cdf >= 0) and np.all(cdf <= 1), (
+        "The cdf values must be in the range [0, 1]."
+    )
 
     if not (np.all(np.diff(x) >= 0) and np.all(np.diff(cdf) >= 0)):
         raise ValueError("x and cdf must be nondecreasing.")

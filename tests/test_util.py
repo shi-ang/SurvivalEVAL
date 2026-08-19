@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 import pytest
+import torch
 
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import (
     auprc_ic,
@@ -8,15 +10,158 @@ from SurvivalEVAL.Evaluations.AreaUnderPRCurve import (
 )
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
+    check_and_convert,
+    check_and_convert_event_data,
     check_monotonicity,
     make_monotonic,
     predict_multi_probs_from_curve,
     predict_prob_from_curve,
+    predict_rmst,
     survival_to_quantile,
     validate_time_point,
     validate_time_points,
     zero_padding,
 )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_check_and_convert_reuses_supported_float_arrays(dtype):
+    values = np.array([1.0, 2.0, 3.0], dtype=dtype)
+
+    converted = check_and_convert(values)
+
+    assert converted is values
+    assert converted.dtype == dtype
+
+
+def test_check_and_convert_preserves_read_only_noncontiguous_arrays():
+    values = np.arange(12, dtype=np.float32).reshape(3, 4)[:, ::2]
+    values.flags.writeable = False
+
+    converted = check_and_convert(values)
+
+    assert converted is values
+    assert not converted.flags.c_contiguous
+    assert not converted.flags.writeable
+
+
+def test_check_and_convert_preserves_memmap(tmp_path):
+    values = np.memmap(tmp_path / "values.dat", dtype=np.float32, mode="w+", shape=(3,))
+    values[:] = [1.0, 2.0, 3.0]
+
+    converted = check_and_convert(values)
+
+    assert converted is values
+    assert isinstance(converted, np.memmap)
+
+
+def test_check_and_convert_promotes_integer_inputs_to_float64():
+    converted = check_and_convert([1, 2, 3])
+
+    assert converted.dtype == np.float64
+    np.testing.assert_array_equal(converted, [1.0, 2.0, 3.0])
+
+
+def test_check_and_convert_copies_only_when_requested():
+    values = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+
+    converted = check_and_convert(values, copy=True)
+
+    assert converted.dtype == values.dtype
+    assert not np.shares_memory(converted, values)
+
+
+def test_check_and_convert_reuses_pandas_float_storage():
+    values = pd.Series([1.0, 2.0, 3.0], dtype="float32")
+    pandas_array = values.to_numpy(copy=False)
+
+    converted = check_and_convert(values)
+
+    assert converted.dtype == np.float32
+    assert np.shares_memory(converted, pandas_array)
+
+
+def test_check_and_convert_promotes_object_backed_numeric_pandas_data():
+    values = pd.DataFrame(
+        {
+            "count": pd.Series([1, 2], dtype="Int64"),
+            "weight": pd.Series([1.5, 2.5], dtype="Float32"),
+        }
+    )
+    assert values.to_numpy(copy=False).dtype == object
+
+    converted = check_and_convert(values)
+
+    assert converted.dtype == np.float64
+    np.testing.assert_allclose(converted, [[1.0, 1.5], [2.0, 2.5]])
+
+
+def test_check_and_convert_rejects_missing_nullable_pandas_data():
+    values = pd.Series([True, pd.NA], dtype="boolean")
+
+    with pytest.raises(ValueError, match="contains null values"):
+        check_and_convert(values)
+
+
+def test_check_and_convert_rejects_nonnumeric_pandas_extensions():
+    values = pd.Series(["1", "2"], dtype="string")
+
+    with pytest.raises(TypeError, match="must contain real numeric values"):
+        check_and_convert(values)
+
+
+def test_check_and_convert_reuses_cpu_torch_storage():
+    values = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32, requires_grad=True)
+
+    converted = check_and_convert(values)
+
+    assert converted.dtype == np.float32
+    assert np.shares_memory(converted, values.detach().numpy())
+
+
+def test_check_and_convert_event_data_preserves_compatible_arrays():
+    event_times = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    event_indicators = np.array([True, False, True])
+
+    converted_times, converted_indicators = check_and_convert_event_data(
+        event_times, event_indicators
+    )
+
+    assert converted_times is event_times
+    assert converted_indicators is event_indicators
+
+
+def test_check_and_convert_event_data_validates_binary_indicators():
+    event_times = np.array([1.0, 2.0, 3.0])
+
+    _, converted = check_and_convert_event_data(event_times, [1, 0, 1])
+
+    assert converted.dtype == bool
+    np.testing.assert_array_equal(converted, [True, False, True])
+
+    with pytest.raises(ValueError, match="only 0 and 1"):
+        check_and_convert_event_data(event_times, [1, 2, 0])
+
+
+def test_check_and_convert_event_data_rejects_mismatched_shapes():
+    with pytest.raises(ValueError, match="same shape"):
+        check_and_convert_event_data([1.0, 2.0], [1])
+
+
+@pytest.mark.parametrize("interpolation", ["None", "Linear"])
+def test_predict_rmst_accumulates_float32_inputs_in_float64(interpolation):
+    curves = np.array(
+        [[1.0, 0.8, 0.5], [1.0, 0.6, 0.2]], dtype=np.float32
+    )
+    times = np.array([0.0, 1.0, 3.0], dtype=np.float32)
+
+    result = predict_rmst(curves, times, interpolation)
+    expected = predict_rmst(
+        curves.astype(np.float64), times.astype(np.float64), interpolation
+    )
+
+    assert result.dtype == np.float64
+    np.testing.assert_allclose(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -58,8 +203,8 @@ def test_align_curve_and_time_coordinates_accepts_external_sample_count():
 
 
 def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
-    curve = np.array([0.8, 0.5, 0.1])
-    time_coordinates = np.array([1.0, 2.0, 3.0])
+    curve = np.array([0.8, 0.5, 0.1], dtype=np.float32)
+    time_coordinates = np.array([1.0, 2.0, 3.0], dtype=np.float32)
 
     with pytest.warns(UserWarning, match="first time coordinate"):
         padded_curve, padded_times = zero_padding(curve, time_coordinates)
@@ -69,6 +214,8 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     assert isinstance(padded_curve, np.ndarray)
     assert isinstance(padded_times, np.ndarray)
     assert padded_curve.ndim == 1
+    assert padded_curve.dtype == curve.dtype
+    assert padded_times.dtype == time_coordinates.dtype
 
 
 @pytest.mark.parametrize(
@@ -392,6 +539,14 @@ def test_validate_time_points_rejects_non_1d_inputs():
 def test_validate_time_points_rejects_negative_values():
     with pytest.raises(ValueError, match="non-negative"):
         validate_time_points(np.array([1.0, -0.1]))
+
+
+def test_validate_time_points_reuses_compatible_numpy_array():
+    time_points = np.array([1.0, 2.0, 3.0], dtype=float)
+
+    validated = validate_time_points(time_points)
+
+    assert validated is time_points
 
 
 def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():

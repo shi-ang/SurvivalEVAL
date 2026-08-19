@@ -4,6 +4,7 @@ import pytest
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations._concordance_utils import _ConcordanceCounts
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+    _select_risk_anchors,
     _time_dependent_risk_counts,
     concordance_time_dependent,
 )
@@ -31,6 +32,22 @@ def _add_time_dependent_pair(
 
 def _before_tau(time, tau):
     return tau is None or time < tau
+
+
+def _reference_risk_anchor_mask(event_times, event_indicators, tau):
+    event_indicators = event_indicators.astype(bool)
+    anchor_times = event_times[event_indicators]
+    included_by_sample = np.zeros(event_times.shape[0], dtype=bool)
+    for anchor_time in np.unique(anchor_times):
+        if tau is not None and anchor_time >= tau:
+            continue
+        same_time = event_times == anchor_time
+        has_candidate = np.any(event_times > anchor_time) or np.any(
+            same_time & ~event_indicators
+        )
+        if has_candidate:
+            included_by_sample[same_time & event_indicators] = True
+    return anchor_times, included_by_sample[event_indicators]
 
 
 def _brute_time_dependent_counts(
@@ -380,3 +397,60 @@ def test_survival_evaluator_hazard_concordance_skips_final_anchor_without_candid
     result = evaluator.concordance_time_dependent(method="Antolini", risks="Hazard")
 
     np.testing.assert_allclose(result, (1.0, 3.0, 3.0))
+
+
+def test_select_risk_anchors_matches_reference_on_randomized_inputs():
+    rng = np.random.default_rng(20260812)
+    for _ in range(100):
+        n_samples = int(rng.integers(1, 30))
+        event_times = rng.integers(1, 8, size=n_samples).astype(float)
+        event_indicators = rng.integers(0, 2, size=n_samples).astype(bool)
+        event_indicators[int(rng.integers(0, n_samples))] = True
+        tau = None if rng.random() < 0.5 else float(rng.integers(1, 9))
+
+        expected_times, expected_mask = _reference_risk_anchor_mask(
+            event_times, event_indicators, tau
+        )
+        actual_times, actual_mask = _select_risk_anchors(
+            event_times, event_indicators, tau
+        )
+
+        np.testing.assert_array_equal(actual_times, expected_times)
+        np.testing.assert_array_equal(actual_mask, expected_mask)
+
+
+@pytest.mark.parametrize(
+    ("risks", "prediction_method"),
+    [
+        ("Survival", "predict_multi_probabilities_from_curve"),
+        ("Hazard", "predict_multi_hazards_from_curve"),
+    ],
+)
+def test_evaluator_predicts_each_active_anchor_time_once(
+    monkeypatch,
+    risks,
+    prediction_method,
+):
+    time_grid = np.array([0.0, 1.0, 2.0, 3.0])
+    hazards = np.array([0.5, 0.4, 0.2, 0.1])
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.exp(-hazards[:, None] * time_grid),
+        time_coordinates=time_grid,
+        event_times=np.array([1.0, 1.0, 2.0, 3.0]),
+        event_indicators=np.ones(4),
+    )
+
+    original_predict = getattr(evaluator, prediction_method)
+    predicted_at = []
+
+    def recording_predict(target_times):
+        predicted_at.append(target_times.copy())
+        return original_predict(target_times)
+
+    monkeypatch.setattr(evaluator, prediction_method, recording_predict)
+
+    result = evaluator.concordance_time_dependent(risks=risks)
+
+    assert len(predicted_at) == 1
+    np.testing.assert_array_equal(predicted_at[0], [1.0, 2.0])
+    np.testing.assert_allclose(result, (1.0, 5.0, 5.0))

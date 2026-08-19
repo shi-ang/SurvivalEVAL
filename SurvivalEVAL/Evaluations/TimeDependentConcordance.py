@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
 from SurvivalEVAL.Evaluations._concordance_utils import (
@@ -11,20 +9,57 @@ from SurvivalEVAL.Evaluations._concordance_utils import (
     _finalize_counts,
     _is_before_tau,
     _iter_time_blocks,
+    _normalize_ties,
     _same_time_pair_weight,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+
+
+def _normalize_time_dependent_method(method: str) -> str:
+    """Normalize and validate a time-dependent concordance method."""
+    normalized = method.lower()
+    if normalized not in {"antolini", "naive", "ipcw"}:
+        raise ValueError(
+            f"Unsupported method: {normalized}. Supported methods are "
+            "'Antolini', 'Naive', and 'IPCW'."
+        )
+    return normalized
+
+
+def _select_risk_anchors(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    tau: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return all event anchors and those that require predicted risk scores.
+
+    Every event before the final observed time has a later candidate. Events
+    at the final time require risks only when that block also contains a
+    censored sample. Final event-only blocks can contribute time ties, but the
+    concordance counter never reads their risk columns.
+    """
+    anchor_times = event_times[event_indicators]
+    if anchor_times.size == 0:
+        return anchor_times, np.zeros(0, dtype=bool)
+
+    final_time = np.max(event_times)
+    included = anchor_times < final_time
+    if np.any((event_times == final_time) & ~event_indicators):
+        included |= anchor_times == final_time
+    if tau is not None:
+        included &= anchor_times < tau
+    return anchor_times, included
 
 
 def concordance_time_dependent(
     risk_scores: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray] = None,
-    train_event_indicators: Optional[np.ndarray] = None,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
     method: str = "Antolini",
     ties: str = "Risk",
-    tau: Optional[float] = None,
+    tau: float | None = None,
 ) -> tuple[float, float, float]:
     """
     Calculate the time-dependent concordance index between the predicted risk scores and the true survival times.
@@ -77,7 +112,7 @@ def concordance_time_dependent(
     num_total_pairs: float
         The number of total pairs.
     """
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
 
     if risk_scores.ndim != 2:
         raise ValueError(
@@ -103,8 +138,8 @@ def concordance_time_dependent(
             "The number of anchor times (columns in risk_scores) must match the number of observed events."
         )
 
-    method = method.lower()
-    ties = ties.lower()
+    method = _normalize_time_dependent_method(method)
+    ties = _normalize_ties(ties)
 
     if method == "antolini" or method == "naive":
         sample_weights = None
@@ -114,7 +149,7 @@ def concordance_time_dependent(
             raise ValueError(
                 "train_event_times and train_event_indicators must be provided for IPCW method."
             )
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)
@@ -153,11 +188,6 @@ def concordance_time_dependent(
         anchor_pair_weights[observed_anchors] = 1 / np.square(
             censoring_survival[observed_anchors]
         )
-    else:
-        raise ValueError(
-            f"Unsupported method: {method}. Supported methods are 'Antolini', 'Naive', and 'IPCW'."
-        )
-
     counts = _time_dependent_risk_counts(
         risk_scores=risk_scores,
         event_times=event_times,
@@ -175,9 +205,9 @@ def _time_dependent_risk_counts(
     risk_scores: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    sample_weights: Optional[np.ndarray] = None,
-    anchor_pair_weights: Optional[np.ndarray] = None,
-    tau: Optional[float] = None,
+    sample_weights: np.ndarray | None = None,
+    anchor_pair_weights: np.ndarray | None = None,
+    tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
     """Count Antolini-style time-dependent concordance pairs.

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Union
-
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 import pandas as pd
@@ -10,7 +8,10 @@ from patsy import dmatrix  # For spline basis matrix
 from scipy.stats import chi2
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert,
+    check_and_convert_event_data,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
@@ -126,14 +127,14 @@ def one_calibration(
             if retained_bin_size == 0:
                 continue
 
-            mean_prob = np.mean(filtered_predictions)
+            mean_prob = np.mean(filtered_predictions, dtype=float)
             event_count = np.sum(filtered_event_times < target_time)
             event_probability = event_count / retained_bin_size
             hl_statistics += (event_count - retained_bin_size * mean_prob) ** 2 / (
                 retained_bin_size * mean_prob * (1 - mean_prob)
             )
         elif method == "dn":
-            mean_prob = np.mean(binned_predictions[b])
+            mean_prob = np.mean(binned_predictions[b], dtype=float)
             km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
             event_probability = 1 - km_model.predict(target_time)
             hl_statistics += (
@@ -243,7 +244,7 @@ def one_cal_ic(
 
         l_limits = np.array(binned_left[b])
         r_limits = np.array(binned_right[b])
-        mean_prob = np.mean(binned_predictions[b])
+        mean_prob = np.mean(binned_predictions[b], dtype=float)
 
         if method == "midpoint":
             mid = l_limits + (r_limits - l_limits) / 2.0
@@ -286,8 +287,8 @@ def integrated_calibration_index(
     target_time: Numeric,
     knots: int = 3,
     draw_figure: bool = False,
-    figure_range: tuple = None,
-) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
+    figure_range: tuple | None = None,
+) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
     The method is presented in [1]. The implementation is based on the R code available in Appendix A of [1].
@@ -329,9 +330,14 @@ def integrated_calibration_index(
     [1] Austin et al., Graphical calibration curves and the integrated calibration index (ICI) for survival models.
     Stat Med. 2020
     """
-    preds, event_time, event_indicator = check_and_convert(
-        preds, event_time, event_indicator
+    preds = check_and_convert(preds)
+    event_time, event_indicator = check_and_convert_event_data(
+        event_time, event_indicator
     )
+    if preds.shape != event_time.shape:
+        raise ValueError(
+            "preds, event_time, and event_indicator must have the same shape."
+        )
     # get cdfs and cumulative log-log (CLL) values
     pred_clls = np.log(-np.log(1 - preds))
 
@@ -360,7 +366,7 @@ def integrated_calibration_index(
         ).T.values.flatten()
     )
     abs_err = np.abs(preds - cal_pred)
-    ici = abs_err.mean()
+    ici = np.mean(abs_err, dtype=float)
     e50 = np.median(abs_err)
     e90 = np.quantile(abs_err, 0.9)
     e_max = np.max(abs_err)

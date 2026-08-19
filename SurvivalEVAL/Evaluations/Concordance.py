@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -24,11 +24,11 @@ def concordance(
     predicted_times: np.ndarray,
     event_times: np.ndarray,
     event_indicators: np.ndarray,
-    train_event_times: Optional[np.ndarray] = None,
-    train_event_indicators: Optional[np.ndarray] = None,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
     method: str = "Harrell",
     ties: str = "Risk",
-    tau: Optional[float] = None,
+    tau: float | None = None,
 ) -> tuple[float, float, float]:
     """
     Calculate the concordance index between the predicted survival times and the true survival times.
@@ -89,11 +89,11 @@ def concordance(
     # So at first we should transfer the predicted time -> risk score.
     # The risk score should be higher for subjects that live shorter (i.e. lower average survival time).
 
-    event_indicators = event_indicators.astype(bool)
+    event_indicators = event_indicators.astype(bool, copy=False)
 
-    assert (
-        len(predicted_times) == len(event_times) == len(event_indicators)
-    ), "The lengths of the predicted times and labels must be the same."
+    assert len(predicted_times) == len(event_times) == len(event_indicators), (
+        "The lengths of the predicted times and labels must be the same."
+    )
 
     method = method.lower()
     ties = ties.lower()
@@ -108,7 +108,7 @@ def concordance(
             error = "If 'Uno' or 'IPCW' is chosen, training set information must be provided."
             raise ValueError(error)
 
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
         censoring_survival = censoring_model.predict(event_times)
@@ -155,7 +155,7 @@ def concordance(
             error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)
 
-        train_event_indicators = train_event_indicators.astype(bool)
+        train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
         km_linear_zero = -1 / (
@@ -197,9 +197,9 @@ def _right_censored_risk_counts(
     event_indicator: np.ndarray,
     event_time: np.ndarray,
     estimate: np.ndarray,
-    sample_weights: Optional[np.ndarray] = None,
-    anchor_pair_weights: Optional[np.ndarray] = None,
-    tau: Optional[float] = None,
+    sample_weights: np.ndarray | None = None,
+    anchor_pair_weights: np.ndarray | None = None,
+    tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
     """Count right-censored comparable pairs for a risk score.
@@ -279,7 +279,7 @@ def _margin_counts(
     estimate: np.ndarray,
     bg_event_time: np.ndarray,
     partial_weights: np.ndarray,
-    tau: Optional[float] = None,
+    tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
     """Count Margin concordance pairs from best-guess times.
@@ -398,9 +398,10 @@ def _iter_comparable_event_pairs(
             candidate_indices = np.concatenate((same_time_censored, later_samples))
             for anchor_index in event_anchors:
                 if candidate_indices.shape[0] > 0:
-                    yield np.full(
-                        candidate_indices.shape[0], anchor_index, dtype=int
-                    ), candidate_indices
+                    yield (
+                        np.full(candidate_indices.shape[0], anchor_index, dtype=int),
+                        candidate_indices,
+                    )
 
 
 def _get_comparable_ic(
@@ -558,8 +559,8 @@ def concordance_ic(
     eta: np.ndarray,
     left: np.ndarray,
     right: np.ndarray,
-    left_train: Optional[np.ndarray] = None,
-    right_train: Optional[np.ndarray] = None,
+    left_train: np.ndarray | None = None,
+    right_train: np.ndarray | None = None,
     method: str = "comparable",
     ties: str = "skip",
     eps: float = 1e-12,
@@ -575,9 +576,9 @@ def concordance_ic(
         Left endpoints l_i (can be -inf).
     right : np.ndarray of shape (n_sample,)
         Right endpoints r_i (can be +inf to represent right censoring).
-    left_train : Optional[np.ndarray] = None, shape (n_train_sample,)
+    left_train : np.ndarray | None = None, shape (n_train_sample,)
         Left endpoints of training data for Turnbull estimator.
-    right_train : Optional[np.ndarray] = None, shape (n_train_sample,)
+    right_train : np.ndarray | None = None, shape (n_train_sample,)
         Right endpoints of training data for Turnbull estimator.
     method : {"comparable", "probability"}, default="comparable"
         Method for forming pair weights:
@@ -614,6 +615,11 @@ def concordance_ic(
     method = method.lower()
     ties = ties.lower()
 
+    if method not in {"comparable", "probability"}:
+        raise ValueError("method must be 'comparable' or 'probability'.")
+    if ties not in {"skip", "half"}:
+        raise ValueError("'ties' must be 'skip' or 'half'.")
+
     if method == "probability":
         if left_train is None or right_train is None:
             raise ValueError(
@@ -631,29 +637,27 @@ def concordance_ic(
         S_r = tb.predict(right)
 
         w = _pairwise_w(S_l, S_r, eps=eps)
-    elif method == "comparable":
+    else:
         comparable = _get_comparable_ic(left, right, tol=eps)
         w = comparable.astype(float)
-    else:
-        raise ValueError("method must be 'comparable' or 'probability'.")
+        del comparable
 
-    # Concordant matrix based on eta
-    gt = (eta[:, None] > eta[None, :]).astype(float)
+    # Build the numerator contribution matrix in place.
+    concordant_weights = (eta[:, None] > eta[None, :]).astype(float)
     if ties == "half":
-        gt += 0.5 * (eta[:, None] == eta[None, :]).astype(float)
-        # still zero on diagonal because w_ii is 0
-    elif ties == "skip":
-        pass
-    else:
-        raise ValueError("'ties' must be 'skip' or 'half'.")
+        tied_pairs = eta[:, None] == eta[None, :]
+        concordant_weights[tied_pairs] = 0.5
+        del tied_pairs
+        # The diagonal is removed when multiplying by the zero-diagonal weights.
 
     # Numerator and denominator (sum over ordered pairs i != j)
-    num = np.sum(gt * w)
+    concordant_weights *= w
+    num = np.sum(concordant_weights)
     den = np.sum(w)
 
     c_idx = num / den if den > 0 else float("nan")
 
-    return c_idx, gt * w, w
+    return c_idx, concordant_weights, w
 
 
 def impute_times_midpoint(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from abc import ABC
 from functools import cached_property
-from typing import Callable, Optional, Union
+from typing import Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +11,7 @@ import pandas as pd
 from lifelines.statistics import logrank_test
 from scipy.integrate import simpson, trapezoid
 
+from SurvivalEVAL.Evaluations._concordance_utils import _normalize_ties
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
@@ -30,10 +31,15 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     integrated_calibration_index,
     one_calibration,
 )
-from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
+from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+    _normalize_time_dependent_method,
+    _select_risk_anchors,
+    concordance_time_dependent,
+)
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
+    check_and_convert_event_data,
     fit_least_squares,
     predict_mean_st,
     predict_median_st,
@@ -56,8 +62,8 @@ class SurvivalEvaluator:
         time_coordinates: NumericArrayLike,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -79,9 +85,9 @@ class SurvivalEvaluator:
         event_indicators: NumericArrayLike, shape = (n_samples, )
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: Optional[NumericArrayLike], shape = (n_train_samples, ), default: None
+        train_event_times: NumericArrayLike | None, shape = (n_train_samples, ), default: None
             Actual event/censor time for the training samples.
-        train_event_indicators: Optional[NumericArrayLike], shape = (n_train_samples, ), default: None
+        train_event_indicators: NumericArrayLike | None, shape = (n_train_samples, ), default: None
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         predict_time_method: str, default = "Median"
@@ -89,7 +95,9 @@ class SurvivalEvaluator:
         interpolation: str, default = "Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
-        event_times, event_indicators = check_and_convert(event_times, event_indicators)
+        event_times, event_indicators = check_and_convert_event_data(
+            event_times, event_indicators
+        )
         self.event_times = event_times
         self.event_indicators = event_indicators
         self.set_prediction_inputs(
@@ -97,7 +105,7 @@ class SurvivalEvaluator:
         )
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -122,7 +130,7 @@ class SurvivalEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @staticmethod
@@ -250,7 +258,11 @@ class SurvivalEvaluator:
             np.isclose(self._time_coordinates[..., 0], 0.0)
         ):
             pred_survs = np.concatenate(
-                (np.ones((*pred_survs.shape[:-1], 1)), pred_survs), axis=-1
+                (
+                    np.ones((*pred_survs.shape[:-1], 1), dtype=pred_survs.dtype),
+                    pred_survs,
+                ),
+                axis=-1,
             )
         self.set_prediction_inputs(pred_survs, self._time_coordinates)
 
@@ -269,7 +281,13 @@ class SurvivalEvaluator:
             np.isclose(time_coordinates[..., 0], 0.0)
         ):
             time_coordinates = np.concatenate(
-                (np.zeros((*time_coordinates.shape[:-1], 1)), time_coordinates),
+                (
+                    np.zeros(
+                        (*time_coordinates.shape[:-1], 1),
+                        dtype=time_coordinates.dtype,
+                    ),
+                    time_coordinates,
+                ),
                 axis=-1,
             )
         self.set_prediction_inputs(self._pred_survs, time_coordinates)
@@ -312,7 +330,7 @@ class SurvivalEvaluator:
         ):
             error = (
                 "Prediction method must be 'predict_mean_st', 'predict_median_st', or 'predict_rmst'"
-                "got '{}' instead".format(predict_method.__name__)
+                f"got '{predict_method.__name__}' instead"
             )
             raise TypeError(error)
 
@@ -323,7 +341,7 @@ class SurvivalEvaluator:
 
     def predict_probability_from_curve(
         self,
-        target_time: Union[float, int, np.ndarray],
+        target_time: float | np.ndarray,
     ) -> np.ndarray:
         """
         Calculate the survival probability at a given time point from a predicted curve.
@@ -334,7 +352,7 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        target_time: Union[float, int, np.ndarray], shape = (n_samples, )
+        target_time: float | np.ndarray, shape = (n_samples, )
             Time point(s) at which the survival probability is to be predicted.
             If float or int, the same time point is used for all samples. If
             array-like, each sample will have its own target time. The length
@@ -369,8 +387,9 @@ class SurvivalEvaluator:
                     "target_time must have the same length as the number of samples."
                 )
         else:
-            error = "Target time must be a float, int, or 1D array, got '{}' instead".format(
-                type(target_time)
+            error = (
+                "Target time must be a float, int, or 1D array, "
+                f"got '{type(target_time)}' instead"
             )
             raise TypeError(error)
 
@@ -510,8 +529,8 @@ class SurvivalEvaluator:
 
     def predict_interval(
         self,
-        quantile_range: tuple[float, float] = None,
-        cov_level: float = None,
+        quantile_range: tuple[float, float] | None = None,
+        cov_level: float | None = None,
     ) -> np.ndarray:
         """
         Predict the survival interval from the predicted survival curve.
@@ -570,10 +589,10 @@ class SurvivalEvaluator:
 
     def plot_survival_curves(
         self,
-        curve_indices: Union[int, list[int]],
-        color: Union[str, list[str], None] = None,
-        x_lim: Union[float, tuple[float, float], None] = None,
-        y_lim: Union[float, tuple[float, float], None] = None,
+        curve_indices: int | list[int],
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
         x_label: str = "Time",
         y_label: str = "Survival probability",
         **kwargs,
@@ -583,13 +602,13 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        curve_indices: Union[int, list[int]]
+        curve_indices: int | list[int]
             Index(ces) of the curves to be plotted.
-        color: Union[str, list[str], None]
+        color: str | list[str] | None
             Color(s) of the curves to be plotted. If None, default color will be used.
-        x_lim: Union[float, tuple[float, float], None]
+        x_lim: float | tuple[float, float] | None
             Limits for the x-axis. If None, default limits will be used.
-        y_lim: Union[float, tuple[float, float], None]
+        y_lim: float | tuple[float, float] | None
             Limits for the y-axis. If None, default limits will be used.
         x_label: str
             Label for the x-axis. Default is 'Time'.
@@ -644,10 +663,10 @@ class SurvivalEvaluator:
 
     def plot_quantile_curves(
         self,
-        curve_indices: Union[int, list[int]],
-        color: Union[str, list[str], None] = None,
-        x_lim: Union[float, tuple[float, float], None] = None,
-        y_lim: Union[float, tuple[float, float], None] = None,
+        curve_indices: int | list[int],
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
         x_label: str = "Quantile",
         y_label: str = "Time",
         **kwargs,
@@ -657,13 +676,13 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        curve_indices: Union[int, list[int]]
+        curve_indices: int | list[int]
             Index(ces) of the curves to be plotted.
-        color: Union[str, list[str], None]
+        color: str | list[str] | None
             Color(s) of the curves to be plotted. If None, default color will be used.
-        x_lim: Union[float, tuple[float, float], None]
+        x_lim: float | tuple[float, float] | None
             Limits for the x-axis. If None, default limits will be used.
-        y_lim: Union[float, tuple[float, float], None]
+        y_lim: float | tuple[float, float] | None
             Limits for the y-axis. If None, default limits will be used.
         x_label: str
             Label for the x-axis. Default is 'Quantile'.
@@ -721,7 +740,7 @@ class SurvivalEvaluator:
         self,
         ties: str = "Risk",
         method: str = "Harrell",
-        tau: Optional[Numeric] = None,
+        tau: Numeric | None = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
@@ -784,7 +803,7 @@ class SurvivalEvaluator:
             tau=tau,
         )
 
-    def auc(self, target_time: Optional[Numeric] = None) -> float:
+    def auc(self, target_time: Numeric | None = None) -> float:
         """
         Calculate the area under the ROC curve (AUC/AUROC) score at a given
         time point from the predicted survival curve.
@@ -818,7 +837,7 @@ class SurvivalEvaluator:
             target_time=target_time,
         )
 
-    def auroc(self, target_time: Optional[Numeric] = None):
+    def auroc(self, target_time: Numeric | None = None):
         """
         Calculate the area under the ROC curve (AUC/AUROC) score at a given
         time point from the predicted survival curve.
@@ -842,7 +861,7 @@ class SurvivalEvaluator:
         ties: str = "Risk",
         method: str = "Antolini",
         risks: str = "Survival",
-        tau: Optional[Numeric] = None,
+        tau: Numeric | None = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the time-dependent concordance index.
@@ -850,8 +869,8 @@ class SurvivalEvaluator:
         Risk scores are evaluated at sample-level observed-event anchor times.
         If multiple observed events share the same time, that time is represented
         once per observed event anchor, not once per unique event time. The
-        evaluator preserves the lower-level column contract while skipping risk
-        prediction for anchor columns that cannot enter risk comparisons.
+        evaluator predicts each contributing unique time once, then expands it
+        to preserve the lower-level sample-level column contract.
 
         Parameters
         ----------
@@ -894,58 +913,67 @@ class SurvivalEvaluator:
             The number of total pairs.
         """
         # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
-        method = method.lower()
         risks = risks.lower()
 
         if self._NO_CENSOR:
             method = "antolini"
 
-        if method == "ipcw":
-            self._error_trainset("IPCW time-dependent concordance")
-
-        event_indicators = self.event_indicators.astype(bool)
-        anchor_times = self.event_times[event_indicators]
-
-        # Only predict risks for anchor columns the concordance counter can
-        # read: event anchors before tau with a later sample or same-time
-        # censored candidate. Final event-only blocks may still add time ties,
-        # but they do not need survival or hazard scores.
-        included_anchor_mask_by_sample = np.zeros(self.event_times.shape[0], dtype=bool)
-        for anchor_time in np.unique(anchor_times):
-            if tau is not None and anchor_time >= tau:
-                continue
-            same_time = self.event_times == anchor_time
-            has_later_sample = np.any(self.event_times > anchor_time)
-            has_same_time_censored = np.any(same_time & ~event_indicators)
-            has_candidate = has_later_sample or has_same_time_censored
-            if has_candidate:
-                included_anchor_mask_by_sample[same_time & event_indicators] = True
-
-        included_anchor_mask = included_anchor_mask_by_sample[event_indicators]
-        included_anchor_times = anchor_times[included_anchor_mask]
-
-        # Keep one column per observed event to preserve the lower-level API
-        # contract; columns for anchors without risk comparisons are never read.
-        risk_scores = np.zeros(
-            (self.event_times.shape[0], anchor_times.shape[0]), dtype=float
-        )
+        method = _normalize_time_dependent_method(method)
+        ties = _normalize_ties(ties)
 
         if risks not in {"survival", "hazard"}:
-            error = "Risks must be 'Survival' or 'Hazard', got '{}' instead".format(
-                risks
+            error = (
+                "Risks must be 'Survival' or 'Hazard', "
+                f"got '{risks}' instead"
             )
             raise ValueError(error)
 
-        if included_anchor_times.shape[0] > 0:
+        if method == "ipcw":
+            self._error_trainset("IPCW time-dependent concordance")
+
+        event_indicators = self.event_indicators.astype(bool, copy=False)
+        n_samples = self.event_times.shape[0]
+        anchor_times, included_anchor_mask = _select_risk_anchors(
+            self.event_times, event_indicators, tau
+        )
+        n_anchors = anchor_times.size
+        if n_anchors == 0:
+            raise ValueError(
+                "Data has no observed events, cannot estimate time-dependent concordance index."
+            )
+
+        included_anchor_times = anchor_times[included_anchor_mask]
+
+        if included_anchor_times.size > 0:
+            unique_anchor_times, inverse = np.unique(
+                included_anchor_times, return_inverse=True
+            )
             if risks == "survival":
-                included_risk_scores = -self.predict_multi_probabilities_from_curve(
-                    included_anchor_times
+                unique_risk_scores = self.predict_multi_probabilities_from_curve(
+                    unique_anchor_times
                 )
+                np.negative(unique_risk_scores, out=unique_risk_scores)
             else:
-                included_risk_scores = self.predict_multi_hazards_from_curve(
-                    included_anchor_times
+                unique_risk_scores = self.predict_multi_hazards_from_curve(
+                    unique_anchor_times
                 )
-            risk_scores[:, included_anchor_mask] = included_risk_scores
+
+            # Expand unique-time risks directly into the required sample-level
+            # anchor matrix. Inactive columns are placeholders that the pair
+            # counter never reads.
+            unique_column_by_anchor = np.zeros(n_anchors, dtype=int)
+            unique_column_by_anchor[included_anchor_mask] = inverse
+            risk_scores = np.empty((n_samples, n_anchors), dtype=float)
+            np.take(
+                unique_risk_scores,
+                unique_column_by_anchor,
+                axis=1,
+                out=risk_scores,
+            )
+            risk_scores[:, ~included_anchor_mask] = 0.0
+            del unique_risk_scores, unique_column_by_anchor, inverse
+        else:
+            risk_scores = np.zeros((n_samples, n_anchors), dtype=float)
 
         return concordance_time_dependent(
             risk_scores=risk_scores,
@@ -959,7 +987,7 @@ class SurvivalEvaluator:
         )
 
     def brier_score(
-        self, target_time: Optional[Numeric] = None, IPCW_weighted: bool = True
+        self, target_time: Numeric | None = None, IPCW_weighted: bool = True
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
@@ -999,7 +1027,9 @@ class SurvivalEvaluator:
         )
 
     def brier_score_multiple_points(
-        self, target_times: np.ndarray, IPCW_weighted: bool = True
+        self,
+        target_times: np.ndarray,
+        IPCW_weighted: bool = True,
     ) -> np.ndarray:
         """
         Calculate multiple Brier scores at multiple specific times.
@@ -1023,6 +1053,8 @@ class SurvivalEvaluator:
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
 
+        target_times = validate_time_points(target_times, input_name="target_times")
+
         pred_probs_mat = self.predict_multi_probabilities_from_curve(target_times)
 
         return brier_multiple_points(
@@ -1037,12 +1069,12 @@ class SurvivalEvaluator:
 
     def integrated_brier_score(
         self,
-        num_points: Optional[int] = None,
-        target_times: Optional[np.ndarray] = None,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
         IPCW_weighted: bool = True,
         integration_method: str = "trapz",
         draw_figure: bool = False,
-    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated Brier score (IBS) from the predicted survival curve.
 
@@ -1197,7 +1229,7 @@ class SurvivalEvaluator:
         if draw_figure:
             fig, ax = plt.subplots()
             ax.plot(target_times, b_scores, "bo-")
-            score_text = r"IBS$= {:.3f}$".format(ibs_score)
+            score_text = rf"IBS$= {ibs_score:.3f}$"
             ax.plot([], [], " ", label=score_text)
             ax.legend()
             ax.set_xlabel("Time")
@@ -1210,7 +1242,7 @@ class SurvivalEvaluator:
     def mae(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -1262,7 +1294,7 @@ class SurvivalEvaluator:
     def mse(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -1314,7 +1346,7 @@ class SurvivalEvaluator:
     def rmse(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -1351,7 +1383,7 @@ class SurvivalEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
         Parameters
@@ -1470,8 +1502,8 @@ class SurvivalEvaluator:
         self,
         target_time: Numeric,
         knots: int = 3,
-        draw_figure: Optional[bool] = True,
-        figure_range: Optional[tuple] = None,
+        draw_figure: bool | None = True,
+        figure_range: tuple | None = None,
     ) -> tuple[dict, plt.Figure]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
@@ -1509,7 +1541,7 @@ class SurvivalEvaluator:
 
     def d_calibration(
         self, num_bins: int = 10, return_details: bool = False
-    ) -> Union[tuple[float, np.ndarray], tuple[float, dict]]:
+    ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
         Parameters
@@ -1605,7 +1637,7 @@ class SurvivalEvaluator:
 
     def ksd_calibration(
         self, return_details: bool = False
-    ) -> Union[tuple[float, float], tuple[float, dict]]:
+    ) -> tuple[float, float] | tuple[float, dict]:
         """
         Calculate the KSD calibration score from the predicted survival curve.
         Parameters
@@ -1673,7 +1705,7 @@ class SurvivalEvaluator:
 
     def km_calibration(
         self, draw_figure: bool = False
-    ) -> Union[float, tuple[float, tuple[plt.Figure, plt.Axes]]]:
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
         Parameters
@@ -1687,14 +1719,18 @@ class SurvivalEvaluator:
             survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         if self.ndim_time == 1:
-            average_survival_curve = np.mean(self._pred_survs, axis=0)
+            average_survival_curve = np.mean(
+                self._pred_survs, axis=0, dtype=float
+            )
             calibration_times = self._time_coordinates
         else:
             calibration_times = np.unique(self.event_times[self.event_indicators == 1])
             sample_survival_curves = self.predict_multi_probabilities_from_curve(
                 calibration_times
             )
-            average_survival_curve = np.mean(sample_survival_curves, axis=0)
+            average_survival_curve = np.mean(
+                sample_survival_curves, axis=0, dtype=float
+            )
 
         return km_calibration(
             average_survival_curve=average_survival_curve,
@@ -1707,9 +1743,9 @@ class SurvivalEvaluator:
 
     def log_rank(
         self,
-        weightings: Optional[str] = None,
-        p: Optional[float] = 0,
-        q: Optional[float] = 0,
+        weightings: str | None = None,
+        p: float | None = 0,
+        q: float | None = 0,
     ) -> tuple[float, float]:
         """
         Calculate the log-rank test statistic and p-value for the predicted survival curve.
@@ -1779,8 +1815,8 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         surv: pd.DataFrame,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -1810,10 +1846,11 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
             Options: "Linear" (default), "Pchip".
         """
         time_coordinates = surv.index.values
-        predicted_survival_curves = surv.values.T
-        # Pycox models can sometimes obtain -0 as survival probabilities. Need to convert that to 0.
-        predicted_survival_curves[predicted_survival_curves < 0] = 0
-        super(PycoxEvaluator, self).__init__(
+        predicted_survival_curves = surv.to_numpy(copy=False).T
+        # Do not mutate the caller's DataFrame when correcting numerical noise.
+        if np.any(predicted_survival_curves < 0):
+            predicted_survival_curves = np.maximum(predicted_survival_curves, 0)
+        super().__init__(
             predicted_survival_curves,
             time_coordinates,
             event_times,
@@ -1831,8 +1868,8 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
         surv: pd.DataFrame,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -1859,7 +1896,7 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
         """
-        super(LifelinesEvaluator, self).__init__(
+        super().__init__(
             surv,
             event_times,
             event_indicators,
@@ -1876,8 +1913,8 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
         surv,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -1912,15 +1949,10 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
             predict_curve = surv[i].y
             if False in (time_coordinates == surv[i].x):
                 raise KeyError(
-                    "{}-th survival curve does not have same time coordinates".format(i)
+                    f"{i}-th survival curve does not have same time coordinates"
                 )
             predict_curves.append(predict_curve)
         predicted_curves = np.array(predict_curves)
-        if time_coordinates[0] != 0:
-            time_coordinates = np.concatenate([np.array([0]), time_coordinates], 0)
-            predicted_curves = np.concatenate(
-                [np.ones([len(predicted_curves), 1]), predicted_curves], 1
-            )
         # Ensure flat all-one curves have a finite extrapolated event time.
         end_probabilities = predicted_curves[:, -1]
         idx_need_fix = end_probabilities == 1
@@ -1932,7 +1964,7 @@ class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
                 max_prob_at_end = np.max(reference_end_probabilities)
                 replacement_probability = max(0.1 * max_prob_at_end + 0.9, 0.99)
             predicted_curves[idx_need_fix, -1] = replacement_probability
-        super(ScikitSurvivalEvaluator, self).__init__(
+        super().__init__(
             predicted_curves,
             time_coordinates,
             event_times,
@@ -1953,8 +1985,8 @@ class PointEvaluator:
         pred_times: NumericArrayLike,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
     ):
         """
         Initialize the Evaluator
@@ -1974,14 +2006,13 @@ class PointEvaluator:
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
-        self._pred_times = check_and_convert(pred_times)
-
-        self.event_times, self.event_indicators = check_and_convert(
+        self.event_times, self.event_indicators = check_and_convert_event_data(
             event_times, event_indicators
         )
+        self.pred_times = pred_times
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -1993,7 +2024,7 @@ class PointEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @property
@@ -2002,14 +2033,16 @@ class PointEvaluator:
 
     @pred_times.setter
     def pred_times(self, pred_times):
-        print("Setter called. Resetting pred_times.")
+        pred_times = check_and_convert(pred_times)
+        if pred_times.shape != self.event_times.shape:
+            raise ValueError("pred_times and event_times must have the same shape.")
         self._pred_times = pred_times
 
     def concordance(
         self,
         ties: str = "Risk",
         method: str = "Harrell",
-        tau: Optional[Numeric] = None,
+        tau: Numeric | None = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
@@ -2075,7 +2108,7 @@ class PointEvaluator:
     def mae(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -2127,7 +2160,7 @@ class PointEvaluator:
     def mse(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -2179,7 +2212,7 @@ class PointEvaluator:
     def rmse(
         self,
         method: str = "Hinge",
-        weighted: bool = None,
+        weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
         truncated_time=None,
@@ -2211,9 +2244,9 @@ class PointEvaluator:
 
     def log_rank(
         self,
-        weightings: Optional[str] = None,
-        p: Optional[float] = 0,
-        q: Optional[float] = 0,
+        weightings: str | None = None,
+        p: float | None = 0,
+        q: float | None = 0,
     ) -> tuple[float, float]:
         """
         Calculate the log-rank test statistic and p-value for the predicted survival curve.
@@ -2259,9 +2292,9 @@ class SingleTimeEvaluator:
         pred_probs: NumericArrayLike,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        target_time: Union[float, int] = None,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        target_time: float | None = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
     ):
         """
         Initialize the Evaluator
@@ -2283,19 +2316,13 @@ class SingleTimeEvaluator:
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
-        self._pred_probs = check_and_convert(pred_probs)
-        if self._pred_probs.ndim != 1:
-            raise ValueError(
-                "predicted_probs should be a 1D array-like object, "
-                "but got a {}D array-like object".format(self._pred_probs.ndim)
-            )
-
-        self.event_times, self.event_indicators = check_and_convert(
+        self.event_times, self.event_indicators = check_and_convert_event_data(
             event_times, event_indicators
         )
+        self.pred_probs = pred_probs
 
         if (train_event_times is not None) and (train_event_indicators is not None):
-            train_event_times, train_event_indicators = check_and_convert(
+            train_event_times, train_event_indicators = check_and_convert_event_data(
                 train_event_times, train_event_indicators
             )
         self.train_event_times = train_event_times
@@ -2317,7 +2344,7 @@ class SingleTimeEvaluator:
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
-                "Evaluator cannot perform {} evaluation.".format(method_name)
+                f"Evaluator cannot perform {method_name} evaluation."
             )
 
     @property
@@ -2326,7 +2353,14 @@ class SingleTimeEvaluator:
 
     @pred_probs.setter
     def pred_probs(self, pred_probs):
-        print("Setter called. Resetting pred_probs.")
+        pred_probs = check_and_convert(pred_probs)
+        if pred_probs.ndim != 1:
+            raise ValueError(
+                "predicted_probs should be a 1D array-like object, "
+                f"but got a {pred_probs.ndim}D array-like object"
+            )
+        if pred_probs.shape != self.event_times.shape:
+            raise ValueError("pred_probs and event_times must have the same shape.")
         self._pred_probs = pred_probs
 
     def auc(
@@ -2383,7 +2417,7 @@ class SingleTimeEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
-    ) -> Union[tuple[float, list, list], tuple[float, dict]]:
+    ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
@@ -2483,9 +2517,9 @@ class SingleTimeEvaluator:
     def integrated_calibration_index(
         self,
         knots: int = 3,
-        draw_figure: Optional[bool] = True,
-        figure_range: Optional[tuple] = None,
-    ) -> Union[dict, tuple[dict, tuple[plt.Figure, plt.Axes]]]:
+        draw_figure: bool | None = True,
+        figure_range: tuple | None = None,
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
@@ -2524,8 +2558,8 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         quantile_levels: NumericArrayLike,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
-        train_event_times: Optional[NumericArrayLike] = None,
-        train_event_indicators: Optional[NumericArrayLike] = None,
+        train_event_times: NumericArrayLike | None = None,
+        train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ):
@@ -2563,7 +2597,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             raise NotImplementedError(
                 "RMST prediction time method is not implemented for quantile curves."
             )
-        super(QuantileRegEvaluator, self).__init__(
+        super().__init__(
             survival_level,
             pred_regs,
             event_times,
@@ -2595,7 +2629,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             unique_times,
             interpolate=self.interpolation,
         )
-        avg_surv = np.mean(survival_curves, axis=0)
+        avg_surv = np.mean(survival_curves, axis=0, dtype=float)
 
         return km_calibration(
             average_survival_curve=avg_surv,

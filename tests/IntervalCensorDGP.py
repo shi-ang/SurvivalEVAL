@@ -1,4 +1,4 @@
-from typing import Dict, Literal, Optional, Tuple
+from __future__ import annotations
 
 import numpy as np
 
@@ -134,9 +134,9 @@ def interval_censor_DGP_from_synthetic_times(
     *,
     method: str = "fixed",
     # fixed
-    params: Optional[Dict[str, float]] = None,
+    params: dict[str, float] | None = None,
     seed: int = 42,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convert (event_times, censoring_times) into interval-censored bounds (left, right):
       - If event in (visit_j, visit_{j+1}]: left=visit_j, right=visit_{j+1} (interval-censor)
