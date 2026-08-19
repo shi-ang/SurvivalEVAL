@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 2026-08-19: Version 0.8.1
 
 1. Replace repeated multi-time Brier inputs with broadcast views, reuse one-dimensional censoring-survival predictions,
    and accumulate the two error components sequentially with one dense floating-point workspace.
@@ -10,9 +10,10 @@
 4. Reuse interval-concordance contribution matrices and avoid a floating-point tie matrix.
 5. Avoid copying compatible NumPy time-point arrays during validation and add peak-allocation, prediction-shape,
    randomized, and result-equivalence regression tests for the optimized paths.
-6. Code format: f-string and type annotation.
+6. Modernize string formatting and type annotations across evaluation modules.
 7. Preserve compatible `float32` and `float64` input storage across evaluators, keep event indicators boolean, and
-   avoid copying compatible read-only arrays, memory maps, pandas objects, and CPU Torch tensors unless requested.
+   avoid copying compatible read-only arrays, memory maps, pandas objects, and CPU Torch tensors unless requested,
+   while supporting object-backed nullable numeric pandas inputs.
 
 ## 2026-06-17: Version 0.8.0
 
