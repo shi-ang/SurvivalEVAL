@@ -19,6 +19,15 @@ def _as_numpy_array(values: NumericArrayLike, input_name: str) -> np.ndarray:
         array = np.asarray(values)
     elif isinstance(values, (pd.Series, pd.DataFrame)):
         array = values.to_numpy(copy=False)
+        pandas_dtypes = (
+            (values.dtype,) if isinstance(values, pd.Series) else values.dtypes
+        )
+        if array.dtype == object and all(
+            pd.api.types.is_numeric_dtype(dtype)
+            and not pd.api.types.is_complex_dtype(dtype)
+            for dtype in pandas_dtypes
+        ):
+            array = values.to_numpy(dtype=np.float64, na_value=np.nan, copy=False)
     elif isinstance(values, torch.Tensor):
         array = values.detach().cpu().numpy()
     else:

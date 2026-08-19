@@ -81,6 +81,35 @@ def test_check_and_convert_reuses_pandas_float_storage():
     assert np.shares_memory(converted, pandas_array)
 
 
+def test_check_and_convert_promotes_object_backed_numeric_pandas_data():
+    values = pd.DataFrame(
+        {
+            "count": pd.Series([1, 2], dtype="Int64"),
+            "weight": pd.Series([1.5, 2.5], dtype="Float32"),
+        }
+    )
+    assert values.to_numpy(copy=False).dtype == object
+
+    converted = check_and_convert(values)
+
+    assert converted.dtype == np.float64
+    np.testing.assert_allclose(converted, [[1.0, 1.5], [2.0, 2.5]])
+
+
+def test_check_and_convert_rejects_missing_nullable_pandas_data():
+    values = pd.Series([True, pd.NA], dtype="boolean")
+
+    with pytest.raises(ValueError, match="contains null values"):
+        check_and_convert(values)
+
+
+def test_check_and_convert_rejects_nonnumeric_pandas_extensions():
+    values = pd.Series(["1", "2"], dtype="string")
+
+    with pytest.raises(TypeError, match="must contain real numeric values"):
+        check_and_convert(values)
+
+
 def test_check_and_convert_reuses_cpu_torch_storage():
     values = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32, requires_grad=True)
 
