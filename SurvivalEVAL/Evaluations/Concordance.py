@@ -8,6 +8,7 @@ from SurvivalEVAL.Evaluations._concordance_utils import (
     _check_has_any_pairs,
     _ConcordanceCounts,
     _count_directed_risk_pairs,
+    _FenwickTree,
     _finalize_counts,
     _is_before_tau,
     _iter_time_blocks,
@@ -204,6 +205,9 @@ def _right_censored_risk_counts(
 ) -> _ConcordanceCounts:
     """Count right-censored comparable pairs for a risk score.
 
+    Candidate risks are maintained in a Fenwick tree, giving ``O(n log n)``
+    time and ``O(n)`` memory without materializing individual pairs.
+
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
@@ -231,44 +235,65 @@ def _right_censored_risk_counts(
         ``discordant``, and ``risk_tie_pairs`` count comparable pairs;
         ``time_tie_pairs`` counts same-time event pairs.
     """
+    if event_time.shape[0] == 0:
+        return _ConcordanceCounts()
     if sample_weights is None:
         sample_weights = np.ones(event_time.shape[0], dtype=float)
 
+    # Candidate masses are indexed by risk rank. For the symmetric weighted
+    # case a pair receives w_i * w_j. With anchor_pair_weights, every candidate
+    # has unit mass and the anchor supplies the complete pair weight.
+    if anchor_pair_weights is None:
+        candidate_mass = sample_weights
+        anchor_scale = sample_weights
+    else:
+        candidate_mass = np.ones(event_time.shape[0], dtype=float)
+        anchor_scale = anchor_pair_weights
+
+    risk_values, risk_ranks = np.unique(estimate, return_inverse=True)
+    tie_starts = np.searchsorted(risk_values, estimate - tied_tol, side="left")
+    tie_stops = np.searchsorted(risk_values, estimate + tied_tol, side="right")
+    risk_tree = _FenwickTree(risk_values.shape[0])
+    candidate_total = 0.0
+
     counts = _ConcordanceCounts()
-    for block, later_samples in _iter_time_blocks(event_time):
-        if tau is not None and event_time[block[0]] >= tau:
-            break
-
+    order = np.argsort(event_time, kind="stable")
+    end = order.shape[0]
+    while end > 0:
+        start = end - 1
+        block_time = event_time[order[start]]
+        while start > 0 and event_time[order[start - 1]] == block_time:
+            start -= 1
+        block = order[start:end]
+        censored_candidates = block[~event_indicator[block]]
         event_anchors = block[event_indicator[block]]
-        if event_anchors.shape[0] == 0:
-            continue
 
-        # Same-time events are not comparable; same-time censored samples are.
-        counts.time_tie_pairs += _same_time_pair_weight(sample_weights[event_anchors])
-        candidate_indices = np.concatenate(
-            (block[~event_indicator[block]], later_samples)
-        )
-        if candidate_indices.shape[0] == 0:
-            continue
+        # Censoring at the anchor time is comparable, whereas an event at the
+        # same time is not. Add censored samples before querying event anchors.
+        for index in censored_candidates:
+            mass = float(candidate_mass[index])
+            risk_tree.add(int(risk_ranks[index]), mass)
+            candidate_total += mass
 
-        for anchor_index in event_anchors:
-            if anchor_pair_weights is None:
-                pair_weights = (
-                    sample_weights[anchor_index] * sample_weights[candidate_indices]
-                )
-            else:
-                pair_weights = np.full(
-                    candidate_indices.shape[0],
-                    anchor_pair_weights[anchor_index],
-                    dtype=float,
-                )
-            counts += _count_directed_risk_pairs(
-                np.full(candidate_indices.shape[0], anchor_index, dtype=int),
-                candidate_indices,
-                estimate,
-                pair_weights=pair_weights,
-                tied_tol=tied_tol,
+        if (tau is None or block_time < tau) and event_anchors.shape[0] > 0:
+            counts.time_tie_pairs += _same_time_pair_weight(
+                sample_weights[event_anchors]
             )
+            for index in event_anchors:
+                lower_mass = risk_tree.prefix_sum(int(tie_starts[index]))
+                through_ties_mass = risk_tree.prefix_sum(int(tie_stops[index]))
+                tie_mass = through_ties_mass - lower_mass
+                scale = float(anchor_scale[index])
+                counts.concordant += scale * lower_mass
+                counts.risk_tie_pairs += scale * tie_mass
+                counts.discordant += scale * (candidate_total - through_ties_mass)
+
+        # This block becomes strictly later than all subsequent blocks.
+        for index in event_anchors:
+            mass = float(candidate_mass[index])
+            risk_tree.add(int(risk_ranks[index]), mass)
+            candidate_total += mass
+        end = start
 
     return counts
 

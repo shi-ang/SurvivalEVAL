@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-08-23: Version 0.8.2
+
+1. Replace per-anchor enumeration of right-censored concordance pairs with a coordinate-compressed Fenwick tree,
+   reducing the core counting work from quadratic time to `O(n log n)` while retaining `O(n)` storage and avoiding
+   repeated candidate and pair-array allocations.
+2. Preserve Harrell/Naive, Uno/IPCW, and Margin concordance behavior for symmetric and anchor-only weights, strict
+   `tau` truncation, same-time events and censoring, and risk ties within the configured tolerance.
+3. Add randomized brute-force equivalence tests for weighted counts and tie tolerance, plus a 50,000-sample
+   scalability regression test.
+
 ## 2026-08-19: Version 0.8.1
 
 1. Replace repeated multi-time Brier inputs with broadcast views, reuse one-dimensional censoring-survival predictions,

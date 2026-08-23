@@ -28,7 +28,13 @@ def _before_tau(time, tau):
 
 
 def _brute_harrell_counts(
-    event_indicators, event_times, risks, sample_weights=None, tau=None
+    event_indicators,
+    event_times,
+    risks,
+    sample_weights=None,
+    anchor_pair_weights=None,
+    tau=None,
+    tied_tol=1e-8,
 ):
     if sample_weights is None:
         sample_weights = np.ones(event_times.shape[0], dtype=float)
@@ -62,7 +68,12 @@ def _brute_harrell_counts(
                     risks,
                     anchor=i,
                     candidate=j,
-                    weight=sample_weights[i] * sample_weights[j],
+                    weight=(
+                        sample_weights[i] * sample_weights[j]
+                        if anchor_pair_weights is None
+                        else anchor_pair_weights[i]
+                    ),
+                    tied_tol=tied_tol,
                 )
 
     return counts
@@ -343,6 +354,84 @@ def test_private_right_censored_risk_counts_match_brute_force_with_tau():
             )
 
             _assert_counts_close(actual, expected)
+
+
+@pytest.mark.parametrize("use_anchor_pair_weights", [False, True])
+def test_private_right_censored_risk_counts_match_weighted_brute_force(
+    use_anchor_pair_weights,
+):
+    rng = np.random.default_rng(2)
+
+    for n_samples in range(2, 12):
+        for _ in range(30):
+            event_times = rng.integers(1, 6, size=n_samples).astype(float)
+            event_indicators = rng.random(n_samples) < 0.65
+            risks = rng.integers(-2, 3, size=n_samples).astype(float)
+            sample_weights = rng.uniform(0.1, 2.0, size=n_samples)
+            anchor_pair_weights = (
+                rng.uniform(0.1, 3.0, size=n_samples)
+                if use_anchor_pair_weights
+                else None
+            )
+            tau = float(rng.integers(1, 7))
+
+            actual = _right_censored_risk_counts(
+                event_indicators,
+                event_times,
+                risks,
+                sample_weights=sample_weights,
+                anchor_pair_weights=anchor_pair_weights,
+                tau=tau,
+            )
+            expected = _brute_harrell_counts(
+                event_indicators,
+                event_times,
+                risks,
+                sample_weights=sample_weights,
+                anchor_pair_weights=anchor_pair_weights,
+                tau=tau,
+            )
+
+            _assert_counts_close(actual, expected)
+
+
+def test_private_right_censored_risk_counts_respects_tie_tolerance():
+    event_times = np.arange(1, 8, dtype=float)
+    event_indicators = np.array([1, 1, 0, 1, 1, 0, 1], dtype=bool)
+    risks = np.array([0.0, 0.5e-8, 1.0e-8, 1.5e-8, -0.5e-8, 1.0, -1.0])
+    sample_weights = np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5])
+    tied_tol = 1e-8
+
+    actual = _right_censored_risk_counts(
+        event_indicators,
+        event_times,
+        risks,
+        sample_weights=sample_weights,
+        tied_tol=tied_tol,
+    )
+    expected = _brute_harrell_counts(
+        event_indicators,
+        event_times,
+        risks,
+        sample_weights=sample_weights,
+        tied_tol=tied_tol,
+    )
+
+    _assert_counts_close(actual, expected)
+
+
+def test_private_right_censored_risk_counts_scales_to_large_inputs():
+    n_samples = 50_000
+    event_times = np.arange(n_samples, dtype=float)
+    event_indicators = np.ones(n_samples, dtype=bool)
+    risks = np.arange(n_samples, dtype=float)
+
+    counts = _right_censored_risk_counts(event_indicators, event_times, risks)
+
+    assert counts.concordant == 0.0
+    assert counts.discordant == n_samples * (n_samples - 1) / 2
+    assert counts.risk_tie_pairs == 0.0
+    assert counts.time_tie_pairs == 0.0
 
 
 def test_uno_concordance_uses_censoring_distribution_ipcw():
