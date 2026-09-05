@@ -268,7 +268,22 @@ For time-dependent concordance, `risks="Survival"` uses `-S(t | z)` as the risk
 score at each event anchor, while `risks="Hazard"` uses estimated hazard rates
 directly. `method="IPCW"` requires training event times and indicators. `tau`
 keeps event anchors whose observed time is strictly before `tau`; when omitted,
-no truncation is applied.
+no truncation is applied. IPCW event anchors must be within the training-time
+support. The evaluator predicts only the unique event-time risks each subject
+can use and streams subjects through a compact buffer. `working_memory` sets
+that risk buffer's target size in MiB and defaults to 256; one complete compact
+row is the minimum allocation.
+
+The lower-level `concordance_time_dependent` function accepts a `risk_scores`
+matrix shaped `(n_samples, n_risk_times)` and an explicit, strictly increasing
+`risk_times` vector. Repeated event times share one risk-score column, and
+additional unused coordinates are allowed. The grid must contain every event
+time that has a comparable candidate. Risks must be finite; risk, event, and
+training times must be finite and non-negative; and event indicators must be
+binary. The implementation takes `O(n log n + R + P)` time and
+`O(n + Bm + B)` auxiliary space, where `P` is the number of comparable directed
+pairs, `R` is the number of streamed risk cells, `m` is the number of
+contributing event times, and `B` is the memory-budgeted batch size.
 
 ## Interval-Censored Metrics
 

@@ -11,7 +11,6 @@ import pandas as pd
 from lifelines.statistics import logrank_test
 from scipy.integrate import simpson, trapezoid
 
-from SurvivalEVAL.Evaluations._concordance_utils import _normalize_ties
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
@@ -32,9 +31,8 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     one_calibration,
 )
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
-    _normalize_time_dependent_method,
-    _select_risk_anchors,
-    concordance_time_dependent,
+    _concordance_from_risk_batches,
+    _prepare_concordance,
 )
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
@@ -53,6 +51,29 @@ from SurvivalEVAL.Evaluations.util import (
     zero_padding,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
+
+
+def _predict_hazards_from_curve(
+    survival_curve: np.ndarray,
+    time_grid: np.ndarray,
+    target_times: np.ndarray,
+) -> np.ndarray:
+    """Estimate piecewise-constant hazards from one aligned survival curve."""
+    if survival_curve.size < 2:
+        raise ValueError("At least two time points are required to estimate hazards.")
+    if np.any(target_times > time_grid[-1]):
+        raise ValueError(
+            "target_times must not exceed the largest time coordinate when "
+            "estimating hazard rates."
+        )
+
+    interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
+    interval_indices = np.clip(interval_indices, 0, time_grid.size - 2)
+    epsilon = 1e-12
+    left_survival = np.clip(survival_curve[interval_indices], epsilon, None)
+    right_survival = np.clip(survival_curve[interval_indices + 1], epsilon, None)
+    interval_widths = time_grid[interval_indices + 1] - time_grid[interval_indices]
+    return -np.log(right_survival / left_survival) / interval_widths
 
 
 class SurvivalEvaluator:
@@ -368,9 +389,9 @@ class SurvivalEvaluator:
         elif self.ndim_surv == 1 and self.ndim_time == 2:
             n_samples = self._time_coordinates.shape[0]
         elif self.ndim_surv == 2 and self.ndim_time == 2:
-            assert (
-                self._pred_survs.shape[0] == self._time_coordinates.shape[0]
-            ), "The number of samples in pred_survs and time_coordinates must be the same"
+            assert self._pred_survs.shape[0] == self._time_coordinates.shape[0], (
+                "The number of samples in pred_survs and time_coordinates must be the same"
+            )
             n_samples = self._pred_survs.shape[0]
         else:
             raise TypeError("Dimensional error")
@@ -418,6 +439,57 @@ class SurvivalEvaluator:
 
         return predict_probs
 
+    @staticmethod
+    def _fill_multi_curve_predictions(
+        output: np.ndarray,
+        sample_indices: np.ndarray,
+        survival_curves: np.ndarray,
+        time_grids: np.ndarray,
+        target_times: np.ndarray,
+        predictor: Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray],
+        target_counts: np.ndarray | None = None,
+    ) -> None:
+        """Fill selected curve predictions, optionally using row prefixes."""
+        for output_row_index, sample_index in enumerate(sample_indices):
+            target_count = (
+                target_times.size
+                if target_counts is None
+                else int(target_counts[output_row_index])
+            )
+            if target_count == 0:
+                continue
+            output[output_row_index, :target_count] = predictor(
+                survival_curves[sample_index],
+                time_grids[sample_index],
+                target_times[:target_count],
+            )
+
+    def _predict_multi_curve_values(
+        self,
+        target_times: np.ndarray,
+        predictor: Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray],
+        dtype: np.dtype,
+    ) -> np.ndarray:
+        """Evaluate one curve predictor for every testing sample."""
+        survival_curves, time_grids = align_curve_and_time_coordinates(
+            self._pred_survs,
+            self._time_coordinates,
+            n_samples=self._testing_sample_count(),
+        )
+        output = np.empty(
+            (survival_curves.shape[0], target_times.size),
+            dtype=dtype,
+        )
+        self._fill_multi_curve_predictions(
+            output,
+            np.arange(survival_curves.shape[0]),
+            survival_curves,
+            time_grids,
+            target_times,
+            predictor,
+        )
+        return output
+
     def predict_multi_probabilities_from_curve(
         self, target_times: np.ndarray
     ) -> np.ndarray:
@@ -436,43 +508,16 @@ class SurvivalEvaluator:
         """
         target_times = validate_time_points(target_times, input_name="target_times")
 
-        if self.ndim_surv == 2 and self.ndim_time == 1:
-            n_samples = self._pred_survs.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
-            )
-
-            for i, curve in enumerate(self._pred_survs):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    curve, self.time_coordinates, target_times, self.interpolation
-                )
-        elif self.ndim_surv == 1 and self.ndim_time == 2:
-            n_samples = self._time_coordinates.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
-            )
-
-            for i, times in enumerate(self._time_coordinates):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    self._pred_survs, times, target_times, self.interpolation
-                )
-        elif self.ndim_surv == 2 and self.ndim_time == 2:
-            n_samples = self._pred_survs.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
-            )
-
-            for i in range(n_samples):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    self._pred_survs[i, :],
-                    self._time_coordinates[i, :],
-                    target_times,
-                    self.interpolation,
-                )
-        else:
-            raise TypeError("Dimensional error")
-
-        return prob_mat
+        return self._predict_multi_curve_values(
+            target_times,
+            lambda curve, times, targets: predict_multi_probs_from_curve(
+                curve,
+                times,
+                targets,
+                self.interpolation,
+            ),
+            self._pred_survs.dtype,
+        )
 
     def predict_multi_hazards_from_curve(self, target_times: np.ndarray) -> np.ndarray:
         """
@@ -491,41 +536,11 @@ class SurvivalEvaluator:
         """
         target_times = validate_time_points(target_times, input_name="target_times")
 
-        survival_curves, time_grids = align_curve_and_time_coordinates(
-            self._pred_survs,
-            self._time_coordinates,
-            n_samples=self._testing_sample_count(),
+        return self._predict_multi_curve_values(
+            target_times,
+            _predict_hazards_from_curve,
+            np.dtype(float),
         )
-        if survival_curves.shape[1] < 2:
-            raise ValueError(
-                "At least two time points are required to estimate hazards."
-            )
-
-        hazard_mat = np.empty(
-            (survival_curves.shape[0], target_times.shape[0]), dtype=float
-        )
-        eps = 1e-12
-
-        for i, (survival_curve, time_grid) in enumerate(
-            zip(survival_curves, time_grids)
-        ):
-            if np.any(target_times > time_grid[-1]):
-                raise ValueError(
-                    "target_times must not exceed the largest time coordinate "
-                    "when estimating hazard rates."
-                )
-
-            interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
-            interval_indices = np.clip(interval_indices, 0, time_grid.shape[0] - 2)
-            left_survival = np.clip(survival_curve[interval_indices], eps, None)
-            right_survival = np.clip(survival_curve[interval_indices + 1], eps, None)
-            interval_widths = (
-                time_grid[interval_indices + 1] - time_grid[interval_indices]
-            )
-
-            hazard_mat[i] = -np.log(right_survival / left_survival) / interval_widths
-
-        return hazard_mat
 
     def predict_interval(
         self,
@@ -862,15 +877,13 @@ class SurvivalEvaluator:
         method: str = "Antolini",
         risks: str = "Survival",
         tau: Numeric | None = None,
+        working_memory: Numeric = 256,
     ) -> tuple[float, float, float]:
         """
         Calculate the time-dependent concordance index.
 
-        Risk scores are evaluated at sample-level observed-event anchor times.
-        If multiple observed events share the same time, that time is represented
-        once per observed event anchor, not once per unique event time. The
-        evaluator predicts each contributing unique time once, then expands it
-        to preserve the lower-level sample-level column contract.
+        Risks are evaluated at unique event times and streamed in bounded
+        subject batches. The full sample-by-event-time matrix is never created.
 
         Parameters
         ----------
@@ -891,7 +904,8 @@ class SurvivalEvaluator:
             with samples whose observed event/censoring time is greater than t_i.
             "Naive": alias of "Antolini".
             "IPCW": Antolini-style comparable pairs weighted by inverse probability
-            of censoring weights from the training data.
+            of censoring weights from the training data. Contributing event times
+            must be within the training-time support.
         risks: str, default = "Survival"
             A string indicating the type of risk scores to be used for concordance calculation.
             Options are "Survival" (default) and "Hazard".
@@ -899,9 +913,11 @@ class SurvivalEvaluator:
             using -S(t | z).
             "Hazard": predicted hazard rates at anchor event times are used directly as risk scores.
         tau: float, optional (default=None)
-            Truncation time. If provided, only pairs whose effective earlier or
-            anchor time is strictly before ``tau`` are counted. If None, no
-            truncation is applied.
+            Non-negative finite truncation time. Event anchors at ``tau`` are
+            excluded; later subjects remain candidates for earlier anchors.
+        working_memory: float, default=256
+            Target MiB for the compact risk buffer. If one complete compact row
+            exceeds the target, one row is still allocated.
 
         Returns
         -------
@@ -912,78 +928,68 @@ class SurvivalEvaluator:
         num_total_pairs: float
             The number of total pairs.
         """
-        # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
-        risks = risks.lower()
+        if not isinstance(risks, str):
+            raise TypeError("risks must be a string.")
+        normalized_risks = risks.lower()
 
-        if self._NO_CENSOR:
-            method = "antolini"
-
-        method = _normalize_time_dependent_method(method)
-        ties = _normalize_ties(ties)
-
-        if risks not in {"survival", "hazard"}:
-            error = (
-                "Risks must be 'Survival' or 'Hazard', "
-                f"got '{risks}' instead"
-            )
+        if normalized_risks not in {"survival", "hazard"}:
+            error = f"Risks must be 'Survival' or 'Hazard', got '{risks}' instead"
             raise ValueError(error)
 
-        if method == "ipcw":
-            self._error_trainset("IPCW time-dependent concordance")
-
-        event_indicators = self.event_indicators.astype(bool, copy=False)
         n_samples = self.event_times.shape[0]
-        anchor_times, included_anchor_mask = _select_risk_anchors(
-            self.event_times, event_indicators, tau
+        prepared = _prepare_concordance(
+            self.event_times,
+            self.event_indicators,
+            self.train_event_times,
+            self.train_event_indicators,
+            method,
+            ties,
+            tau,
+            working_memory,
         )
-        n_anchors = anchor_times.size
-        if n_anchors == 0:
-            raise ValueError(
-                "Data has no observed events, cannot estimate time-dependent concordance index."
-            )
+        survival_curves, time_grids = align_curve_and_time_coordinates(
+            self._pred_survs,
+            self._time_coordinates,
+            n_samples=n_samples,
+        )
 
-        included_anchor_times = anchor_times[included_anchor_mask]
+        if normalized_risks == "survival":
 
-        if included_anchor_times.size > 0:
-            unique_anchor_times, inverse = np.unique(
-                included_anchor_times, return_inverse=True
-            )
-            if risks == "survival":
-                unique_risk_scores = self.predict_multi_probabilities_from_curve(
-                    unique_anchor_times
+            def predict_curve_risks(curve, times, targets):
+                probabilities = predict_multi_probs_from_curve(
+                    curve,
+                    times,
+                    targets,
+                    self.interpolation,
                 )
-                np.negative(unique_risk_scores, out=unique_risk_scores)
-            else:
-                unique_risk_scores = self.predict_multi_hazards_from_curve(
-                    unique_anchor_times
-                )
+                return np.negative(probabilities, out=probabilities)
 
-            # Expand unique-time risks directly into the required sample-level
-            # anchor matrix. Inactive columns are placeholders that the pair
-            # counter never reads.
-            unique_column_by_anchor = np.zeros(n_anchors, dtype=int)
-            unique_column_by_anchor[included_anchor_mask] = inverse
-            risk_scores = np.empty((n_samples, n_anchors), dtype=float)
-            np.take(
-                unique_risk_scores,
-                unique_column_by_anchor,
-                axis=1,
-                out=risk_scores,
-            )
-            risk_scores[:, ~included_anchor_mask] = 0.0
-            del unique_risk_scores, unique_column_by_anchor, inverse
         else:
-            risk_scores = np.zeros((n_samples, n_anchors), dtype=float)
+            predict_curve_risks = _predict_hazards_from_curve
 
-        return concordance_time_dependent(
-            risk_scores=risk_scores,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            method=method,
-            ties=ties,
-            tau=tau,
+        risk_times = prepared.layout.risk_times
+
+        def fill_risk_batch(
+            sample_indices: np.ndarray,
+            risk_prefixes: np.ndarray,
+            output: np.ndarray,
+        ) -> None:
+            self._fill_multi_curve_predictions(
+                output,
+                sample_indices,
+                survival_curves,
+                time_grids,
+                risk_times[: output.shape[1]],
+                predict_curve_risks,
+                risk_prefixes,
+            )
+
+        # Curve interpolation and hazard calculations are performed in float64
+        # so values on opposite sides of the risk-tie tolerance stay distinct.
+        return _concordance_from_risk_batches(
+            prepared,
+            np.dtype(float),
+            fill_risk_batch,
         )
 
     def brier_score(
@@ -1604,7 +1610,7 @@ class SurvivalEvaluator:
 
             # label the y positions
             y_labels = [
-                f"[{i/num_bins:.2f}, {(i+1)/num_bins:.2f}{')' if i < num_bins - 1 else ']'}"
+                f"[{i / num_bins:.2f}, {(i + 1) / num_bins:.2f}{')' if i < num_bins - 1 else ']'}"
                 for i in range(num_bins)
             ]
             y_positions = (optimal_cdf[:-1] + optimal_cdf[1:]) / 2  # midpoints of bins
@@ -1719,9 +1725,7 @@ class SurvivalEvaluator:
             survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         if self.ndim_time == 1:
-            average_survival_curve = np.mean(
-                self._pred_survs, axis=0, dtype=float
-            )
+            average_survival_curve = np.mean(self._pred_survs, axis=0, dtype=float)
             calibration_times = self._time_coordinates
         else:
             calibration_times = np.unique(self.event_times[self.event_indicators == 1])
