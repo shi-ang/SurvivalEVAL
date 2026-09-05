@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## Unreleased
+
+1. Replace the lower-level time-dependent concordance contract with explicit,
+   strictly increasing `risk_times`, allowing repeated event times to share one
+   risk column and accepting unused extra coordinates.
+2. Build one event-block layout and stream only required per-subject risk
+   prefixes through a configurable 256 MiB compact buffer, without a full
+   sample-by-event-time matrix or per-pair index and weight arrays.
+3. Preserve Antolini, Naive, explicit IPCW, all tie policies, strict `tau`,
+   survival risks, and hazard risks while applying one right-continuous
+   `1 / G(t)^2` IPCW weight per event-time block.
+4. Preserve exact integer-risk comparisons and mixed numeric time matching at
+   float and signed/unsigned representation boundaries, and retain float64
+   interpolation precision for evaluator-generated risks.
+5. Centralize validation for finite real risks, finite non-negative times,
+   binary indicators, IPCW training support, and scalar memory and truncation
+   values; add exhaustive oracle, randomized, evaluator, numeric-boundary, and
+   peak-memory regression tests.
+
 ## 2026-08-23: Version 0.8.2
 
 1. Replace per-anchor enumeration of right-censored concordance pairs with a coordinate-compressed Fenwick tree,
