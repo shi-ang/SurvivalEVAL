@@ -1,3 +1,5 @@
+import tracemalloc
+
 import numpy as np
 import pytest
 
@@ -6,6 +8,7 @@ from SurvivalEVAL.Evaluations._concordance_utils import _ConcordanceCounts
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
     _select_risk_anchors,
     _time_dependent_risk_counts,
+    _time_dependent_risk_counts_from_predictions,
     concordance_time_dependent,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
@@ -419,17 +422,9 @@ def test_select_risk_anchors_matches_reference_on_randomized_inputs():
         np.testing.assert_array_equal(actual_mask, expected_mask)
 
 
-@pytest.mark.parametrize(
-    ("risks", "prediction_method"),
-    [
-        ("Survival", "predict_multi_probabilities_from_curve"),
-        ("Hazard", "predict_multi_hazards_from_curve"),
-    ],
-)
-def test_evaluator_predicts_each_active_anchor_time_once(
-    monkeypatch,
-    risks,
-    prediction_method,
+@pytest.mark.parametrize("risks", ["Survival", "Hazard"])
+def test_evaluator_predicts_each_sample_once_at_unique_contributing_times(
+    monkeypatch, risks
 ):
     time_grid = np.array([0.0, 1.0, 2.0, 3.0])
     hazards = np.array([0.5, 0.4, 0.2, 0.1])
@@ -440,17 +435,211 @@ def test_evaluator_predicts_each_active_anchor_time_once(
         event_indicators=np.ones(4),
     )
 
-    original_predict = getattr(evaluator, prediction_method)
+    original_predict = evaluator._predict_risks_from_curve
     predicted_at = []
 
-    def recording_predict(target_times):
-        predicted_at.append(target_times.copy())
-        return original_predict(target_times)
+    def recording_predict(sample_index, target_times, risks):
+        predicted_at.append((sample_index, target_times.copy()))
+        return original_predict(sample_index, target_times, risks)
 
-    monkeypatch.setattr(evaluator, prediction_method, recording_predict)
+    monkeypatch.setattr(evaluator, "_predict_risks_from_curve", recording_predict)
 
     result = evaluator.concordance_time_dependent(risks=risks)
 
-    assert len(predicted_at) == 1
-    np.testing.assert_array_equal(predicted_at[0], [1.0, 2.0])
+    assert len(predicted_at) == 4
+    for (sample_index, target_times), expected_index, expected_times in zip(
+        predicted_at, range(4), [[1.0], [1.0], [1.0, 2.0], [1.0, 2.0]]
+    ):
+        assert sample_index == expected_index
+        np.testing.assert_array_equal(target_times, expected_times)
     np.testing.assert_allclose(result, (1.0, 5.0, 5.0))
+
+
+@pytest.mark.parametrize("weighting", ["unweighted", "symmetric", "anchor"])
+def test_streamed_counts_match_brute_force_on_randomized_inputs(weighting):
+    rng = np.random.default_rng(20260908)
+    time_grid = np.arange(1.0, 8.0)
+    for n_samples in range(1, 20):
+        for _ in range(20):
+            event_times = rng.choice(time_grid, size=n_samples)
+            event_indicators = rng.random(n_samples) < 0.65
+            scores = rng.integers(-2, 3, size=(n_samples, time_grid.size)).astype(float)
+            scores += rng.choice([0.0, 0.5e-8, 1e-8, 1.5e-8], size=scores.shape)
+            sample_weights = (
+                None if weighting == "unweighted" else rng.uniform(0.25, 2, n_samples)
+            )
+            anchor_pair_weights = (
+                rng.uniform(0.25, 2, n_samples) if weighting == "anchor" else None
+            )
+            tau = None if rng.random() < 0.5 else float(rng.integers(1, 9))
+            kwargs = dict(
+                sample_weights=sample_weights,
+                anchor_pair_weights=anchor_pair_weights,
+                tau=tau,
+            )
+
+            def predict_risks(sample_index, target_times):
+                return scores[sample_index, np.searchsorted(time_grid, target_times)]
+
+            actual = _time_dependent_risk_counts_from_predictions(
+                predict_risks, event_times, event_indicators, **kwargs
+            )
+            dense_scores = scores[
+                :, np.searchsorted(time_grid, event_times[event_indicators])
+            ]
+            expected = _brute_time_dependent_counts(
+                event_indicators, event_times, dense_scores, **kwargs
+            )
+            np.testing.assert_allclose(
+                [
+                    actual.concordant,
+                    actual.discordant,
+                    actual.risk_tie_pairs,
+                    actual.time_tie_pairs,
+                ],
+                [
+                    expected.concordant,
+                    expected.discordant,
+                    expected.risk_tie_pairs,
+                    expected.time_tie_pairs,
+                ],
+                atol=1e-12,
+            )
+
+
+@pytest.mark.parametrize("risks", ["Survival", "Hazard"])
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize("curve_layout", ["shared_grid", "shared_curve", "individual"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_streamed_evaluator_matches_dense_for_crossing_curves(
+    risks, interpolation, curve_layout, dtype
+):
+    rng = np.random.default_rng(16)
+    n_samples = 14
+    time_grid = np.linspace(0.0, 10.0, 12).astype(dtype)
+    increments = rng.uniform(0.01, 0.4, (n_samples, time_grid.size - 1))
+    curves = np.column_stack((np.ones(n_samples), np.exp(-increments.cumsum(axis=1))))
+    curves = curves.astype(dtype)
+    if curve_layout != "shared_grid":
+        time_grid = time_grid * rng.uniform(1.0, 1.5, (n_samples, 1)).astype(dtype)
+    if curve_layout == "shared_curve":
+        curves = curves[0]
+
+    event_times = np.array([4, 1, 4, 2, 5, 2, 8, 6, 7, 9, 2, 4, 9, 1], dtype=dtype)
+    event_indicators = np.array([1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1])
+    train_times = np.arange(1.0, 13.0)
+    train_indicators = np.array([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1])
+    evaluator = SurvivalEvaluator(
+        curves,
+        time_grid,
+        event_times,
+        event_indicators,
+        train_times,
+        train_indicators,
+        interpolation=interpolation,
+    )
+    anchor_times = event_times[event_indicators.astype(bool)]
+    if risks == "Survival":
+        dense_scores = -evaluator.predict_multi_probabilities_from_curve(anchor_times)
+    else:
+        dense_scores = evaluator.predict_multi_hazards_from_curve(anchor_times)
+    # The original evaluator expanded its predictions into a float64 matrix.
+    dense_scores = dense_scores.astype(float)
+
+    for method in ["Antolini", "Naive", "IPCW"]:
+        for ties in ["None", "Risk", "Time", "All"]:
+            for tau in [None, 4.0]:
+                expected = concordance_time_dependent(
+                    dense_scores,
+                    event_times,
+                    event_indicators,
+                    train_times,
+                    train_indicators,
+                    method=method,
+                    ties=ties,
+                    tau=tau,
+                )
+                actual = evaluator.concordance_time_dependent(
+                    method=method, risks=risks, ties=ties, tau=tau
+                )
+                np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+def test_streamed_survival_preserves_float32_prediction_ties(interpolation):
+    half = np.float32(0.5)
+    next_half = np.nextafter(half, np.float32(1.0))
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[1.0, half], [1.0, next_half]], dtype=np.float32),
+        time_coordinates=np.array([0.0, 1.0]),
+        event_times=np.array([0.5, 1.0]),
+        event_indicators=np.ones(2),
+        interpolation=interpolation,
+    )
+    # Unrounded interpolated risks differ by more than 1e-8, but both round
+    # to 0.75 in the original float32 probability matrix.
+    result = evaluator.concordance_time_dependent()
+    np.testing.assert_allclose(result, (0.5, 0.5, 1.0))
+
+
+@pytest.mark.parametrize("risks", ["Survival", "Hazard"])
+@pytest.mark.parametrize("tau", [None, 500.0])
+def test_streamed_evaluator_uses_linear_working_memory(risks, tau):
+    n_samples = 1_000
+    time_grid = np.array([0.0, n_samples])
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.tile([1.0, 0.5], (n_samples, 1)),
+        time_coordinates=time_grid,
+        event_times=np.arange(1.0, n_samples + 1),
+        event_indicators=np.ones(n_samples),
+    )
+
+    # Exclude the input curves. A float64 n-by-n matrix alone would require
+    # 8 MB here; allow a generous budget for linear buffers and interpolation.
+    was_tracing = tracemalloc.is_tracing()
+    if not was_tracing:
+        tracemalloc.start()
+    baseline_bytes, _ = tracemalloc.get_traced_memory()
+    tracemalloc.reset_peak()
+    try:
+        result = evaluator.concordance_time_dependent(risks=risks, tau=tau)
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        if not was_tracing:
+            tracemalloc.stop()
+
+    assert peak_bytes - baseline_bytes < 1024 * n_samples
+    assert result[0] == 0.5
+
+
+@pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
+def test_streamed_evaluator_counts_final_event_ties_without_predictions(monkeypatch, ties):
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.ones((3, 1)),
+        time_coordinates=np.array([0.0]),
+        event_times=np.ones(3),
+        event_indicators=np.ones(3),
+    )
+
+    def unexpected_prediction(*args, **kwargs):
+        pytest.fail("Final event-only ties do not require risk predictions.")
+
+    monkeypatch.setattr(evaluator, "_predict_risks_from_curve", unexpected_prediction)
+    actual = evaluator.concordance_time_dependent(risks="Hazard", ties=ties)
+    expected = concordance_time_dependent(
+        np.zeros((3, 3)), np.ones(3), np.ones(3), ties=ties
+    )
+    np.testing.assert_allclose(actual, expected, equal_nan=True)
+
+
+def test_streamed_hazards_only_require_grid_support_for_contributing_pairs():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.exp(-np.array([[0.0, 1.0], [0.0, 0.8], [0.0, 0.4]])),
+        time_coordinates=np.array([[0.0, 1.0], [0.0, 2.0], [0.0, 2.0]]),
+        event_times=np.array([1.0, 2.0, 3.0]),
+        event_indicators=np.ones(3),
+    )
+    # Sample 0 is not a candidate for the event at time 2, so its hazard
+    # beyond its own grid is irrelevant. The final event needs no own risk.
+    result = evaluator.concordance_time_dependent(risks="Hazard")
+    np.testing.assert_allclose(result, (1.0, 3.0, 3.0))

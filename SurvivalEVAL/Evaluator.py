@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC
-from functools import cached_property
+from functools import cached_property, partial
 from typing import Callable
 
 import matplotlib.pyplot as plt
@@ -32,9 +32,8 @@ from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
     one_calibration,
 )
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+    _concordance_time_dependent,
     _normalize_time_dependent_method,
-    _select_risk_anchors,
-    concordance_time_dependent,
 )
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
@@ -491,41 +490,63 @@ class SurvivalEvaluator:
         """
         target_times = validate_time_points(target_times, input_name="target_times")
 
-        survival_curves, time_grids = align_curve_and_time_coordinates(
-            self._pred_survs,
-            self._time_coordinates,
-            n_samples=self._testing_sample_count(),
-        )
-        if survival_curves.shape[1] < 2:
+        if self._pred_survs.shape[-1] < 2:
             raise ValueError(
                 "At least two time points are required to estimate hazards."
             )
 
+        n_samples = self._testing_sample_count()
         hazard_mat = np.empty(
-            (survival_curves.shape[0], target_times.shape[0]), dtype=float
+            (n_samples, target_times.shape[0]), dtype=float
         )
-        eps = 1e-12
-
-        for i, (survival_curve, time_grid) in enumerate(
-            zip(survival_curves, time_grids)
-        ):
-            if np.any(target_times > time_grid[-1]):
-                raise ValueError(
-                    "target_times must not exceed the largest time coordinate "
-                    "when estimating hazard rates."
-                )
-
-            interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
-            interval_indices = np.clip(interval_indices, 0, time_grid.shape[0] - 2)
-            left_survival = np.clip(survival_curve[interval_indices], eps, None)
-            right_survival = np.clip(survival_curve[interval_indices + 1], eps, None)
-            interval_widths = (
-                time_grid[interval_indices + 1] - time_grid[interval_indices]
+        for i in range(n_samples):
+            hazard_mat[i] = self._predict_risks_from_curve(
+                i, target_times, risks="hazard"
             )
 
-            hazard_mat[i] = -np.log(right_survival / left_survival) / interval_widths
-
         return hazard_mat
+
+    def _predict_risks_from_curve(
+        self, sample_index: int, target_times: np.ndarray, risks: str
+    ) -> np.ndarray:
+        """Predict one sample's risks without allocating a matrix of scores."""
+        survival_curve = (
+            self._pred_survs[sample_index]
+            if self.ndim_surv == 2
+            else self._pred_survs
+        )
+        time_grid = (
+            self._time_coordinates[sample_index]
+            if self.ndim_time == 2
+            else self._time_coordinates
+        )
+        if risks == "survival":
+            predicted_risks = np.asarray(
+                predict_multi_probs_from_curve(
+                    survival_curve, time_grid, target_times, self.interpolation
+                ),
+                dtype=self._pred_survs.dtype,
+            )
+            np.negative(predicted_risks, out=predicted_risks)
+            return predicted_risks
+
+        if time_grid.size < 2:
+            raise ValueError(
+                "At least two time points are required to estimate hazards."
+            )
+        if np.any(target_times > time_grid[-1]):
+            raise ValueError(
+                "target_times must not exceed the largest time coordinate "
+                "when estimating hazard rates."
+            )
+
+        interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
+        interval_indices = np.clip(interval_indices, 0, time_grid.size - 2)
+        eps = 1e-12
+        left_survival = np.clip(survival_curve[interval_indices], eps, None)
+        right_survival = np.clip(survival_curve[interval_indices + 1], eps, None)
+        interval_widths = time_grid[interval_indices + 1] - time_grid[interval_indices]
+        return -np.log(right_survival / left_survival) / interval_widths
 
     def predict_interval(
         self,
@@ -866,11 +887,10 @@ class SurvivalEvaluator:
         """
         Calculate the time-dependent concordance index.
 
-        Risk scores are evaluated at sample-level observed-event anchor times.
-        If multiple observed events share the same time, that time is represented
-        once per observed event anchor, not once per unique event time. The
-        evaluator predicts each contributing unique time once, then expands it
-        to preserve the lower-level sample-level column contract.
+        Risk scores are evaluated at observed-event anchor times, processing
+        one sample's curve at a time. Each contributing time is predicted at
+        most once per sample; observed events tied on time remain separate
+        anchors for pair counting.
 
         Parameters
         ----------
@@ -911,6 +931,14 @@ class SurvivalEvaluator:
             The number of concordant pairs.
         num_total_pairs: float
             The number of total pairs.
+
+        Notes
+        -----
+        Concordance counting uses O(n) working memory and O(n log n + P)
+        time, where P is the number of comparable pairs (O(n^2) in the worst
+        case). Prediction adds O(k) temporary storage for one curve with k
+        grid points. These bounds exclude the stored input curves and IPCW
+        training data; no n-by-n risk matrix is constructed.
         """
         # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
         risks = risks.lower()
@@ -931,52 +959,8 @@ class SurvivalEvaluator:
         if method == "ipcw":
             self._error_trainset("IPCW time-dependent concordance")
 
-        event_indicators = self.event_indicators.astype(bool, copy=False)
-        n_samples = self.event_times.shape[0]
-        anchor_times, included_anchor_mask = _select_risk_anchors(
-            self.event_times, event_indicators, tau
-        )
-        n_anchors = anchor_times.size
-        if n_anchors == 0:
-            raise ValueError(
-                "Data has no observed events, cannot estimate time-dependent concordance index."
-            )
-
-        included_anchor_times = anchor_times[included_anchor_mask]
-
-        if included_anchor_times.size > 0:
-            unique_anchor_times, inverse = np.unique(
-                included_anchor_times, return_inverse=True
-            )
-            if risks == "survival":
-                unique_risk_scores = self.predict_multi_probabilities_from_curve(
-                    unique_anchor_times
-                )
-                np.negative(unique_risk_scores, out=unique_risk_scores)
-            else:
-                unique_risk_scores = self.predict_multi_hazards_from_curve(
-                    unique_anchor_times
-                )
-
-            # Expand unique-time risks directly into the required sample-level
-            # anchor matrix. Inactive columns are placeholders that the pair
-            # counter never reads.
-            unique_column_by_anchor = np.zeros(n_anchors, dtype=int)
-            unique_column_by_anchor[included_anchor_mask] = inverse
-            risk_scores = np.empty((n_samples, n_anchors), dtype=float)
-            np.take(
-                unique_risk_scores,
-                unique_column_by_anchor,
-                axis=1,
-                out=risk_scores,
-            )
-            risk_scores[:, ~included_anchor_mask] = 0.0
-            del unique_risk_scores, unique_column_by_anchor, inverse
-        else:
-            risk_scores = np.zeros((n_samples, n_anchors), dtype=float)
-
-        return concordance_time_dependent(
-            risk_scores=risk_scores,
+        return _concordance_time_dependent(
+            risk_scores=partial(self._predict_risks_from_curve, risks=risks),
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             train_event_times=self.train_event_times,
