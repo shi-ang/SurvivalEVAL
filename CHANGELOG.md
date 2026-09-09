@@ -6,12 +6,8 @@
    risk matrices, reducing concordance working memory from `O(n²)` to `O(n)` plus `O(k)` temporary interpolation
    storage for a curve with `k` grid points. These bounds exclude stored input curves and IPCW training data.
    Pair counting takes `O(n log n + P)` time for `P` comparable pairs, remaining quadratic in the worst case.
-2. Preserve Antolini/Naive and IPCW weighting, all tie policies, strict `tau` truncation, float32 prediction rounding,
-   and survival-probability and hazard-rate risk modes while retaining the lower-level dense risk-matrix API.
-3. Evaluate hazards only at contributing anchor times for each sample, avoiding unnecessary out-of-grid predictions,
+2. Evaluate hazards only at contributing anchor times for each sample, avoiding unnecessary out-of-grid predictions,
    and validate target times consistently in the shared per-sample risk predictor.
-4. Add randomized brute-force count comparisons, crossing-curve and sample-specific time-grid checks, Linear/Pchip
-   interpolation coverage, float32 tie tests, and peak-memory regression tests.
 
 ## 2026-08-23: Version 0.8.2
 
