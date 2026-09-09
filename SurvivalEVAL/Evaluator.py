@@ -510,6 +510,7 @@ class SurvivalEvaluator:
         self, sample_index: int, target_times: np.ndarray, risks: str
     ) -> np.ndarray:
         """Predict one sample's risks without allocating a matrix of scores."""
+        target_times = validate_time_points(target_times, input_name="target_times")
         survival_curve = (
             self._pred_survs[sample_index]
             if self.ndim_surv == 2
