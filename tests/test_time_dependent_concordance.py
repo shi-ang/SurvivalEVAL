@@ -613,7 +613,9 @@ def test_streamed_evaluator_uses_linear_working_memory(risks, tau):
 
 
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
-def test_streamed_evaluator_counts_final_event_ties_without_predictions(monkeypatch, ties):
+def test_streamed_evaluator_counts_final_event_ties_without_predictions(
+    monkeypatch, ties
+):
     evaluator = SurvivalEvaluator(
         pred_survs=np.ones((3, 1)),
         time_coordinates=np.array([0.0]),

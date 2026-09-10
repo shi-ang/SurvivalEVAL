@@ -496,9 +496,7 @@ class SurvivalEvaluator:
             )
 
         n_samples = self._testing_sample_count()
-        hazard_mat = np.empty(
-            (n_samples, target_times.shape[0]), dtype=float
-        )
+        hazard_mat = np.empty((n_samples, target_times.shape[0]), dtype=float)
         for i in range(n_samples):
             hazard_mat[i] = self._predict_risks_from_curve(
                 i, target_times, risks="hazard"
@@ -512,9 +510,7 @@ class SurvivalEvaluator:
         """Predict one sample's risks without allocating a matrix of scores."""
         target_times = validate_time_points(target_times, input_name="target_times")
         survival_curve = (
-            self._pred_survs[sample_index]
-            if self.ndim_surv == 2
-            else self._pred_survs
+            self._pred_survs[sample_index] if self.ndim_surv == 2 else self._pred_survs
         )
         time_grid = (
             self._time_coordinates[sample_index]
@@ -951,10 +947,7 @@ class SurvivalEvaluator:
         ties = _normalize_ties(ties)
 
         if risks not in {"survival", "hazard"}:
-            error = (
-                "Risks must be 'Survival' or 'Hazard', "
-                f"got '{risks}' instead"
-            )
+            error = "Risks must be 'Survival' or 'Hazard', " f"got '{risks}' instead"
             raise ValueError(error)
 
         if method == "ipcw":
@@ -1704,9 +1697,7 @@ class SurvivalEvaluator:
             survival curve and the Kaplan-Meier estimate. Lower is better.
         """
         if self.ndim_time == 1:
-            average_survival_curve = np.mean(
-                self._pred_survs, axis=0, dtype=float
-            )
+            average_survival_curve = np.mean(self._pred_survs, axis=0, dtype=float)
             calibration_times = self._time_coordinates
         else:
             calibration_times = np.unique(self.event_times[self.event_indicators == 1])

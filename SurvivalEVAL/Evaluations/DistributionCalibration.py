@@ -120,13 +120,13 @@ def d_cal_ic(
     binning: np.ndarray
         The binning histogram of the D-Calibration test.
     """
-    assert len(pred_probs_left) == len(pred_probs_right), (
-        "The length of pred_probs_left and pred_probs_right should have same length."
-    )
+    assert len(pred_probs_left) == len(
+        pred_probs_right
+    ), "The length of pred_probs_left and pred_probs_right should have same length."
 
-    assert np.all(pred_probs_left >= pred_probs_right), (
-        "The left survival probabilities should be greater than or equal to the right survival probabilities."
-    )
+    assert np.all(
+        pred_probs_left >= pred_probs_right
+    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
 
     assert (
         np.all(pred_probs_left >= 0)
@@ -179,9 +179,9 @@ def ksd_calibration(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs) == len(event_indicators), (
-        "The length of pred_probs and event_indicators should have same length."
-    )
+    assert len(pred_probs) == len(
+        event_indicators
+    ), "The length of pred_probs and event_indicators should have same length."
 
     n = len(pred_probs)
     km = KaplanMeier(pred_probs, event_indicators)
@@ -252,13 +252,13 @@ def ksd_cal_ic(
         - empirical_distribution: tuple (x_support, cdf_values)
         - figure: tuple (fig, ax)
     """
-    assert len(pred_probs_left) == len(pred_probs_right), (
-        "The length of pred_probs_left and pred_probs_right should have same length."
-    )
+    assert len(pred_probs_left) == len(
+        pred_probs_right
+    ), "The length of pred_probs_left and pred_probs_right should have same length."
 
-    assert np.all(pred_probs_left >= pred_probs_right), (
-        "The left survival probabilities should be greater than or equal to the right survival probabilities."
-    )
+    assert np.all(
+        pred_probs_left >= pred_probs_right
+    ), "The left survival probabilities should be greater than or equal to the right survival probabilities."
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
@@ -722,9 +722,9 @@ def discrepancy_to_uniform(
     if x.ndim != 1 or cdf.ndim != 1 or x.size != cdf.size:
         raise ValueError("x and cdf must be 1D arrays of the same length.")
 
-    assert np.all(cdf >= 0) and np.all(cdf <= 1), (
-        "The cdf values must be in the range [0, 1]."
-    )
+    assert np.all(cdf >= 0) and np.all(
+        cdf <= 1
+    ), "The cdf values must be in the range [0, 1]."
 
     if not (np.all(np.diff(x) >= 0) and np.all(np.diff(cdf) >= 0)):
         raise ValueError("x and cdf must be nondecreasing.")
