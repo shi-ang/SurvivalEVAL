@@ -199,9 +199,7 @@ class TurnbullEstimator:
 
         return self
 
-    def predict(
-        self, prediction_times: float | np.ndarray
-    ) -> float | np.ndarray:
+    def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict survival probabilities at given times using the fitted Turnbull estimator.
         Parameters
@@ -270,9 +268,7 @@ class TurnbullEstimatorLifelines:
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(
-        self, prediction_times: float | np.ndarray
-    ) -> float | np.ndarray:
+    def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
         Parameters

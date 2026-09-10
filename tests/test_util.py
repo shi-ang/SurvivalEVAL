@@ -150,9 +150,7 @@ def test_check_and_convert_event_data_rejects_mismatched_shapes():
 
 @pytest.mark.parametrize("interpolation", ["None", "Linear"])
 def test_predict_rmst_accumulates_float32_inputs_in_float64(interpolation):
-    curves = np.array(
-        [[1.0, 0.8, 0.5], [1.0, 0.6, 0.2]], dtype=np.float32
-    )
+    curves = np.array([[1.0, 0.8, 0.5], [1.0, 0.6, 0.2]], dtype=np.float32)
     times = np.array([0.0, 1.0, 3.0], dtype=np.float32)
 
     result = predict_rmst(curves, times, interpolation)

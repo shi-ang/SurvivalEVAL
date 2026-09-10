@@ -92,9 +92,9 @@ def concordance(
 
     event_indicators = event_indicators.astype(bool, copy=False)
 
-    assert len(predicted_times) == len(event_times) == len(event_indicators), (
-        "The lengths of the predicted times and labels must be the same."
-    )
+    assert (
+        len(predicted_times) == len(event_times) == len(event_indicators)
+    ), "The lengths of the predicted times and labels must be the same."
 
     method = method.lower()
     ties = ties.lower()

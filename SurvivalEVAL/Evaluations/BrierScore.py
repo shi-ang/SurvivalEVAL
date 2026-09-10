@@ -81,9 +81,7 @@ def single_brier_score(
         weight_cat1 = event_before_or_at_target
         weight_cat2 = event_free_at_target
 
-    sample_errors = (
-        np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
-    )
+    sample_errors = np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
     b_score = float(np.mean(sample_errors, dtype=float))
     ###########################
     # Here we are ordering event times and then using predict with level.chaos = 1 which returns
@@ -534,9 +532,9 @@ def brier_multiple_points_ic(
         right_sf = aft_model.predict_survival_function(x_df, times=right_limits)
         right_probs = right_sf.to_numpy().diagonal().copy()
         del right_sf
-        target_probs_mat = aft_model.predict_survival_function(
-            x_df, times=target_times
-        ).to_numpy().T
+        target_probs_mat = (
+            aft_model.predict_survival_function(x_df, times=target_times).to_numpy().T
+        )
 
     left_probs_column = left_probs[:, None]
     right_probs_column = right_probs[:, None]

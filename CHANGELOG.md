@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-09-09: Version 0.8.3
+
+1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
+   risk matrices, reducing concordance working memory from `O(n²)` to `O(n)` plus `O(k)` temporary interpolation
+   storage for a curve with `k` grid points. These bounds exclude stored input curves and IPCW training data.
+   Pair counting takes `O(n log n + P)` time for `P` comparable pairs, remaining quadratic in the worst case.
+2. Evaluate hazards only at contributing anchor times for each sample, avoiding unnecessary out-of-grid predictions,
+   and validate target times consistently in the shared per-sample risk predictor.
+
 ## 2026-08-23: Version 0.8.2
 
 1. Replace per-anchor enumeration of right-censored concordance pairs with a coordinate-compressed Fenwick tree,

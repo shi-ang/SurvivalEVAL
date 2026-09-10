@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 
 from SurvivalEVAL.Evaluations._concordance_utils import (
@@ -138,6 +140,40 @@ def concordance_time_dependent(
             "The number of anchor times (columns in risk_scores) must match the number of observed events."
         )
 
+    return _concordance_time_dependent(
+        risk_scores,
+        event_times,
+        event_indicators,
+        train_event_times,
+        train_event_indicators,
+        method,
+        ties,
+        tau,
+    )
+
+
+def _concordance_time_dependent(
+    risk_scores: np.ndarray | Callable[[int, np.ndarray], np.ndarray],
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
+    method: str = "Antolini",
+    ties: str = "Risk",
+    tau: float | None = None,
+) -> tuple[float, float, float]:
+    """Evaluate validated arrays or a predictor for one sample at a time.
+
+    A callable receives a sample index and unique, increasing anchor times,
+    and returns a 1-D array of that sample's risks at those times. This lets
+    the evaluator count pairs without allocating the dense risk matrix.
+    """
+    event_indicators = event_indicators.astype(bool, copy=False)
+    if not np.any(event_indicators):
+        raise ValueError(
+            "Data has no observed events, cannot estimate time-dependent concordance index."
+        )
+
     method = _normalize_time_dependent_method(method)
     ties = _normalize_ties(ties)
 
@@ -188,7 +224,12 @@ def concordance_time_dependent(
         anchor_pair_weights[observed_anchors] = 1 / np.square(
             censoring_survival[observed_anchors]
         )
-    counts = _time_dependent_risk_counts(
+    count_risks = (
+        _time_dependent_risk_counts_from_predictions
+        if callable(risk_scores)
+        else _time_dependent_risk_counts
+    )
+    counts = count_risks(
         risk_scores=risk_scores,
         event_times=event_times,
         event_indicators=event_indicators,
@@ -199,6 +240,91 @@ def concordance_time_dependent(
 
     _check_has_any_pairs(counts)
     return _finalize_counts(counts, ties)
+
+
+def _time_dependent_risk_counts_from_predictions(
+    risk_scores: Callable[[int, np.ndarray], np.ndarray],
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    sample_weights: np.ndarray | None = None,
+    anchor_pair_weights: np.ndarray | None = None,
+    tau: float | None = None,
+    tied_tol: float = 1e-8,
+) -> _ConcordanceCounts:
+    """Count pairs while predicting one sample's risks at a time.
+
+    Visit samples in increasing observed-time order, processing events before
+    censorings at the same time. Retain each active event's own risk so later
+    samples can be compared with it. Each sample is predicted at most once,
+    at unique contributing anchor times up to its observed time.
+
+    Counting uses O(n) working memory and O(n log n + P) time for P comparable
+    pairs, excluding prediction costs. The predictor's temporary storage is
+    released after each sample; no sample-by-anchor matrix is constructed.
+    """
+    if sample_weights is None:
+        sample_weights = np.ones(event_times.shape[0], dtype=float)
+
+    _, included = _select_risk_anchors(event_times, event_indicators, tau)
+    anchor_indices = np.flatnonzero(event_indicators)[included]
+    anchor_indices = anchor_indices[
+        np.argsort(event_times[anchor_indices], kind="stable")
+    ]
+    anchor_times = event_times[anchor_indices]
+    unique_times, time_columns = np.unique(anchor_times, return_inverse=True)
+    anchor_col_by_sample = np.full(event_times.shape[0], -1, dtype=int)
+    anchor_col_by_sample[anchor_indices] = np.arange(anchor_indices.size)
+    anchor_risks = np.empty(anchor_indices.size, dtype=float)
+    anchor_weights = (
+        sample_weights[anchor_indices]
+        if anchor_pair_weights is None
+        else anchor_pair_weights[anchor_indices]
+    )
+
+    counts = _ConcordanceCounts()
+    for block, _ in _iter_time_blocks(event_times):
+        block_time = event_times[block[0]]
+        events = block[event_indicators[block]]
+        censored = block[~event_indicators[block]]
+        if tau is None or block_time < tau:
+            counts.time_tie_pairs += _same_time_pair_weight(sample_weights[events])
+
+        before = np.searchsorted(anchor_times, block_time, side="left")
+        through = np.searchsorted(anchor_times, block_time, side="right")
+        if through == 0:
+            continue
+        target_times = unique_times[: time_columns[through - 1] + 1]
+
+        # Events at the same time are time ties, not directed risk pairs.
+        # Their own risks must all be available before same-time censorings.
+        for sample_index in np.concatenate((events, censored)):
+            stop = before if event_indicators[sample_index] else through
+            anchor_col = anchor_col_by_sample[sample_index]
+            if stop == 0 and anchor_col < 0:
+                continue
+
+            predicted_risks = risk_scores(sample_index, target_times)
+            if anchor_col >= 0:
+                anchor_risks[anchor_col] = predicted_risks[-1]
+            if stop == 0:
+                continue
+
+            risk_diff = predicted_risks[time_columns[:stop]] - anchor_risks[:stop]
+            tied = np.absolute(risk_diff) <= tied_tol
+            concordant = (risk_diff < 0) & ~tied
+            pair_weights = anchor_weights[:stop]
+            if anchor_pair_weights is None:
+                pair_weights = pair_weights * sample_weights[sample_index]
+
+            concordant_weight = pair_weights[concordant].sum()
+            risk_tie_weight = pair_weights[tied].sum()
+            counts.concordant += concordant_weight
+            counts.risk_tie_pairs += risk_tie_weight
+            counts.discordant += (
+                pair_weights.sum() - concordant_weight - risk_tie_weight
+            )
+
+    return counts
 
 
 def _time_dependent_risk_counts(

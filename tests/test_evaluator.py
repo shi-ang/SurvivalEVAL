@@ -102,9 +102,7 @@ def test_point_and_single_time_setters_use_input_conversion_contract():
     point_predictions.flags.writeable = False
     probability_predictions.flags.writeable = False
 
-    point_evaluator = PointEvaluator(
-        point_predictions, event_times, event_indicators
-    )
+    point_evaluator = PointEvaluator(point_predictions, event_times, event_indicators)
     probability_evaluator = SingleTimeEvaluator(
         probability_predictions, event_times, event_indicators
     )
@@ -753,9 +751,7 @@ def test_prediction_setters_preserve_float32_when_padding():
         event_indicators=np.array([True, False]),
     )
 
-    evaluator.pred_survs = np.array(
-        [[0.7, 0.4], [0.8, 0.5]], dtype=np.float32
-    )
+    evaluator.pred_survs = np.array([[0.7, 0.4], [0.8, 0.5]], dtype=np.float32)
     evaluator.time_coordinates = np.array([2.0, 4.0], dtype=np.float32)
 
     assert evaluator.pred_survs.dtype == np.float32

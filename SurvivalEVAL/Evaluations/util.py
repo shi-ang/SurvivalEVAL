@@ -1123,10 +1123,7 @@ def zero_padding(
         )
         raise TypeError(error)
     if ndim_time not in (1, 2):
-        error = (
-            "Time coordinates must be a 1D or 2D array, "
-            f"got {ndim_time} instead"
-        )
+        error = "Time coordinates must be a 1D or 2D array, " f"got {ndim_time} instead"
         raise TypeError(error)
     if pred_survs.shape[-1] == 0 or time_coordinates.shape[-1] == 0:
         raise ValueError("pred_survs and time_coordinates must be non-empty.")

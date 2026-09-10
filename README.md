@@ -270,6 +270,13 @@ directly. `method="IPCW"` requires training event times and indicators. `tau`
 keeps event anchors whose observed time is strictly before `tau`; when omitted,
 no truncation is applied.
 
+The evaluator processes one sample's curve at a time, using O(n) working memory
+for concordance counting plus O(k) temporary interpolation storage for a curve
+with k grid points. This excludes the input curves and IPCW training data.
+Counting takes O(n log n + P) time for P comparable pairs, so the worst case
+remains O(n²). The lower-level `concordance_time_dependent` function still accepts
+a dense sample-by-event risk matrix.
+
 ## Interval-Censored Metrics
 
 `IntervalCenEvaluator` evaluates predicted survival curves against interval

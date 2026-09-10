@@ -773,9 +773,7 @@ def test_interval_concordance_returns_weighted_contribution_matrix(
         ties=ties,
     )
 
-    expected_denominator = np.array(
-        [[0.0, 1.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]
-    )
+    expected_denominator = np.array([[0.0, 1.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])
     expected_numerator = expected_denominator.copy()
     expected_numerator[0, 1] = tie_contribution
 
