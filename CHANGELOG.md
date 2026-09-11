@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased
+
+1. Require Python 3.10 or newer, dropping Python 3.9 support while retaining Python 3.10 compatibility.
+2. Raise dependency security minimums in the published package metadata and development extra, including
+   affected transitive dependencies, and regenerate the uv lockfile without the vulnerable Python 3.9 resolutions.
+3. Configure weekly Dependabot updates for uv and document the reproducible development workflow.
+
 ## 2026-09-09: Version 0.8.3
 
 1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
