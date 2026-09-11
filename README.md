@@ -13,14 +13,14 @@
   <a href="https://pypi.org/project/SurvivalEVAL/">
     <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
   <a href="https://pypi.org/project/SurvivalEVAL/">
-    <img alt="Python Version" src="https://img.shields.io/badge/python-3.9%2B-blue.svg"></a>
+    <img alt="Python Version" src="https://img.shields.io/badge/python-3.10%2B-blue.svg"></a>
   <a href="https://opensource.org/license/gpl-3-0">
     <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
   <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
     <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
 </p>
 
-SurvivalEVAL is a Python 3.9+ package for evaluating survival analysis predictions.
+SurvivalEVAL is a Python 3.10+ package for evaluating survival analysis predictions.
 It supports right-censored and interval-censored outcomes, predicted survival
 curves, point predictions, single-time probabilities, and quantile-regression
 outputs.
@@ -79,6 +79,18 @@ Optional development dependencies are available with:
 ```bash
 python -m pip install -e ".[dev]"
 ```
+
+For a reproducible development environment using the committed `uv.lock`:
+
+```bash
+uv sync --locked --extra dev
+```
+
+To update dependencies, run `uv lock --upgrade`, sync the environment, and run the
+tests before committing `pyproject.toml`, `requirements.txt`, and `uv.lock` together
+when they change. Explicit security minimums also apply to `pip` installations;
+the lockfile itself only controls uv project environments. Dependabot checks for
+uv dependency updates weekly.
 
 ## Input Conventions
 

@@ -1,5 +1,5 @@
 tqdm>=4.49.0
-torch>=1.0.0
+torch>=2.13.0
 scipy>=1.11.1
 scikit-learn>=1.5.2
 matplotlib>=3.4.3
@@ -8,3 +8,7 @@ numpy>=1.26.0
 lifelines>=0.30.0
 osqp>=0.6.3
 patsy>=1.0.1
+# Security floors for dependencies pulled in by matplotlib, torch, and osqp.
+pillow>=12.3.0
+filelock>=3.20.3
+setuptools>=83.0.0
