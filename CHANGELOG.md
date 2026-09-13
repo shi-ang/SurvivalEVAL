@@ -1,12 +1,5 @@
 # CHANGELOG
 
-## Unreleased
-
-1. Require Python 3.10 or newer, dropping Python 3.9 support while retaining Python 3.10 compatibility.
-2. Raise dependency security minimums in the published package metadata and development extra, including
-   affected transitive dependencies, and regenerate the uv lockfile without the vulnerable Python 3.9 resolutions.
-3. Configure weekly Dependabot updates for uv and document the reproducible development workflow.
-
 ## 2026-09-09: Version 0.8.3
 
 1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
@@ -15,6 +8,7 @@
    Pair counting takes `O(n log n + P)` time for `P` comparable pairs, remaining quadratic in the worst case.
 2. Evaluate hazards only at contributing anchor times for each sample, avoiding unnecessary out-of-grid predictions,
    and validate target times consistently in the shared per-sample risk predictor.
+3. Update compatibility with the latest dependency versions and Python 3.10+.
 
 ## 2026-08-23: Version 0.8.2
 
