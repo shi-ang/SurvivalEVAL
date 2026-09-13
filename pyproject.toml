@@ -75,7 +75,7 @@ dev = [
     "black>=26.3.1",
     "isort>=6.1.0",
     "pycox>=0.2.3",
-    "scikit-survival>=0.20.2",
+    "scikit-survival>=0.25.0",
     "pytest>=9.0.3",
     # Security floors for pycox's transitive dependencies; not runtime requirements.
     "py7zr>=1.1.3",

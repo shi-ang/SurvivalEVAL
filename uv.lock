@@ -3488,7 +3488,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },
     { name = "requests", marker = "extra == 'dev'", specifier = ">=2.33.0" },
     { name = "scikit-learn", specifier = ">=1.5.2" },
-    { name = "scikit-survival", marker = "extra == 'dev'", specifier = ">=0.20.2" },
+    { name = "scikit-survival", marker = "extra == 'dev'", specifier = ">=0.25.0" },
     { name = "scipy", specifier = ">=1.11.1" },
     { name = "setuptools", specifier = ">=83.0.0" },
     { name = "torch", specifier = ">=2.13.0" },
