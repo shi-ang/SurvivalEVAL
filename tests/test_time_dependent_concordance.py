@@ -3,8 +3,12 @@ import tracemalloc
 import numpy as np
 import pytest
 
+import SurvivalEVAL.Evaluations.TimeDependentConcordance as td_concordance
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations._concordance_utils import _ConcordanceCounts
+from SurvivalEVAL.Evaluations._concordance_utils import (
+    _ConcordanceCounts,
+    _finalize_counts,
+)
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
     _select_risk_anchors,
     _time_dependent_risk_counts,
@@ -505,6 +509,198 @@ def test_streamed_counts_match_brute_force_on_randomized_inputs(weighting):
                 ],
                 atol=1e-12,
             )
+
+
+@pytest.mark.parametrize("weighting", ["unweighted", "symmetric", "anchor"])
+@pytest.mark.parametrize("center", [-0.5, 0.0, 0.5])
+def test_streamed_counts_preserve_subtraction_at_risk_tie_boundaries(weighting, center):
+    tolerance = 1e-8
+    lower, upper = center - tolerance, center + tolerance
+    anchor_risks = np.repeat(
+        [
+            np.nextafter(lower, -np.inf),
+            lower,
+            np.nextafter(lower, np.inf),
+            center,
+            np.nextafter(upper, -np.inf),
+            upper,
+            np.nextafter(upper, np.inf),
+        ],
+        2,
+    )
+    candidate_risks = [
+        center,
+        np.nextafter(center, -np.inf),
+        np.nextafter(center, np.inf),
+    ]
+    scores = np.concatenate((anchor_risks, candidate_risks))
+    event_times = np.concatenate((np.ones(anchor_risks.size), [1.0, 2.0, 2.0]))
+    event_indicators = np.arange(scores.size) < anchor_risks.size
+    weights = (np.arange(scores.size) % 4).astype(float)
+    kwargs = dict(
+        sample_weights=None if weighting == "unweighted" else weights,
+        anchor_pair_weights=weights[::-1] if weighting == "anchor" else None,
+    )
+
+    def predict_risks(sample_index, target_times):
+        return np.full(target_times.size, scores[sample_index])
+
+    actual = _time_dependent_risk_counts_from_predictions(
+        predict_risks, event_times, event_indicators, **kwargs
+    )
+    expected = _brute_time_dependent_counts(
+        event_indicators,
+        event_times,
+        np.repeat(scores[:, None], anchor_risks.size, axis=1),
+        **kwargs,
+    )
+
+    # candidate - anchor must be compared directly: searching candidate +/-
+    # tolerance can move a boundary by one ULP and misclassify these pairs.
+    assert actual == expected
+
+
+@pytest.mark.parametrize("weighting", ["unweighted", "symmetric", "anchor"])
+@pytest.mark.parametrize("tau", [None, 2.0])
+def test_streamed_nonfinite_risks_preserve_dense_pair_classification(weighting, tau):
+    risk_values = np.array(
+        [-np.inf, np.nan, -np.inf, -1.0, 0.0, np.inf, np.nan, np.inf]
+    )
+    scores = np.column_stack((np.tile(risk_values, 4), np.tile(risk_values[::-1], 4)))
+    event_times = np.repeat([1.0, 1.0, 2.0, 3.0], risk_values.size)
+    event_indicators = np.repeat([True, False, True, False], risk_values.size)
+    weights = (np.arange(event_times.size) % 5).astype(float)
+    kwargs = dict(
+        sample_weights=None if weighting == "unweighted" else weights,
+        anchor_pair_weights=weights[::-1] if weighting == "anchor" else None,
+        tau=tau,
+    )
+
+    def predict_risks(sample_index, target_times):
+        return scores[sample_index, target_times.astype(int) - 1]
+
+    # Equal infinities and NaN risks produce NaN differences, which the
+    # existing dense counter classifies as discordant, not tied or concordant.
+    # Include both signs, same-time censorings, and later samples.
+    with np.errstate(invalid="ignore"):
+        actual = _time_dependent_risk_counts_from_predictions(
+            predict_risks, event_times, event_indicators, **kwargs
+        )
+        dense_scores = scores[:, event_times[event_indicators].astype(int) - 1]
+        expected = _brute_time_dependent_counts(
+            event_indicators, event_times, dense_scores, **kwargs
+        )
+        dense = _time_dependent_risk_counts(
+            dense_scores, event_times, event_indicators, **kwargs
+        )
+
+    assert actual == dense == expected
+
+
+@pytest.mark.parametrize("weighting", ["symmetric", "anchor"])
+def test_streamed_group_weights_are_independent_including_zero_weight_groups(weighting):
+    event_times = np.array([1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0])
+    event_indicators = np.array([True] * 7 + [False])
+    weights = np.array([1e16, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 1.0])
+    scores = np.array(
+        [[0.0, 0.0, 0.0]] * 2 + [[0.0, 1.0, 0.0]] * 3 + [[0.0, 0.0, 0.0]] * 3
+    )
+    kwargs = dict(
+        sample_weights=weights,
+        anchor_pair_weights=weights if weighting == "anchor" else None,
+    )
+
+    def predict_risks(sample_index, target_times):
+        return scores[sample_index, target_times.astype(int) - 1]
+
+    actual = _time_dependent_risk_counts_from_predictions(
+        predict_risks, event_times, event_indicators, **kwargs
+    )
+    expected = _brute_time_dependent_counts(
+        event_indicators,
+        event_times,
+        scores[:, event_times[event_indicators].astype(int) - 1],
+        **kwargs,
+    )
+
+    # A global prefix sum would lose small weights after the first 1e16
+    # group. The all-zero final group must not contribute directed pairs.
+    assert actual.concordant == (12.0 if weighting == "anchor" else 4.0)
+    assert actual == expected
+
+
+@pytest.mark.parametrize("weighting", ["symmetric", "anchor"])
+def test_streamed_small_concordant_weight_survives_large_risk_tie_weight(weighting):
+    event_times = np.array([1.0, 1.0, 2.0])
+    event_indicators = np.array([True, True, False])
+    weights = np.array([1e16, 1.0, 1.0])
+    scores = np.array([1.0, 2.0, 1.0])
+    kwargs = dict(
+        sample_weights=weights,
+        anchor_pair_weights=weights if weighting == "anchor" else None,
+    )
+
+    def predict_risks(sample_index, target_times):
+        return np.full(target_times.size, scores[sample_index])
+
+    actual = _time_dependent_risk_counts_from_predictions(
+        predict_risks, event_times, event_indicators, **kwargs
+    )
+    expected = _time_dependent_risk_counts(
+        np.repeat(scores[:, None], 2, axis=1),
+        event_times,
+        event_indicators,
+        **kwargs,
+    )
+
+    # Subtracting a 1e16 prefix from the group's total rounds the remaining
+    # concordant weight to zero and makes the no-ties C-index undefined.
+    assert actual == expected
+    assert actual.concordant == 1.0
+    assert actual.risk_tie_pairs == 1e16
+    np.testing.assert_array_equal(_finalize_counts(actual, "None"), [1.0, 1.0, 1.0])
+
+
+def test_streamed_rank_queries_scale_with_time_groups_not_event_anchors(monkeypatch):
+    group_sizes = [512, 1024, 512]
+    event_times = np.repeat([1.0, 2.0, 3.0], group_sizes)
+    event_indicators = event_times < 3.0
+    original_ranks = td_concordance._grouped_risk_ranks
+    query_sizes = []
+
+    def recording_ranks(anchor_risks, starts, ends, candidate_risks, tied_tol):
+        query_sizes.append(candidate_risks.shape)
+        ranks = original_ranks(anchor_risks, starts, ends, candidate_risks, tied_tol)
+        assert ranks.shape == (2, *candidate_risks.shape)
+        return ranks
+
+    def predict_risks(sample_index, target_times):
+        return np.full(target_times.size, -event_times[sample_index])
+
+    monkeypatch.setattr(td_concordance, "_grouped_risk_ranks", recording_ranks)
+    actual = _time_dependent_risk_counts_from_predictions(
+        predict_risks, event_times, event_indicators
+    )
+
+    expected_pairs = (
+        group_sizes[0] * sum(group_sizes[1:]) + group_sizes[1] * group_sizes[2]
+    )
+    assert actual.concordant == expected_pairs
+    assert actual.discordant == actual.risk_tie_pairs == 0.0
+    assert query_sizes
+    assert max(columns for _, columns in query_sizes) <= 2
+    assert max(rows * columns for rows, columns in query_sizes) <= event_times.size
+    assert sum(rows * columns for rows, columns in query_sizes) <= 2 * event_times.size
+
+
+def test_dense_scores_retain_distinct_columns_for_events_at_the_same_time():
+    # The public dense-array API accepts different columns even for tied
+    # event times; only a prediction callback guarantees a shared time risk.
+    scores = np.array([[3.0, 0.0, 0.0], [3.0, 1.0, 0.0], [2.0, 2.0, 0.0]])
+    result = concordance_time_dependent(
+        scores, np.array([1.0, 1.0, 2.0]), np.ones(3), ties="Risk"
+    )
+    np.testing.assert_array_equal(result, [0.5, 1.0, 2.0])
 
 
 @pytest.mark.parametrize("risks", ["Survival", "Hazard"])

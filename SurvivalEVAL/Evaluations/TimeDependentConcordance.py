@@ -251,16 +251,19 @@ def _time_dependent_risk_counts_from_predictions(
     tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
-    """Count pairs while predicting one sample's risks at a time.
+    """Count pairs by ranking risks within equal-event-time groups.
 
     Visit samples in increasing observed-time order, processing events before
-    censorings at the same time. Retain each active event's own risk so later
-    samples can be compared with it. Each sample is predicted at most once,
-    at unique contributing anchor times up to its observed time.
+    censorings at the same time. Sort each event group's own risks once; later
+    samples query weighted ranks in those groups instead of visiting each
+    anchor. Each sample is predicted at most once, at unique contributing
+    anchor times up to its observed time.
 
-    Counting uses O(n) working memory and O(n log n + P) time for P comparable
-    pairs, excluding prediction costs. The predictor's temporary storage is
-    released after each sample; no sample-by-anchor matrix is constructed.
+    Counting uses O(n) working memory and O(n log n + n U log(M + 1)) time,
+    where U is the number of contributing event times and M is the largest
+    event group. Small prediction batches contain at most n scores; no dense
+    sample-by-anchor matrix is constructed. These bounds exclude prediction
+    costs and the stored input curves.
     """
     if sample_weights is None:
         sample_weights = np.ones(event_times.shape[0], dtype=float)
@@ -271,7 +274,11 @@ def _time_dependent_risk_counts_from_predictions(
         np.argsort(event_times[anchor_indices], kind="stable")
     ]
     anchor_times = event_times[anchor_indices]
-    unique_times, time_columns = np.unique(anchor_times, return_inverse=True)
+    unique_times, group_starts, group_sizes = np.unique(
+        anchor_times, return_index=True, return_counts=True
+    )
+    group_ends = group_starts + group_sizes
+    group_offsets = np.arange(unique_times.size)
     anchor_col_by_sample = np.full(event_times.shape[0], -1, dtype=int)
     anchor_col_by_sample[anchor_indices] = np.arange(anchor_indices.size)
     anchor_risks = np.empty(anchor_indices.size, dtype=float)
@@ -280,6 +287,13 @@ def _time_dependent_risk_counts_from_predictions(
         if anchor_pair_weights is None
         else anchor_pair_weights[anchor_indices]
     )
+    # Every group's cumulative weights start at zero, so queries do not
+    # subtract large cumulative totals from unrelated event-time groups.
+    cumulative_weights = np.empty(anchor_indices.size + unique_times.size)
+    # Sum concordant suffixes independently: total-minus-prefix subtraction
+    # can erase small concordant weights when large risk ties are discarded.
+    suffix_weights = np.empty_like(cumulative_weights)
+    batch_size = min(256, max(1, event_times.size // max(1, unique_times.size)))
 
     counts = _ConcordanceCounts()
     for block, _ in _iter_time_blocks(event_times):
@@ -289,42 +303,104 @@ def _time_dependent_risk_counts_from_predictions(
         if tau is None or block_time < tau:
             counts.time_tie_pairs += _same_time_pair_weight(sample_weights[events])
 
-        before = np.searchsorted(anchor_times, block_time, side="left")
-        through = np.searchsorted(anchor_times, block_time, side="right")
+        before = np.searchsorted(unique_times, block_time, side="left")
+        through = np.searchsorted(unique_times, block_time, side="right")
         if through == 0:
             continue
-        target_times = unique_times[: time_columns[through - 1] + 1]
+        target_times = unique_times[:through]
 
         # Events at the same time are time ties, not directed risk pairs.
-        # Their own risks must all be available before same-time censorings.
-        for sample_index in np.concatenate((events, censored)):
-            stop = before if event_indicators[sample_index] else through
-            anchor_col = anchor_col_by_sample[sample_index]
-            if stop == 0 and anchor_col < 0:
-                continue
+        # Sort their own risks after predicting all events and before querying
+        # the same-time censorings, which are comparable with those events.
+        for is_event, samples in ((True, events), (False, censored)):
+            stop = before if is_event else through
+            for offset in range(0, samples.size, batch_size):
+                batch = samples[offset : offset + batch_size]
+                predicted_risks = np.empty((batch.size, through))
+                for row, sample_index in enumerate(batch):
+                    anchor_col = anchor_col_by_sample[sample_index]
+                    if stop == 0 and anchor_col < 0:
+                        continue
+                    predicted_risks[row] = risk_scores(sample_index, target_times)
+                    if anchor_col >= 0:
+                        anchor_risks[anchor_col] = predicted_risks[row, -1]
+                if stop == 0:
+                    continue
 
-            predicted_risks = risk_scores(sample_index, target_times)
-            if anchor_col >= 0:
-                anchor_risks[anchor_col] = predicted_risks[-1]
-            if stop == 0:
-                continue
+                ranks = _grouped_risk_ranks(
+                    anchor_risks,
+                    group_starts[:stop],
+                    group_ends[:stop],
+                    predicted_risks[:, :stop],
+                    tied_tol,
+                )
+                prefix_weights = cumulative_weights[ranks + group_offsets[:stop]]
+                pair_weights = (
+                    sample_weights[batch] if anchor_pair_weights is None else 1.0
+                )
+                counts.concordant += np.sum(
+                    suffix_weights[ranks[1] + group_offsets[:stop]].sum(axis=1)
+                    * pair_weights
+                )
+                counts.risk_tie_pairs += np.sum(
+                    (prefix_weights[1] - prefix_weights[0]).sum(axis=1) * pair_weights
+                )
+                counts.discordant += np.sum(
+                    prefix_weights[0].sum(axis=1) * pair_weights
+                )
 
-            risk_diff = predicted_risks[time_columns[:stop]] - anchor_risks[:stop]
-            tied = np.absolute(risk_diff) <= tied_tol
-            concordant = (risk_diff < 0) & ~tied
-            pair_weights = anchor_weights[:stop]
-            if anchor_pair_weights is None:
-                pair_weights = pair_weights * sample_weights[sample_index]
-
-            concordant_weight = pair_weights[concordant].sum()
-            risk_tie_weight = pair_weights[tied].sum()
-            counts.concordant += concordant_weight
-            counts.risk_tie_pairs += risk_tie_weight
-            counts.discordant += (
-                pair_weights.sum() - concordant_weight - risk_tie_weight
-            )
+            if is_event and through > before:
+                start, end = group_starts[before], group_ends[before]
+                group_risks = anchor_risks[start:end]
+                # NaN risks always count as discordant. Sort them with -inf
+                # so they remain in every candidate's discordant prefix.
+                risk_order = np.argsort(
+                    np.where(np.isnan(group_risks), -np.inf, group_risks),
+                    kind="stable",
+                )
+                anchor_risks[start:end] = group_risks[risk_order]
+                group_weights = anchor_weights[start:end][risk_order]
+                cumulative_weights[start + before] = 0.0
+                np.cumsum(
+                    group_weights,
+                    out=cumulative_weights[start + before + 1 : end + before + 1],
+                )
+                suffix_weights[end + before] = 0.0
+                np.cumsum(
+                    group_weights[::-1],
+                    out=suffix_weights[start + before : end + before][::-1],
+                )
 
     return counts
+
+
+def _grouped_risk_ranks(
+    anchor_risks: np.ndarray,
+    group_starts: np.ndarray,
+    group_ends: np.ndarray,
+    candidate_risks: np.ndarray,
+    tied_tol: float,
+) -> np.ndarray:
+    """Find discordant and nonconcordant prefixes of sorted anchor groups.
+
+    The returned array has shape (2, batch_size, n_groups). Binary searches
+    compare candidate-minus-anchor risks directly: searching for risk plus or
+    minus the tolerance can round differently at floating-point boundaries.
+    """
+    shape = (2, *candidate_risks.shape)
+    low = np.broadcast_to(group_starts, shape).copy()
+    high = np.broadcast_to(group_ends, shape).copy()
+    while np.any(low < high):
+        active = low < high
+        middle = (low + high) // 2
+        differences = candidate_risks - anchor_risks[np.minimum(middle, group_ends - 1)]
+        # NaN risks and equal infinities subtract to NaN, which the directed
+        # pair counter treats as discordant rather than as a risk tie.
+        differences[np.isnan(differences)] = np.inf
+        included = np.stack((differences[0] > tied_tol, differences[1] >= -tied_tol))
+        low = np.where(active & included, middle + 1, low)
+        high = np.where(active & ~included, middle, high)
+    return low
 
 
 def _time_dependent_risk_counts(
