@@ -1,9 +1,12 @@
 import tracemalloc
 
 import numpy as np
+import pandas as pd
 import pytest
+from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL.Evaluations.BrierScore import (
+    _predict_survival_at_observed_times,
     brier_multiple_points,
     brier_multiple_points_ic,
     brier_score_ic,
@@ -191,7 +194,8 @@ def test_brier_multiple_points_ic_tsouprou_uses_open_closed_interval() -> None:
     np.testing.assert_allclose(scores, [0.0, 0.0, 0.0])
 
 
-def test_brier_multiple_points_ic_conditional_matches_single() -> None:
+@pytest.mark.parametrize("repeats", [1, 80])
+def test_brier_multiple_points_ic_conditional_matches_single(repeats) -> None:
     rng = np.random.default_rng(42)
     x_train = rng.normal(size=30)
     latent_times = np.exp(
@@ -212,6 +216,10 @@ def test_brier_multiple_points_ic_conditional_matches_single() -> None:
             [0.75, 0.45, 0.20],
         ]
     )
+    x = np.tile(x, repeats)
+    left = np.tile(left, repeats)
+    right = np.tile(right, repeats)
+    pred_mat = np.tile(pred_mat, (repeats, 1))
 
     multi_scores = brier_multiple_points_ic(
         pred_mat=pred_mat,
@@ -242,6 +250,54 @@ def test_brier_multiple_points_ic_conditional_matches_single() -> None:
     )
 
     np.testing.assert_allclose(multi_scores, single_scores, rtol=1e-6, atol=1e-8)
+
+
+@pytest.fixture(scope="module", params=[1, 2])
+def fitted_aft_model(request):
+    rng = np.random.default_rng(93)
+    features = pd.DataFrame(
+        rng.normal(size=(60, request.param)),
+        columns=[f"feature_{i}" for i in range(request.param)],
+    )
+    latent_times = np.exp(
+        1.0 - 0.3 * features.iloc[:, 0] + rng.normal(scale=0.3, size=60)
+    )
+    training = features.assign(left=np.floor(latent_times * 2) / 2)
+    training["right"] = training["left"] + 0.5
+    model = WeibullAFTFitter().fit_interval_censoring(training, "left", "right")
+    return model, features.columns
+
+
+@pytest.mark.parametrize("n_samples", [1, 255, 256, 257, 700])
+def test_paired_aft_predictions_match_full_diagonal(
+    fitted_aft_model, n_samples, monkeypatch
+):
+    model, columns = fitted_aft_model
+    rng = np.random.default_rng(94)
+    features = pd.DataFrame(
+        rng.normal(size=(n_samples, len(columns))),
+        columns=columns,
+        index=rng.permutation(n_samples) + 10,
+    )
+    times = rng.integers(0, 12, size=n_samples).astype(float)
+    times[0] = np.inf
+    times.flags.writeable = False
+    expected = model.predict_survival_function(features, times=times).to_numpy()
+    expected = expected.diagonal().copy()
+
+    original_predict = model.predict_survival_function
+    requests = []
+
+    def record_predict(batch_features, *, times):
+        requests.append((len(batch_features), times.size))
+        return original_predict(batch_features, times=times)
+
+    monkeypatch.setattr(model, "predict_survival_function", record_predict)
+    actual = _predict_survival_at_observed_times(model, features, times)
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+    assert sum(n_rows for n_rows, _ in requests) == n_samples
+    assert all(n_rows == n_times <= 256 for n_rows, n_times in requests)
 
 
 @pytest.mark.parametrize("metric", ["right", "interval"])

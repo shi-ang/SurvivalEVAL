@@ -10,6 +10,8 @@
    redundant sorting and Python index-building loops while preserving tied-time risk sets.
 4. Use direct linear interpolation for AUPRC CDF lookups instead of constructing interpolators for each query,
    retaining the existing quadrature and boundary behavior.
+5. Predict conditional interval Brier endpoints in bounded batches instead of evaluating all sample-by-sample
+   combinations when only the diagonal probabilities are needed.
 
 ## 2026-09-09: Version 0.8.3
 
