@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Unreleased
+
+1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training
+   data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
+
 ## 2026-09-09: Version 0.8.3
 
 1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
