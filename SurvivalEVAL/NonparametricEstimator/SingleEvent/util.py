@@ -3,6 +3,26 @@ import numpy as np
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
 
 
+def _compute_event_counts(
+    event_times: np.ndarray, event_indicators: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Group observed times once and return times, at-risk counts, and events.
+
+    Event/censor order within a tied-time group does not affect its risk set
+    or event count. Reduce directly at group starts without re-sorting the
+    times or constructing interleaved start/end indices in Python.
+    """
+    order = np.argsort(event_times)
+    sorted_times = event_times[order]
+    starts = np.r_[0, np.flatnonzero(sorted_times[1:] != sorted_times[:-1]) + 1]
+    events = np.add.reduceat(
+        event_indicators[order],
+        starts,
+        dtype=np.result_type(event_indicators.dtype, int),
+    )
+    return sorted_times[starts], len(event_times) - starts, events
+
+
 def km_mean(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
     """
     Calculate the mean of the Kaplan-Meier curve.

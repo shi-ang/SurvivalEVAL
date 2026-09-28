@@ -6,6 +6,8 @@
    data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
 2. Aggregate right-censored D-calibration contributions by bin and cumulative tail weights instead of building
    a separate histogram for every sample.
+3. Share vectorized event counting across Kaplan-Meier, Nelson-Aalen, and Copula-Graphic estimators, avoiding
+   redundant sorting and Python index-building loops while preserving tied-time risk sets.
 
 ## 2026-09-09: Version 0.8.3
 

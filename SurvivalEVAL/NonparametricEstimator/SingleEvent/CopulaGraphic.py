@@ -5,6 +5,7 @@ from dataclasses import InitVar, dataclass, field
 import numpy as np
 
 from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    _compute_event_counts,
     infer_survival_probabilities,
 )
 
@@ -43,21 +44,9 @@ class CopulaGraphic:
     def __post_init__(self, event_times, event_indicators, alpha, type):
         alpha = max(alpha, 1e-9)
         self.n_samples = len(event_times)
-        index = np.lexsort((event_indicators, event_times))
-        unique_times = np.unique(event_times[index], return_counts=True)
-        self.survival_times = unique_times[0]
-        self.population_count = np.flip(np.flip(unique_times[1]).cumsum())
-
-        event_counter = np.append(0, unique_times[1].cumsum()[:-1])
-        event_ind = []
-        for i in range(np.size(event_counter[:-1])):
-            event_ind.append(event_counter[i])
-            event_ind.append(event_counter[i + 1])
-        event_ind.append(event_counter[-1])
-        event_ind.append(len(event_indicators))
-        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[
-            ::2
-        ]
+        self.survival_times, self.population_count, self.events = _compute_event_counts(
+            event_times, event_indicators
+        )
 
         event_diff = self.population_count - self.events
         type = type.lower()
