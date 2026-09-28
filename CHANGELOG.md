@@ -8,6 +8,8 @@
    a separate histogram for every sample.
 3. Share vectorized event counting across Kaplan-Meier, Nelson-Aalen, and Copula-Graphic estimators, avoiding
    redundant sorting and Python index-building loops while preserving tied-time risk sets.
+4. Use direct linear interpolation for AUPRC CDF lookups instead of constructing interpolators for each query,
+   retaining the existing quadrature and boundary behavior.
 
 ## 2026-09-09: Version 0.8.3
 
