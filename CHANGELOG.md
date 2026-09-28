@@ -4,6 +4,8 @@
 
 1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training
    data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
+2. Aggregate right-censored D-calibration contributions by bin and cumulative tail weights instead of building
+   a separate histogram for every sample.
 
 ## 2026-09-09: Version 0.8.3
 
