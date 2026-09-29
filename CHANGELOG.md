@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 2026-09-29: Version 0.8.5
 
 1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training
    data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
@@ -12,6 +12,8 @@
    retaining the existing quadrature and boundary behavior.
 5. Predict conditional interval Brier endpoints in bounded batches instead of evaluating all sample-by-sample
    combinations when only the diagonal probabilities are needed.
+6. Add regression coverage for numerical equivalence, probability and interpolation boundaries, tied event times,
+   read-only inputs, and bounded endpoint-prediction batches. No public API or dependency changes.
 
 ## 2026-09-28: Version 0.8.4
 
