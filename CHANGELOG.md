@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-09-28: Version 0.8.4
+
+1. Count evaluator time-dependent concordance comparisons using sorted event-time groups and weighted rank queries
+   instead of visiting each comparable pair. Counting uses `O(n)` working memory and `O(n log n + n U log(M + 1))`
+   time, where `U` is the number of contributing event times and `M` is the largest event group. Counting remains
+   quadratic when all event times differ.
+2. Use per-group range-sum trees to preserve small concordant and risk-tie weights alongside much larger weights,
+   avoiding cancellation from subtracting cumulative totals that include unrelated pairs.
+3. Preserve once-per-sample curve prediction, existing interpolation, IPCW weights, strict `tau` truncation,
+   tie policies, and the dense risk-matrix API. No public API or dependency changes.
+4. Add regression coverage for grouped counting, floating-point tie boundaries, nonfinite risks, independent
+   group weights, and small pair weights beside much larger weights.
+
 ## 2026-09-09: Version 0.8.3
 
 1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
