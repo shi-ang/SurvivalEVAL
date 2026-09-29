@@ -661,6 +661,40 @@ def test_streamed_small_concordant_weight_survives_large_risk_tie_weight(weighti
     np.testing.assert_array_equal(_finalize_counts(actual, "None"), [1.0, 1.0, 1.0])
 
 
+@pytest.mark.parametrize("weighting", ["symmetric", "anchor"])
+@pytest.mark.parametrize("candidate_time", [1.0, 2.0])
+def test_streamed_small_risk_tie_weight_survives_large_discordant_weight(
+    weighting, candidate_time
+):
+    event_times = np.array([1.0, 1.0, candidate_time])
+    event_indicators = np.array([True, True, False])
+    weights = np.array([1e16, 1.0, 1.0])
+    scores = np.array([1.0, 2.0, 2.0])
+    kwargs = dict(
+        sample_weights=weights,
+        anchor_pair_weights=weights if weighting == "anchor" else None,
+    )
+
+    def predict_risks(sample_index, target_times):
+        return np.full(target_times.size, scores[sample_index])
+
+    actual = _time_dependent_risk_counts_from_predictions(
+        predict_risks, event_times, event_indicators, **kwargs
+    )
+    expected = _time_dependent_risk_counts(
+        np.repeat(scores[:, None], 2, axis=1),
+        event_times,
+        event_indicators,
+        **kwargs,
+    )
+
+    # Both cumulative endpoints round to 1e16, erasing the tied weight if
+    # it is computed by subtracting prefixes containing discordant mass.
+    assert actual.risk_tie_pairs == 1.0
+    assert actual == expected
+    np.testing.assert_array_equal(_finalize_counts(actual, "Risk"), [5e-17, 0.5, 1e16])
+
+
 def test_streamed_rank_queries_scale_with_time_groups_not_event_anchors(monkeypatch):
     group_sizes = [512, 1024, 512]
     event_times = np.repeat([1.0, 2.0, 3.0], group_sizes)

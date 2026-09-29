@@ -278,7 +278,6 @@ def _time_dependent_risk_counts_from_predictions(
         anchor_times, return_index=True, return_counts=True
     )
     group_ends = group_starts + group_sizes
-    group_offsets = np.arange(unique_times.size)
     anchor_col_by_sample = np.full(event_times.shape[0], -1, dtype=int)
     anchor_col_by_sample[anchor_indices] = np.arange(anchor_indices.size)
     anchor_risks = np.empty(anchor_indices.size, dtype=float)
@@ -287,12 +286,9 @@ def _time_dependent_risk_counts_from_predictions(
         if anchor_pair_weights is None
         else anchor_pair_weights[anchor_indices]
     )
-    # Every group's cumulative weights start at zero, so queries do not
-    # subtract large cumulative totals from unrelated event-time groups.
-    cumulative_weights = np.empty(anchor_indices.size + unique_times.size)
-    # Sum concordant suffixes independently: total-minus-prefix subtraction
-    # can erase small concordant weights when large risk ties are discarded.
-    suffix_weights = np.empty_like(cumulative_weights)
+    # Each group has a compact range-sum tree so interval queries never
+    # subtract unrelated weights, which can erase small pair counts.
+    weight_trees = np.empty(2 * anchor_indices.size, dtype=float)
     batch_size = min(256, max(1, event_times.size // max(1, unique_times.size)))
 
     counts = _ConcordanceCounts()
@@ -334,20 +330,18 @@ def _time_dependent_risk_counts_from_predictions(
                     predicted_risks[:, :stop],
                     tied_tol,
                 )
-                prefix_weights = cumulative_weights[ranks + group_offsets[:stop]]
+                range_weights = _grouped_risk_weights(
+                    weight_trees, group_starts[:stop], group_ends[:stop], ranks
+                )
                 pair_weights = (
                     sample_weights[batch] if anchor_pair_weights is None else 1.0
                 )
-                counts.concordant += np.sum(
-                    suffix_weights[ranks[1] + group_offsets[:stop]].sum(axis=1)
-                    * pair_weights
+                discordant, risk_ties, concordant = np.sum(
+                    range_weights.sum(axis=2) * pair_weights, axis=1
                 )
-                counts.risk_tie_pairs += np.sum(
-                    (prefix_weights[1] - prefix_weights[0]).sum(axis=1) * pair_weights
-                )
-                counts.discordant += np.sum(
-                    prefix_weights[0].sum(axis=1) * pair_weights
-                )
+                counts.discordant += discordant
+                counts.risk_tie_pairs += risk_ties
+                counts.concordant += concordant
 
             if is_event and through > before:
                 start, end = group_starts[before], group_ends[before]
@@ -360,16 +354,11 @@ def _time_dependent_risk_counts_from_predictions(
                 )
                 anchor_risks[start:end] = group_risks[risk_order]
                 group_weights = anchor_weights[start:end][risk_order]
-                cumulative_weights[start + before] = 0.0
-                np.cumsum(
-                    group_weights,
-                    out=cumulative_weights[start + before + 1 : end + before + 1],
-                )
-                suffix_weights[end + before] = 0.0
-                np.cumsum(
-                    group_weights[::-1],
-                    out=suffix_weights[start + before : end + before][::-1],
-                )
+                tree = weight_trees[2 * start : 2 * end]
+                size = end - start
+                tree[size:] = group_weights
+                for node in range(size - 1, 0, -1):
+                    tree[node] = tree[2 * node] + tree[2 * node + 1]
 
     return counts
 
@@ -401,6 +390,42 @@ def _grouped_risk_ranks(
         low = np.where(active & included, middle + 1, low)
         high = np.where(active & ~included, middle, high)
     return low
+
+
+def _grouped_risk_weights(
+    weight_trees: np.ndarray,
+    group_starts: np.ndarray,
+    group_ends: np.ndarray,
+    ranks: np.ndarray,
+) -> np.ndarray:
+    """Sum discordant, tied, and concordant intervals without subtraction.
+
+    Each group's tree occupies twice its size, with sorted weights in the
+    second half and parent sums above them (index zero is unused). Queries
+    add only nodes entirely inside their interval, preserving small weights
+    even when much larger weights lie outside it. The result has shape
+    (3, batch_size, n_groups), matching the interval order above.
+    """
+    sizes = group_ends - group_starts
+    left = np.empty((3, *ranks.shape[1:]), dtype=int)
+    left[0] = sizes
+    left[1:] = ranks - group_starts + sizes
+    right = np.empty_like(left)
+    right[:-1] = left[1:]
+    right[-1] = 2 * sizes
+
+    totals = np.zeros(left.shape, dtype=float)
+    offsets = 2 * group_starts
+    while np.any(left < right):
+        active = left < right
+        take_left = active & (left % 2 == 1)
+        take_right = active & (right % 2 == 1)
+        totals[take_left] += weight_trees[(offsets + left)[take_left]]
+        right -= take_right
+        totals[take_right] += weight_trees[(offsets + right)[take_right]]
+        left = (left + take_left) // 2
+        right //= 2
+    return totals
 
 
 def _time_dependent_risk_counts(
