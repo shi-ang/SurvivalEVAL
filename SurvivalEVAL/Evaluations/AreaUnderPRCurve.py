@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.interpolate import interp1d
 
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
@@ -18,15 +17,7 @@ def _interp_cdf_row(F_i, t_grid, t_eval, left_fill=None):
     if left_fill is None:
         left_fill = F_i[0]
 
-    f = interp1d(
-        t_grid,
-        F_i,
-        kind="linear",
-        fill_value=(left_fill, 1.0),
-        bounds_error=False,
-        assume_sorted=True,
-    )
-    return f(t_eval)
+    return np.interp(t_eval, t_grid, F_i, left=left_fill, right=1.0)
 
 
 def auprc_uncensored_grid(

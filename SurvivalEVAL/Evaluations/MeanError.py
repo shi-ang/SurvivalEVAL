@@ -159,23 +159,28 @@ def mean_error(
     elif method == "ipcw-t":
         # This is the IPCW-T method from https://arxiv.org/pdf/2306.01196.pdf
         # Calculate the best guess time (surrogate time) based on the subsequent uncensored subjects
-        best_guesses = np.empty(shape=n_test)
-        for i in range(n_test):
-            if event_indicators[i] == 1:
-                best_guesses[i] = event_times[i]
-            else:
-                # Numpy will throw a warning if afterward_event_times are all false. TODO: consider change the code.
-                afterward_event_idx = (
-                    train_event_times[train_event_indicators == 1] > event_times[i]
-                )
-                best_guesses[i] = np.mean(
-                    train_event_times[train_event_indicators == 1][afterward_event_idx]
-                )
-        # NaN values are generated because there are no events after the censor times
-        nan_idx = np.argwhere(np.isnan(best_guesses))
-        predicted_times = np.delete(predicted_times, nan_idx)
-        best_guesses = np.delete(best_guesses, nan_idx)
-        weights = np.delete(weights, nan_idx)
+        best_guesses = event_times.astype(float, copy=True)
+        if censor_times.size:
+            observed_train_times = np.sort(train_event_times[train_event_indicators])
+            # Each query needs the mean of a suffix. Precompute suffix sums
+            # once instead of scanning the training set for every censor time.
+            tail_sums = np.append(
+                np.cumsum(observed_train_times[::-1], dtype=float)[::-1], 0.0
+            )
+            starts = np.searchsorted(observed_train_times, censor_times, side="right")
+            counts = observed_train_times.size - starts
+            best_guesses[~event_indicators] = np.divide(
+                tail_sums[starts],
+                counts,
+                out=np.full(censor_times.shape, np.nan),
+                where=counts > 0,
+            )
+
+        # Exclude censor times with no strictly later training events.
+        valid = ~np.isnan(best_guesses)
+        predicted_times = predicted_times[valid]
+        best_guesses = best_guesses[valid]
+        weights = weights[valid]
 
         if truncation_time:
             best_guesses = np.clip(best_guesses, a_max=truncation_time, a_min=None)

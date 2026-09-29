@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-09-29: Version 0.8.5
+
+1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training
+   data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
+2. Aggregate right-censored D-calibration contributions by bin and cumulative tail weights instead of building
+   a separate histogram for every sample.
+3. Share vectorized event counting across Kaplan-Meier, Nelson-Aalen, and Copula-Graphic estimators, avoiding
+   redundant sorting and Python index-building loops while preserving tied-time risk sets.
+4. Use direct linear interpolation for AUPRC CDF lookups instead of constructing interpolators for each query,
+   retaining the existing quadrature and boundary behavior.
+5. Predict conditional interval Brier endpoints in bounded batches instead of evaluating all sample-by-sample
+   combinations when only the diagonal probabilities are needed.
+6. Add regression coverage for numerical equivalence, probability and interpolation boundaries, tied event times,
+   read-only inputs, and bounded endpoint-prediction batches. No public API or dependency changes.
+
 ## 2026-09-28: Version 0.8.4
 
 1. Count evaluator time-dependent concordance comparisons using sorted event-time groups and weighted rank queries

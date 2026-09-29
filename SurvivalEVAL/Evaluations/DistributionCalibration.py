@@ -45,17 +45,34 @@ def d_calibration(
     event_position = np.digitize(event_probs, quantile)
     event_position[event_position == 0] = 1  # class probability==1 to the first bin
 
-    event_hist = np.zeros([num_bins])
-    for i in range(len(event_position)):
-        event_hist[event_position[i] - 1] += 1
+    event_hist = np.bincount(event_position - 1, minlength=num_bins)
 
     censored_probs = pred_probs[censor_indicators]
 
-    censor_hist = np.zeros([num_bins])
-    if len(censored_probs) > 0:
-        for i in range(len(censored_probs)):
-            partial_binning = create_censor_hist(censored_probs[i], num_bins)
-            censor_hist += partial_binning
+    # Match create_censor_hist, which contributes zero outside [0, 1].
+    censored_probs = censored_probs[
+        (censored_probs >= 0) & (censored_probs <= 1)
+    ].astype(float, copy=False)
+    positions = np.maximum(np.digitize(censored_probs, quantile) - 1, 0)
+    partial_weights = np.divide(
+        censored_probs - quantile[positions + 1],
+        censored_probs,
+        out=np.ones(censored_probs.shape),
+        where=censored_probs != 0,
+    )
+    partial_weights[censored_probs == 1] = 1 / num_bins
+    censor_hist = np.bincount(positions, weights=partial_weights, minlength=num_bins)
+
+    # A censored sample adds the same weight to every subsequent bin. Group
+    # those weights by their starting bin, then accumulate once across bins.
+    # Samples already in the last bin need no tail weight (including p == 0).
+    has_tail = positions < num_bins - 1
+    tail_weights = np.bincount(
+        positions[has_tail],
+        weights=1 / (num_bins * censored_probs[has_tail]),
+        minlength=num_bins,
+    )
+    censor_hist[1:] += np.cumsum(tail_weights[:-1])
 
     combine_hist = event_hist + censor_hist
     statistic, pvalue = chisquare(combine_hist)

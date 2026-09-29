@@ -11,6 +11,32 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
 )
 
 
+def _predict_survival_at_observed_times(
+    model: WeibullAFTFitter,
+    features: pd.DataFrame,
+    times: np.ndarray,
+) -> np.ndarray:
+    """Predict one survival probability per subject at that subject's time.
+
+    Lifelines evaluates every requested time for every supplied subject.
+    Extract diagonals from bounded batches to avoid an n-by-n matrix when
+    only n paired predictions are needed. Keep the fitted model's public
+    prediction API, including its handling of zero and infinite times.
+    """
+    probabilities = np.empty(times.size, dtype=float)
+    batch_size = 256
+    for start in range(0, times.size, batch_size):
+        stop = min(start + batch_size, times.size)
+        probabilities[start:stop] = (
+            model.predict_survival_function(
+                features.iloc[start:stop], times=times[start:stop]
+            )
+            .to_numpy()
+            .diagonal()
+        )
+    return probabilities
+
+
 def single_brier_score(
     preds: np.ndarray,
     event_times: np.ndarray,
@@ -225,12 +251,12 @@ def brier_score_ic(
             aft_model = WeibullAFTFitter()
             aft_model.fit_interval_censoring(train_df, "left", "right")
             # get the conditional survival probabilities at the left limit, right limit, and target time
-            left_probs = aft_model.predict_survival_function(
-                x_df, times=left_limits
-            ).values.diagonal()
-            right_probs = aft_model.predict_survival_function(
-                x_df, times=right_limits
-            ).values.diagonal()
+            left_probs = _predict_survival_at_observed_times(
+                aft_model, x_df, left_limits
+            )
+            right_probs = _predict_survival_at_observed_times(
+                aft_model, x_df, right_limits
+            )
             target_probs = aft_model.predict_survival_function(
                 x_df, target_time
             ).values.flatten()
@@ -526,12 +552,8 @@ def brier_multiple_points_ic(
         aft_model = WeibullAFTFitter()
         aft_model.fit_interval_censoring(train_df, "left", "right")
 
-        left_sf = aft_model.predict_survival_function(x_df, times=left_limits)
-        left_probs = left_sf.to_numpy().diagonal().copy()
-        del left_sf
-        right_sf = aft_model.predict_survival_function(x_df, times=right_limits)
-        right_probs = right_sf.to_numpy().diagonal().copy()
-        del right_sf
+        left_probs = _predict_survival_at_observed_times(aft_model, x_df, left_limits)
+        right_probs = _predict_survival_at_observed_times(aft_model, x_df, right_limits)
         target_probs_mat = (
             aft_model.predict_survival_function(x_df, times=target_times).to_numpy().T
         )

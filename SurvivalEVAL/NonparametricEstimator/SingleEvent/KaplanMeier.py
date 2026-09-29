@@ -7,6 +7,7 @@ import numpy as np
 from scipy.integrate import trapezoid
 
 from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+    _compute_event_counts,
     infer_survival_probabilities,
 )
 
@@ -29,21 +30,9 @@ class KaplanMeier:
     probability_dens: np.ndarray = field(init=False)
 
     def __post_init__(self, event_times, event_indicators):
-        index = np.lexsort((event_indicators, event_times))
-        unique_times = np.unique(event_times[index], return_counts=True)
-        self.survival_times = unique_times[0]
-        self.population_count = np.flip(np.flip(unique_times[1]).cumsum())
-
-        event_counter = np.append(0, unique_times[1].cumsum()[:-1])
-        event_ind = []
-        for i in range(np.size(event_counter[:-1])):
-            event_ind.append(event_counter[i])
-            event_ind.append(event_counter[i + 1])
-        event_ind.append(event_counter[-1])
-        event_ind.append(len(event_indicators))
-        self.events = np.add.reduceat(np.append(event_indicators[index], 0), event_ind)[
-            ::2
-        ]
+        self.survival_times, self.population_count, self.events = _compute_event_counts(
+            event_times, event_indicators
+        )
 
         event_ratios = 1 - self.events / self.population_count
         self.survival_probabilities = np.cumprod(event_ratios)
@@ -126,10 +115,11 @@ class KaplanMeierArea(KaplanMeier):
 
     def best_guess(self, censor_times: np.ndarray):
         # calculate the slope using the [0, 1] - [max_time, S(t|x)]
-        slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
+        max_time = self.survival_times[-1]
+        slope = (1 - self.survival_probabilities[-1]) / (0 - max_time)
         # if after the last time point, then the best guess is the linear function
-        before_last_idx = censor_times <= max(self.survival_times)
-        after_last_idx = censor_times > max(self.survival_times)
+        before_last_idx = censor_times <= max_time
+        after_last_idx = censor_times > max_time
         surv_prob = np.empty_like(censor_times).astype(float)
         surv_prob[after_last_idx] = 1 + censor_times[after_last_idx] * slope
         surv_prob[before_last_idx] = self.predict(censor_times[before_last_idx])
