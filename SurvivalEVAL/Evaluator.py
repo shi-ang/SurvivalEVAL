@@ -931,11 +931,15 @@ class SurvivalEvaluator:
 
         Notes
         -----
-        Concordance counting uses O(n) working memory and O(n log n + P)
-        time, where P is the number of comparable pairs (O(n^2) in the worst
-        case). Prediction adds O(k) temporary storage for one curve with k
-        grid points. These bounds exclude the stored input curves and IPCW
-        training data; no n-by-n risk matrix is constructed.
+        Event anchors with the same time are sorted by risk, allowing later
+        samples to count concordant and tied pairs with rank queries rather
+        than visiting each anchor. With U contributing distinct event times
+        and at most M anchors at one time, counting uses O(n) working memory
+        and O(n log n + n U log(M + 1)) time. Prediction adds O(k) temporary
+        storage for one curve with k grid points. These bounds exclude the
+        stored input curves and IPCW training data; no dense sample-by-anchor
+        risk matrix is constructed. If all event times are distinct, counting
+        still has quadratic worst-case complexity.
         """
         # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
         risks = risks.lower()

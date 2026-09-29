@@ -282,12 +282,17 @@ directly. `method="IPCW"` requires training event times and indicators. `tau`
 keeps event anchors whose observed time is strictly before `tau`; when omitted,
 no truncation is applied.
 
-The evaluator processes one sample's curve at a time, using O(n) working memory
-for concordance counting plus O(k) temporary interpolation storage for a curve
-with k grid points. This excludes the input curves and IPCW training data.
-Counting takes O(n log n + P) time for P comparable pairs, so the worst case
-remains O(n²). The lower-level `concordance_time_dependent` function still accepts
-a dense sample-by-event risk matrix.
+The evaluator predicts each sample's curve at most once and counts comparisons by
+ranking risks within equal-event-time groups. Counting uses O(n) working memory
+and O(n log n + n U log(M + 1)) time, where U is the number of contributing
+event times and M is the largest event group. This avoids visiting every pair
+when many events share a time; it remains quadratic when all event times differ.
+With mostly distinct event times, rank-query overhead can outweigh the savings.
+Interpolation adds O(k) temporary storage for a curve with k grid points. These
+bounds exclude the input curves and IPCW training data. The lower-level
+`concordance_time_dependent` function still accepts a dense sample-by-event risk
+matrix and counts its pairs directly, since separate columns at the same event
+time may contain different scores.
 
 ## Interval-Censored Metrics
 
