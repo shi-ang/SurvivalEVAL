@@ -84,8 +84,7 @@ def single_brier_score(
 
     if ipcw:
         train_event_indicators = train_event_indicators.astype(bool, copy=False)
-        inverse_train_event_indicators = ~train_event_indicators
-        ipc_model = KaplanMeier(train_event_times, inverse_train_event_indicators)
+        ipc_model = KaplanMeier(train_event_times, train_event_indicators, reverse=True)
 
         ipc_pred = ipc_model.predict(event_times)
         # Catch if denominator is 0.
@@ -381,8 +380,11 @@ def brier_multiple_points(
     event_indicators_column = event_indicators.astype(bool, copy=False)[:, None]
 
     if ipcw:
-        censoring_indicators = ~train_event_indicators.astype(bool, copy=False)
-        ipc_model = KaplanMeier(train_event_times, censoring_indicators)
+        ipc_model = KaplanMeier(
+            train_event_times,
+            train_event_indicators.astype(bool, copy=False),
+            reverse=True,
+        )
 
         # G(T_i) is constant across target times, while G(t) is constant across
         # samples. Keep both as vectors and rely on broadcasting.

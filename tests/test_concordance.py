@@ -463,6 +463,22 @@ def test_uno_concordance_uses_censoring_distribution_ipcw():
     np.testing.assert_allclose(alias, expected)
 
 
+@pytest.mark.parametrize("method", ["Uno", "IPCW"])
+def test_uno_concordance_uses_reverse_km_for_mixed_training_ties(method):
+    result = concordance(
+        predicted_times=-np.array([2.0, 4.0, 3.0, 1.0]),
+        event_times=np.array([5.0, 12.0, 15.0, 18.0]),
+        event_indicators=np.array([True, True, False, True]),
+        train_event_times=np.array([10.0, 10.0, 15.0, 20.0]),
+        train_event_indicators=np.array([True, False, True, True]),
+        method=method,
+        tau=16.0,
+    )
+    # At 5: one concordant pair out of three, weight 1.
+    # At 12: two concordant pairs, each weighted by 1 / (2/3)^2.
+    np.testing.assert_allclose(result, (11 / 15, 5.5, 7.5))
+
+
 def test_uno_tau_excludes_anchors_at_and_after_tau():
     predicted_times = np.array([1.0, 4.0, 2.0, 3.0])
     event_times = np.array([1.0, 2.0, 3.0, 4.0])
@@ -502,12 +518,15 @@ def test_uno_tau_excludes_anchors_at_and_after_tau():
     np.testing.assert_allclose(alias, with_tau)
 
 
-def test_uno_tau_ignores_zero_censoring_survival_for_excluded_anchors():
+@pytest.mark.parametrize("tied_training_event", [False, True])
+def test_uno_tau_ignores_zero_censoring_survival_for_excluded_anchors(
+    tied_training_event,
+):
     predicted_times = np.array([1.0, 3.0, 4.0])
     event_times = np.array([1.0, 3.0, 4.0])
     event_indicators = np.array([1, 1, 1])
-    train_event_times = np.array([1.0, 3.0])
-    train_event_indicators = np.array([1, 0])
+    train_event_times = np.array([1.0, 3.0, 3.0] if tied_training_event else [1, 3])
+    train_event_indicators = np.array([1, 1, 0] if tied_training_event else [1, 0])
 
     with pytest.raises(ValueError):
         concordance(

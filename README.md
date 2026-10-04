@@ -363,6 +363,11 @@ The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 | Turnbull lifelines adapter | Lifelines-backed Turnbull estimator wrapper. | `SingleEvent.TurnbullEstimatorLifelines(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
 | Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor(...)` | [Cui](https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2252143) |
 
+For censoring survival, use `SingleEvent.KaplanMeier(times, event_indicators, reverse=True)`
+with the original event indicators (`1` = observed event, `0` = censored). Original events
+leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate and
+evaluate right-continuous `G(t)`, including the censoring update at time `t`.
+
 ## Citing This Work
 
 We recommend you use the following to cite `SurvivalEVAL` in your publications:

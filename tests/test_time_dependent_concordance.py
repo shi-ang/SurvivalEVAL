@@ -238,7 +238,7 @@ def test_time_dependent_ipcw_uses_squared_anchor_weights():
     )
 
     censoring_model = KaplanMeier(
-        train_event_times, ~train_event_indicators.astype(bool)
+        train_event_times, train_event_indicators, reverse=True
     )
     censoring_survival = censoring_model.predict(event_times)
     anchor_weights = 1 / np.square(censoring_survival)
@@ -247,6 +247,38 @@ def test_time_dependent_ipcw_uses_squared_anchor_weights():
     assert np.isclose(c_index, 1.0)
     assert np.isclose(concordant, expected_total)
     assert np.isclose(total, expected_total)
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_time_dependent_ipcw_uses_reverse_km_for_mixed_training_ties(streamed):
+    event_times = np.array([5.0, 12.0, 15.0, 18.0])
+    event_indicators = np.array([True, True, False, True])
+    train_times = np.array([10.0, 10.0, 15.0, 20.0])
+    train_indicators = np.array([True, False, True, True])
+    probabilities = np.array([0.6, 0.2, 0.4, 0.8])
+    if streamed:
+        evaluator = SurvivalEvaluator(
+            pred_survs=np.column_stack(
+                (np.ones(4), np.tile(probabilities[:, None], (1, 3)))
+            ),
+            time_coordinates=np.array([0.0, 5.0, 12.0, 18.0]),
+            event_times=event_times,
+            event_indicators=event_indicators,
+            train_event_times=train_times,
+            train_event_indicators=train_indicators,
+        )
+        result = evaluator.concordance_time_dependent(method="IPCW", tau=16.0)
+    else:
+        result = concordance_time_dependent(
+            risk_scores=-np.tile(probabilities[:, None], (1, 3)),
+            event_times=event_times,
+            event_indicators=event_indicators,
+            train_event_times=train_times,
+            train_event_indicators=train_indicators,
+            method="IPCW",
+            tau=16.0,
+        )
+    np.testing.assert_allclose(result, (11 / 15, 5.5, 7.5))
 
 
 def test_time_dependent_ipcw_tau_excludes_boundary_anchor_and_allows_later_candidates():
@@ -273,7 +305,10 @@ def test_time_dependent_ipcw_tau_excludes_boundary_anchor_and_allows_later_candi
     np.testing.assert_allclose(result, (1.0, 2.0, 2.0))
 
 
-def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final_time_ties():
+@pytest.mark.parametrize("tied_training_event", [False, True])
+def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final_time_ties(
+    tied_training_event,
+):
     event_times = np.array([1.0, 2.0, 2.0])
     event_indicators = np.array([1, 1, 1])
     risk_scores = np.array(
@@ -287,8 +322,12 @@ def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final
         "risk_scores": risk_scores,
         "event_times": event_times,
         "event_indicators": event_indicators,
-        "train_event_times": np.array([1.0, 2.0]),
-        "train_event_indicators": np.array([1, 0]),
+        "train_event_times": np.array(
+            [1.0, 2.0, 2.0] if tied_training_event else [1, 2]
+        ),
+        "train_event_indicators": np.array(
+            [1, 1, 0] if tied_training_event else [1, 0]
+        ),
         "method": "IPCW",
     }
 

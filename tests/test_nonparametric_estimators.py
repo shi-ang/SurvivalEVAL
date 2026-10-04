@@ -95,6 +95,74 @@ def test_kaplan_meier_does_not_duplicate_observed_time_zero():
     assert estimator.predict(0.0) == 0.5
 
 
+@pytest.mark.parametrize("indicator_dtype", [bool, np.int8, np.float32, np.float64])
+@pytest.mark.parametrize(
+    "times, indicators, risk_sets, censorings, probabilities",
+    [
+        ([10, 10, 15, 20], [1, 0, 1, 1], [3, 1, 0], [1, 0, 0], [2 / 3] * 3),
+        (
+            [2, 2, 2, 2, 3, 3, 4, 5],
+            [1, 1, 0, 0, 1, 0, 1, 1],
+            [6, 3, 1, 0],
+            [2, 1, 0, 0],
+            [2 / 3, 4 / 9, 4 / 9, 4 / 9],
+        ),
+        ([0, 0, 2], [1, 0, 1], [2, 0], [1, 0], [0.5, 0.5]),
+        ([1, 2, 2], [1, 1, 0], [2, 1], [0, 1], [1, 0]),
+        ([1, 2, 2], [1, 1, 1], [2, 0], [0, 0], [1, 1]),
+        ([1, 2, 2], [0, 0, 0], [3, 2], [1, 2], [2 / 3, 0]),
+        ([2], [1], [0], [0], [1]),
+        ([2], [0], [1], [1], [0]),
+    ],
+)
+def test_reverse_kaplan_meier_removes_original_events_before_censorings(
+    times, indicators, risk_sets, censorings, probabilities, indicator_dtype
+):
+    times = np.asarray(times, dtype=float)
+    indicators = np.asarray(indicators, dtype=indicator_dtype)
+    order = np.random.default_rng(39).permutation(times.size)
+    times, indicators = times[order], indicators[order]
+    times.flags.writeable = False
+    indicators.flags.writeable = False
+
+    with np.errstate(divide="raise", invalid="raise"):
+        estimator = KaplanMeier(times, indicators, reverse=True)
+
+    expected_times = np.unique(times)
+    if expected_times[0] > 0:
+        expected_times = np.r_[0, expected_times]
+        risk_sets = [times.size, *risk_sets]
+        censorings = [0, *censorings]
+        probabilities = [1, *probabilities]
+    np.testing.assert_array_equal(estimator.survival_times, expected_times)
+    np.testing.assert_array_equal(estimator.population_count, risk_sets)
+    np.testing.assert_array_equal(estimator.events, censorings)
+    np.testing.assert_allclose(estimator.survival_probabilities, probabilities)
+
+
+def test_reverse_kaplan_meier_predicts_right_continuous_censoring_survival():
+    times = np.array([10.0, 10.0, 15.0, 20.0])
+    indicators = np.array([True, False, True, True])
+    estimator = KaplanMeier(times, indicators, reverse=True)
+
+    assert KaplanMeier(times, ~indicators).predict(10.0) == 0.75
+    assert estimator.predict(10.0) == pytest.approx(2 / 3)
+    queries = np.array([[0, np.nextafter(10.0, 0)], [10, 15], [20, 21]])
+    np.testing.assert_allclose(
+        estimator.predict(queries), [[1, 1], [2 / 3, 2 / 3], [2 / 3, 0.65]]
+    )
+
+
+def test_reverse_kaplan_meier_matches_flipped_indicators_without_mixed_ties():
+    times = np.array([1.0, 1.0, 2.0, 2.0, 3.0, 4.0])
+    indicators = np.array([True, True, False, False, True, False])
+    ordinary = KaplanMeier(times, ~indicators)
+    reverse = KaplanMeier(times, indicators, reverse=True)
+    np.testing.assert_allclose(
+        reverse.survival_probabilities, ordinary.survival_probabilities
+    )
+
+
 def test_kaplan_meier_area_reuses_estimator_baseline():
     estimator = KaplanMeierArea(
         event_times=np.array([2.0, 3.0]),

@@ -187,7 +187,9 @@ def _concordance_time_dependent(
             )
         train_event_indicators = train_event_indicators.astype(bool, copy=False)
 
-        censoring_model = KaplanMeier(train_event_times, ~train_event_indicators)
+        censoring_model = KaplanMeier(
+            train_event_times, train_event_indicators, reverse=True
+        )
         censoring_survival = censoring_model.predict(event_times)
         observed_anchors = event_indicators & _is_before_tau(event_times, tau)
 
