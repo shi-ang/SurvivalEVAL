@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 2026-10-04: Version 0.8.6
 
 1. Add `KaplanMeier(..., reverse=True)` to estimate censoring survival from original event indicators,
    removing original events from the risk set before tied censorings.
@@ -8,7 +8,8 @@
    (including IBS), and IPCW-D MAE/MSE/RMSE. Mixed event/censoring ties in training data now produce
    corrected censoring probabilities and can change metric values. Weights still use right-continuous
    `G(t)` with the existing extrapolation and zero-survival handling.
-3. Avoid unused Kaplan-Meier area and event-weight calculations in IPCW-D mean error.
+3. Add an [example notebook](examples/Reverse_Kaplan_Meier_IPCW.ipynb) explaining the old and corrected
+   censoring estimates, event-first risk sets, and their effect on IPCW metrics.
 
 ## 2026-09-29: Version 0.8.5
 
