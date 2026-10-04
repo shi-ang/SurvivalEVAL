@@ -14,12 +14,18 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
 
 @dataclass
 class KaplanMeier:
-    """
-    This class is borrowed from survival_evaluation package.
+    """Kaplan-Meier estimator of event or censoring survival.
+
+    ``event_indicators`` always denotes original observed events. With
+    ``reverse=True``, estimate censoring survival by removing original events
+    from the risk set before updating tied censorings. In that mode, ``events``
+    contains censoring counts and ``population_count`` contains their adjusted
+    risk sets.
     """
 
     event_times: InitVar[np.ndarray]
     event_indicators: InitVar[np.ndarray]
+    reverse: bool = field(default=False, kw_only=True)
 
     # learned / derived attributes
     survival_times: np.ndarray = field(init=False)
@@ -34,8 +40,21 @@ class KaplanMeier:
             event_times, event_indicators
         )
 
-        event_ratios = 1 - self.events / self.population_count
-        self.survival_probabilities = np.cumprod(event_ratios)
+        if self.reverse:
+            group_counts = -np.diff(np.append(self.population_count, 0))
+            censoring_counts = group_counts - self.events
+            self.population_count = self.population_count - self.events
+            self.events = censoring_counts
+
+        # A terminal original-event-only group has a zero reverse risk set,
+        # but no censorings, so it contributes no update.
+        event_ratios = np.divide(
+            self.events,
+            self.population_count,
+            out=np.zeros(self.events.shape, dtype=float),
+            where=self.events != 0,
+        )
+        self.survival_probabilities = np.cumprod(1 - event_ratios)
 
         # Add the pre-event baseline explicitly and keep all fitted arrays aligned.
         # An observed time zero is left untouched because it contains a real update.
@@ -52,7 +71,11 @@ class KaplanMeier:
 
     def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
-        Predict the survival probabilities at the given prediction times.
+        Predict right-continuous survival probabilities at the given times.
+
+        At an observed time, include that time's update: reverse mode returns
+        ``G(t)``, not its left limit ``G(t-)``. Beyond the last observation,
+        retain the linear extrapolation used by ordinary mode.
         Parameters
         ----------
         prediction_times: float | np.ndarray

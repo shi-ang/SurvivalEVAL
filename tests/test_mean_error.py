@@ -5,6 +5,48 @@ from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
+@pytest.mark.parametrize(
+    "error_type, expected", [("absolute", 10 / 3), ("squared", 31 / 3)]
+)
+def test_ipcw_d_uses_reverse_km_for_mixed_training_ties(error_type, expected):
+    value = mean_error(
+        predicted_times=np.array([4.0, 10.0, 10.0, 14.0]),
+        event_times=np.array([5.0, 12.0, 15.0, 18.0]),
+        event_indicators=np.array([True, True, False, True]),
+        train_event_times=np.array([10.0, 10.0, 15.0, 20.0]),
+        train_event_indicators=np.array([True, False, True, True]),
+        method="IPCW-D",
+        error_type=error_type,
+    )
+    assert value == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("observed_training_events", [False, True])
+def test_ipcw_d_handles_degenerate_training_without_area_calculations(
+    observed_training_events,
+):
+    with np.errstate(divide="raise", invalid="raise"):
+        value = mean_error(
+            predicted_times=np.array([4.0, 8.0]),
+            event_times=np.array([5.0, 10.0]),
+            event_indicators=np.array([True, True]),
+            train_event_times=np.array([10.0, 10.0]),
+            train_event_indicators=np.full(2, observed_training_events),
+            method="IPCW-D",
+        )
+    assert value == pytest.approx(1.5 if observed_training_events else 0.5)
+
+
+def test_ipcw_d_requires_training_data():
+    with pytest.raises(ValueError, match="training set values must be included"):
+        mean_error(
+            predicted_times=np.array([4.0]),
+            event_times=np.array([5.0]),
+            event_indicators=np.array([True]),
+            method="IPCW-D",
+        )
+
+
 @pytest.mark.parametrize("error_type", ["absolute", "squared"])
 @pytest.mark.parametrize("weighted", [False, True])
 @pytest.mark.parametrize("log_scale", [False, True])

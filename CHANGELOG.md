@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-10-04: Version 0.8.6
+
+1. Add `KaplanMeier(..., reverse=True)` to estimate censoring survival from original event indicators,
+   removing original events from the risk set before tied censorings.
+2. Use reverse KM consistently for Uno/IPCW concordance, time-dependent IPCW concordance, Brier scores
+   (including IBS), and IPCW-D MAE/MSE/RMSE. Mixed event/censoring ties in training data now produce
+   corrected censoring probabilities and can change metric values. Weights still use right-continuous
+   `G(t)` with the existing extrapolation and zero-survival handling.
+3. Add an [example notebook](examples/Reverse_Kaplan_Meier_IPCW.ipynb) explaining the old and corrected
+   censoring estimates, event-first risk sets, and their effect on IPCW metrics.
+
 ## 2026-09-29: Version 0.8.5
 
 1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training

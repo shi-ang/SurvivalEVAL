@@ -69,13 +69,14 @@ def mean_error(
     error_type = error_type.lower()
     method = method.lower()
 
-    # calculate the weighting for each sample
     if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
                 f"If method is '{method}', training set values must be included."
             )
 
+    # IPCW-D only needs censoring survival, not event-survival areas or weights.
+    if method in ["margin", "ipcw-t", "pseudo_obs"]:
         km_model = KaplanMeierArea(train_event_times, train_event_indicators)
         km_linear_zero = km_model.km_linear_zero
         if np.isinf(km_linear_zero):
@@ -196,9 +197,7 @@ def mean_error(
     elif method == "ipcw-d":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
-        inverse_train_event_indicators = ~train_event_indicators
-
-        ipc_model = KaplanMeierArea(train_event_times, inverse_train_event_indicators)
+        ipc_model = KaplanMeier(train_event_times, train_event_indicators, reverse=True)
         ipc_pred = ipc_model.predict(event_times)
         # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
         ipc_pred[ipc_pred == 0] = np.inf

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
+from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.BrierScore import (
     _predict_survival_at_observed_times,
     brier_multiple_points,
@@ -13,6 +14,64 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     single_brier_score,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+
+
+def test_ipcw_brier_and_ibs_use_reverse_km_for_mixed_training_ties():
+    grid = np.array([6.0, 13.0, 16.0])
+    predictions = np.tile([0.8, 0.6, 0.4], (4, 1))
+    times = np.array([5.0, 12.0, 15.0, 18.0])
+    indicators = np.array([True, True, False, True])
+    train_times = np.array([10.0, 10.0, 15.0, 20.0])
+    train_indicators = np.array([True, False, True, True])
+    expected = [0.19, 0.345, 0.235]
+
+    multiple = brier_multiple_points(
+        predictions, times, indicators, train_times, train_indicators, grid
+    )
+    singles = [
+        single_brier_score(
+            predictions[:, i], times, indicators, train_times, train_indicators, t
+        )
+        for i, t in enumerate(grid)
+    ]
+    np.testing.assert_allclose(multiple, expected)
+    np.testing.assert_allclose(singles, expected)
+
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.column_stack((np.ones(4), predictions)),
+        time_coordinates=np.r_[0, grid],
+        event_times=times,
+        event_indicators=indicators,
+        train_event_times=train_times,
+        train_event_indicators=train_indicators,
+    )
+    assert evaluator.integrated_brier_score(target_times=grid) == pytest.approx(0.27425)
+
+
+@pytest.mark.parametrize("zero_survival", [False, True])
+def test_ipcw_brier_uses_g_at_exact_ties_and_discards_zero_weights(zero_survival):
+    train_times = np.array([10.0, 10.0] if zero_survival else [10, 10, 15, 20])
+    train_indicators = np.array(
+        [True, False] if zero_survival else [True, False, True, True]
+    )
+    args = dict(
+        event_times=np.array([10.0, 12.0]),
+        event_indicators=np.array([True, False]),
+        train_event_times=train_times,
+        train_event_indicators=train_indicators,
+    )
+    expected = 0.0 if zero_survival else 0.06
+    with np.errstate(divide="raise", invalid="raise"):
+        single = single_brier_score(
+            preds=np.array([0.2, 0.8]), target_time=10.0, **args
+        )
+        multiple = brier_multiple_points(
+            pred_mat=np.array([[0.2], [0.8]]),
+            target_times=np.array([10.0]),
+            **args,
+        )
+    assert single == pytest.approx(expected)
+    np.testing.assert_allclose(multiple, [expected])
 
 
 @pytest.mark.parametrize("ipcw", [True, False])
