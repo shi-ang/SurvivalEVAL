@@ -321,68 +321,24 @@ def ksd_cal_ic(
 def create_interval_c_hist(
     prob_left: float, prob_right: float, num_bins: int
 ) -> np.ndarray:
+    """Distribute one observation's mass over descending probability bins.
+
+    A nonzero interval contributes its fractional overlap with each bin.
+    Equal endpoints contribute all mass to their containing bin, including
+    the boundary probabilities 0 and 1. Reversed endpoints are reordered.
     """
-    Create the binning histogram for an interval censored instance.
-    For interval censored instance, we have two predicted probabilities: left and right.
-    The left probability is the predicted survival probability at the left censored time,
-    and the right probability is the predicted survival probability at the right censored time.
+    prob_left, prob_right = max(prob_left, prob_right), min(prob_left, prob_right)
+    edges = np.linspace(1.0, 0.0, num_bins + 1)
+    if prob_left == prob_right:
+        hist = np.zeros(num_bins)
+        index = np.clip(np.digitize(prob_left, edges) - 1, 0, num_bins - 1)
+        hist[index] = 1.0
+        return hist
 
-    The bins are defined as follows:
-    [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
-
-    (1) If the left and right probabilities are within the same bin, then the histogram will be 1 for that bin,
-    and 0 for the rest of the bins.
-    (2) If the left and right probabilities are in different bins, then the histogram will be split:
-        - The bin (e.g., [b3, b4))that contains the left probability will have a probability of
-        (prob_left - b3) / (prob_left - prob_right)
-        - The bin (e.g., [b1, b2)) that contains the right probability will have a probability of
-        (b2 - prob_right) / (prob_left - prob_right)
-        - The intermediate bins (e.g., [b2, b3)) will have a probability of
-        1 / (num_bins * (prob_left - prob_right))
-
-    :param prob_left: float
-        The predicted probability at the left censored time of an interval censoring instance.
-    :param prob_right: float
-        The predicted probability at the right censored time of an interval censoring instance.
-    :param num_bins: int
-        The number of bins to use for the D-Calibration score.
-    :return:
-    hist: np.ndarray
-        The "split" histogram of this interval censored subject.
-    """
-    # make sure the left and right probabilities are in the range [0, 1]
-    if prob_right == 0:
-        # if the right probability is 0, then it is a right-censored instance,
-        return create_censor_hist(prob_left, num_bins)
-    else:
-        if prob_left < prob_right:
-            # enforce the natural order for survival probs
-            prob_left, prob_right = prob_right, prob_left
-
-        edges = np.linspace(1.0, 0.0, num_bins + 1)  # descending: 1, 1-1/K, ..., 0
-
-        left_idx = np.digitize(prob_left, edges) - 1 if prob_left < 1.0 else 0
-        right_idx = np.digitize(prob_right, edges) - 1
-        hist = np.zeros(num_bins, dtype=float)
-        if left_idx == right_idx:
-            hist[left_idx] = 1.0
-            return hist
-        else:
-            # if the left and right probabilities are in different bins
-            first_hist = (prob_left - edges[left_idx + 1]) / (prob_left - prob_right)
-            hist[left_idx] += first_hist
-
-            last_hist = (edges[right_idx] - prob_right) / (prob_left - prob_right)
-            hist[right_idx] += last_hist
-
-            # fill the intermediate bins with equal probability
-            if right_idx > left_idx + 1:
-                intermediate_hist = (1.0 - first_hist - last_hist) / (
-                    right_idx - left_idx - 1
-                )
-                hist[left_idx + 1 : right_idx] = intermediate_hist
-
-            return hist
+    overlap = np.maximum(
+        0.0, np.minimum(edges[:-1], prob_left) - np.maximum(edges[1:], prob_right)
+    )
+    return overlap / (prob_left - prob_right)
 
 
 _residual_names = {
@@ -631,7 +587,9 @@ def coverage_ic(
     method : str, default "Turnbull"
         Method to compute the coverage.
         - "Turnbull": use the empirical distribution (Turnbull estimator) of censoring intervals from the training data.
-        - "linear": use linear interpolation between the left and right bounds of the censoring intervals.
+        - "linear": use the overlap fraction for finite observed intervals.
+          For unbounded observed intervals, finite overlap contributes 0 and
+          unbounded overlap contributes 1, the limit as the upper bound grows.
     eps : float, default 1e-12
         Numerical tolerance for treating the conditional coverage denominator as zero.
 
@@ -642,7 +600,9 @@ def coverage_ic(
     cov_gap : float
         Difference between observed coverage and the target level (observed_cov - cov_level).
     avg_length : float
-        Average length of the predicted intervals.
+        Average length of the predicted intervals. Infinite lower bounds
+        indicate unbounded predicted quantiles and give infinite width.
+        Predictions [inf, inf] cover no finite event time.
     """
     if pred_l.ndim != 1 or pred_r.ndim != 1:
         raise ValueError("pred_l and pred_r must be 1-dimensional arrays.")
@@ -653,65 +613,46 @@ def coverage_ic(
             "pred_l, pred_r, obs_l, and obs_r must contain the same number of samples."
         )
 
+    overlap_left = np.maximum(obs_l, pred_l)
+    overlap_right = np.minimum(obs_r, pred_r)
+    intersects = (overlap_left <= overlap_right) & np.isfinite(overlap_left)
+
     method = method.lower()
     if method == "linear":
-        # Linear interpolation method, assumes uniform distribution within each censoring interval
-        overlap_left = np.maximum(obs_l, pred_l)
-        overlap_right = np.minimum(obs_r, pred_r)
-
         denom = obs_r - obs_l
-        numer = np.maximum(0.0, overlap_right - overlap_left)
+        numer = np.zeros_like(denom, dtype=float)
+        np.subtract(overlap_right, overlap_left, out=numer, where=intersects)
     elif method == "turnbull":
-        # error if training is None
         if obs_l_train is None or obs_r_train is None:
             raise ValueError(
                 "obs_l_train and obs_r_train must be provided for Turnbull method."
             )
-
         if obs_l_train.ndim != 1 or obs_r_train.ndim != 1:
             raise ValueError(
                 "obs_l_train and obs_r_train must be 1-dimensional arrays."
             )
-
         if np.any(obs_l_train > obs_r_train):
             raise ValueError("Found training intervals with left > right.")
 
         tb = TurnbullEstimatorLifelines(obs_l_train, obs_r_train)
-
-        def S(x: np.ndarray) -> np.ndarray:
-            return np.asarray(tb.predict(x), dtype=float)
-
-        S_L = S(obs_l)
-        S_R = S(obs_r)
-
-        overlap_left = np.maximum(obs_l, pred_l)
-        overlap_right = np.minimum(obs_r, pred_r)
-
-        S_overlap_left = S(overlap_left)
-        S_overlap_right = S(overlap_right)
-
-        denom = S_L - S_R
-        numer = S_overlap_left - S_overlap_right
+        denom = tb.predict(obs_l) - tb.predict(obs_r)
+        numer = tb.predict(overlap_left) - tb.predict(overlap_right)
     else:
         raise ValueError(f"Unknown method: {method}")
 
-    coverage = np.zeros_like(denom, dtype=float)
-    valid = denom > eps
+    coverage = intersects.astype(float)
+    np.divide(numer, denom, out=coverage, where=(denom > eps) & np.isfinite(denom))
+    if method == "linear":
+        unbounded = np.isposinf(denom)
+        coverage[unbounded] = intersects[unbounded] & np.isposinf(
+            overlap_right[unbounded]
+        )
+    coverage = np.clip(coverage, 0.0, 1.0)
 
-    if np.any(valid):
-        ratio = numer[valid] / denom[valid]
-        coverage[valid] = np.clip(ratio, 0.0, 1.0)
-
-    # Handle degenerate censoring intervals where S(L) ~= S(U)
-    if np.any(~valid):
-        intersects = (pred_r >= obs_l) & (pred_l <= obs_r)
-        coverage[~valid] = intersects[~valid].astype(float)
-
+    widths = np.full(pred_l.shape, np.inf)
+    np.subtract(pred_r, pred_l, out=widths, where=np.isfinite(pred_l))
     observed_cov = float(np.mean(coverage))
-    cov_gap = observed_cov - float(cov_level)
-    avg_length = float(np.mean(pred_r - pred_l))
-
-    return observed_cov, cov_gap, avg_length
+    return observed_cov, observed_cov - float(cov_level), float(np.mean(widths))
 
 
 def discrepancy_to_uniform(

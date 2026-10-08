@@ -423,6 +423,7 @@ def predict_prob_from_curve(
     probability 1 is prepended before interpolation.
     If the target time is greater than the largest time coordinate, the probability
     is extrapolated by the linear function through (0, 1) and the last grid point.
+    Survival at positive infinity is defined as 0, including for flat curves.
 
     Parameters
     ----------
@@ -444,31 +445,12 @@ def predict_prob_from_curve(
     predict_probability: float
         Predicted probability of survival at the target time point.
     """
-    survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
-    if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
-        raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
-    target_time = validate_time_point(
-        target_time,
-        input_name="target_time",
+    target_time = validate_time_point(target_time, input_name="target_time")
+    return float(
+        predict_multi_probs_from_curve(
+            survival_curve, times_coordinate, np.array([target_time]), interpolation
+        )[0]
     )
-
-    spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
-
-    # predicting boundary
-    max_time = float(max(times_coordinate))
-
-    # simply calculate the slope by using the [0, 1] - [max_time, S(t|x)]
-    slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
-
-    # Above the fitted time grid, use the survival tail fit described above;
-    # otherwise use the configured interpolator.
-    if target_time > max_time:
-        # func: y = slope * x + 1, the minimum prob should be 0
-        predict_probability = max(slope * target_time + 1, 0)
-    else:
-        predict_probability = np.array(spline(float(target_time))).item()
-
-    return predict_probability
 
 
 def predict_multi_probs_from_curve(
@@ -484,6 +466,7 @@ def predict_multi_probs_from_curve(
     probability 1 is prepended before interpolation.
     If a target time is greater than the largest time coordinate, the probability
     is extrapolated by the linear function through (0, 1) and the last grid point.
+    Survival at positive infinity is defined as 0, including for flat curves.
 
     Parameters
     ----------
@@ -512,20 +495,15 @@ def predict_multi_probs_from_curve(
 
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
-    # predicting boundary
-    max_time = float(max(times_coordinate))
-
-    # simply calculate the slope by using the [0, 1] - [maxtime, S(t|x)]
-    slope = (1 - np.array(spline(max_time)).item()) / (0 - max_time)
-
-    # Above the fitted time grid, use the survival tail fit described above;
-    # otherwise use the configured interpolator.
-    predict_probabilities = np.array(spline(target_times))
-    after_grid = target_times > max_time
+    max_time = float(times_coordinate[-1])
+    finite = np.isfinite(target_times)
+    predict_probabilities = np.zeros(target_times.shape, dtype=float)
+    within_grid = finite & (target_times <= max_time)
+    predict_probabilities[within_grid] = spline(target_times[within_grid])
+    after_grid = finite & (target_times > max_time)
     predict_probabilities[after_grid] = np.maximum(
-        slope * target_times[after_grid] + 1, 0
+        1 - (1 - float(survival_curve[-1])) * target_times[after_grid] / max_time, 0
     )
-
     return predict_probabilities
 
 

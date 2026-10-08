@@ -28,6 +28,7 @@ from SurvivalEVAL.Evaluations.DistributionCalibration import (
 )
 from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
+    _maximum_local_deviation,
     integrated_calibration_index,
     one_calibration,
 )
@@ -1425,10 +1426,7 @@ class SurvivalEvaluator:
             )
 
             # Maximum local deviation, x is expected, y is observed
-            local_devs = np.diff(obs) / np.diff(exp)
-            max_local_dev = np.max(
-                np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs)
-            )
+            max_local_dev = _maximum_local_deviation(obs, exp)
 
             # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
             fig1, ax1 = plt.subplots()
@@ -1576,8 +1574,7 @@ class SurvivalEvaluator:
             )
 
             # Local slope deviation, max slope with the highest ratio difference from 1
-            slopes = d_cal_pdf[::-1] / np.diff(optimal_cdf)
-            max_slope = np.max(np.maximum(slopes / (1 + 1e-8), (1 + 1e-8) / slopes))
+            max_slope = _maximum_local_deviation(d_cal_cdf, optimal_cdf)
 
             # horizontal histograms
             fig1, ax1 = plt.subplots()
@@ -2455,10 +2452,7 @@ class SingleTimeEvaluator:
             )
 
             # Maximum local deviation, x is expected, y is observed
-            local_devs = np.diff(obs) / np.diff(exp)
-            max_local_dev = np.max(
-                np.maximum(local_devs / (1 + 1e-8), (1 + 1e-8) / local_devs)
-            )
+            max_local_dev = _maximum_local_deviation(obs, exp)
 
             # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
             fig1, ax1 = plt.subplots()
