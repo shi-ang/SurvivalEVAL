@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import matplotlib.pyplot as plt  # For plotting
+import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from lifelines import CoxPHFitter
-from patsy import dmatrix  # For spline basis matrix
+from patsy import dmatrix
 from scipy.stats import chi2
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
@@ -18,16 +17,127 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
 )
 
 
-def _h_statistic_bin_masks(preds: np.ndarray, num_bins: int) -> list[np.ndarray]:
-    """Return equal-width probability-bin masks with a closed final bin."""
-    bin_edges = np.linspace(0, 1, num_bins + 1)
-    bin_masks = []
-    for i in range(num_bins):
-        upper_mask = (
-            preds <= bin_edges[i + 1] if i == num_bins - 1 else preds < bin_edges[i + 1]
-        )
-        bin_masks.append((preds >= bin_edges[i]) & upper_mask)
-    return bin_masks
+def _probability_bins(
+    preds: np.ndarray, num_bins: int, strategy: str
+) -> list[np.ndarray]:
+    """Group prediction indices into equal-sized or equal-width bins.
+
+    Parameters
+    ----------
+    preds : np.ndarray, shape (n_samples,)
+        Event probabilities in [0, 1].
+    num_bins : int
+        Positive number of bins to construct.
+    strategy : {"c", "h"}
+        "c" sorts probabilities in descending order and splits the indices
+        into approximately equal-sized groups. "h" uses equal-width bins
+        on [0, 1], including probability 1 in the final bin.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One array of sample indices per bin, including empty bins.
+
+    Raises
+    ------
+    TypeError
+        If the strategy is neither "c" nor "h".
+    """
+    if strategy == "c":
+        return np.array_split(np.argsort(-preds), num_bins)
+    if strategy == "h":
+        edges = np.linspace(0, 1, num_bins + 1)
+        return [
+            np.flatnonzero(
+                (preds >= edges[i])
+                & (preds <= edges[i + 1] if i == num_bins - 1 else preds < edges[i + 1])
+            )
+            for i in range(num_bins)
+        ]
+    raise TypeError("Please enter one of 'C','H' for binning_strategy.")
+
+
+def _calibration_result(observed, expected, bin_sizes, *, uncensored=False):
+    """Compute the one-calibration statistic and its chi-square p-value.
+
+    Parameters
+    ----------
+    observed, expected : array-like, shape (n_bins,)
+        Observed and mean predicted event probabilities for retained bins.
+    bin_sizes : array-like, shape (n_bins,)
+        Number of retained observations in each bin.
+    uncensored : bool, default=False
+        Use n_bins - 2 degrees of freedom for the uncensored method.
+        Otherwise use n_bins - 1, except when n_bins > 15, which uses
+        n_bins - 2.
+
+    Returns
+    -------
+    tuple[float, float, array-like, array-like]
+        P-value, statistic, and the original observed and expected inputs.
+        A predicted probability of 0 or 1 contributes zero when it matches
+        the observed probability, and infinity otherwise. The p-value is
+        NaN when the degrees of freedom are nonpositive.
+    """
+    obs, exp = np.asarray(observed), np.asarray(expected)
+    numerator = np.asarray(bin_sizes) * (obs - exp) ** 2
+    variance = exp * (1 - exp)
+    contributions = np.divide(
+        numerator,
+        variance,
+        out=np.where(numerator == 0, 0.0, np.inf),
+        where=variance != 0,
+    )
+    statistic = float(contributions.sum())
+    num_bins = len(observed)
+    dof = num_bins - (2 if uncensored or num_bins > 15 else 1)
+    p_value = float(chi2.sf(statistic, dof)) if dof > 0 else np.nan
+    return p_value, statistic, observed, expected
+
+
+def _cloglog(probabilities: np.ndarray) -> np.ndarray:
+    """Apply the complementary log-log transform with finite boundaries.
+
+    Parameters
+    ----------
+    probabilities : np.ndarray
+        Event probabilities in [0, 1].
+
+    Returns
+    -------
+    np.ndarray
+        Float64 values of log(-log(1 - p)), with the input shape preserved.
+        Probabilities are clipped to [1e-10, 1 - 1e-10] after conversion to
+        float64 so both boundaries remain finite for float32 inputs too.
+        The input array is not modified.
+    """
+    probabilities = np.clip(np.asarray(probabilities, dtype=float), 1e-10, 1 - 1e-10)
+    return np.log(-np.log1p(-probabilities))
+
+
+def _maximum_local_deviation(observed, expected) -> float:
+    """Measure the largest adjacent calibration slope or its reciprocal.
+
+    Parameters
+    ----------
+    observed, expected : array-like, shape (n_bins,)
+        Observed and expected probabilities in matching bin order.
+
+    Returns
+    -------
+    float
+        Maximum of each slope, diff(observed) / diff(expected), and its
+        reciprocal. Returns infinity for a zero slope, or NaN if fewer
+        than two bins remain or adjacent expected probabilities are tied.
+    """
+    increments = np.diff(expected)
+    if increments.size == 0 or np.any(increments == 0):
+        return np.nan
+    slopes = np.diff(observed) / increments
+    inverse_slopes = np.divide(
+        1.0, slopes, out=np.full(slopes.shape, np.inf), where=slopes != 0
+    )
+    return float(np.max(np.maximum(slopes, inverse_slopes)))
 
 
 def one_calibration(
@@ -69,96 +179,41 @@ def one_calibration(
     Returns
     -------
     p_value: float
-        The one calibration p-value.
+        The one calibration p-value, or NaN if too few nonempty bins remain.
     statistics: float
         The Hosmer-Lemeshow statistics.
+        Boundary probabilities contribute zero when observed and expected
+        probabilities agree, and infinity otherwise.
     observed_probabilities: list
         The observed probabilities in each bin.
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    binning_strategy = binning_strategy.lower()
     method = method.lower()
+    if method not in {"uncensored", "dn"}:
+        raise TypeError("Please enter one of 'Uncensored','DN' for method.")
 
-    if binning_strategy == "c":
-        sorted_idx = np.argsort(-preds)
-        sorted_predictions = preds[sorted_idx]
-        sorted_event_time = event_time[sorted_idx]
-        sorted_event_indicator = event_indicator[sorted_idx]
-
-        binned_event_time = np.array_split(sorted_event_time, num_bins)
-        binned_event_indicator = np.array_split(sorted_event_indicator, num_bins)
-        binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "h":
-        binned_event_time = []
-        binned_event_indicator = []
-        binned_predictions = []
-
-        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
-            binned_event_time.append(event_time[bin_mask])
-            binned_event_indicator.append(event_indicator[bin_mask])
-            binned_predictions.append(preds[bin_mask])
-    else:
-        error = "Please enter one of 'C','H' for binning_strategy."
-        raise TypeError(error)
-
-    hl_statistics = 0
-    observed_probabilities = []
-    expected_probabilities = []
-
-    for b in range(num_bins):
-        # mean_prob = np.mean(binned_predictions[b])
-        bin_size = len(binned_event_time[b])
-
-        if bin_size == 0:
-            # This is for H-statistics binning strategy,
-            # If a bin has no data, skip it
+    observed, expected, bin_sizes = [], [], []
+    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
+        if method == "uncensored":
+            indices = indices[
+                ~((event_time[indices] < target_time) & (event_indicator[indices] == 0))
+            ]
+        if indices.size == 0:
             continue
 
-        # For Uncensored method, we simply remove the censored patients,
-        # for D'Agostina-Nam method, we will use 1-KM(t) as the observed probability.
         if method == "uncensored":
-            filter_idx = ~(
-                (binned_event_time[b] < target_time) & (binned_event_indicator[b] == 0)
-            )
-            filtered_predictions = binned_predictions[b][filter_idx]
-            filtered_event_times = binned_event_time[b][filter_idx]
-            retained_bin_size = len(filtered_event_times)
-            if retained_bin_size == 0:
-                continue
-
-            mean_prob = np.mean(filtered_predictions, dtype=float)
-            event_count = np.sum(filtered_event_times < target_time)
-            event_probability = event_count / retained_bin_size
-            hl_statistics += (event_count - retained_bin_size * mean_prob) ** 2 / (
-                retained_bin_size * mean_prob * (1 - mean_prob)
-            )
-        elif method == "dn":
-            mean_prob = np.mean(binned_predictions[b], dtype=float)
-            km_model = KaplanMeier(binned_event_time[b], binned_event_indicator[b])
-            event_probability = 1 - km_model.predict(target_time)
-            hl_statistics += (
-                bin_size * event_probability - bin_size * mean_prob
-            ) ** 2 / (bin_size * mean_prob * (1 - mean_prob))
+            event_probability = np.mean(event_time[indices] < target_time)
         else:
-            error = "Please enter one of 'Uncensored','DN' for method."
-            raise TypeError(error)
-        observed_probabilities.append(event_probability)
-        expected_probabilities.append(mean_prob)
+            km = KaplanMeier(event_time[indices], event_indicator[indices])
+            event_probability = 1 - km.predict(target_time)
+        observed.append(event_probability)
+        expected.append(np.mean(preds[indices], dtype=float))
+        bin_sizes.append(indices.size)
 
-    # recalculate the number of bins as the number of bins with data
-    num_bins = len(observed_probabilities)
-    degree_of_freedom = (
-        num_bins - 1 if (num_bins <= 15 and method == "dn") else num_bins - 2
+    return _calibration_result(
+        observed, expected, bin_sizes, uncensored=method == "uncensored"
     )
-    if degree_of_freedom <= 0:
-        raise ValueError(
-            "The number of bins is too small to calculate the p-value. "
-            "Please increase the number of bins or check your data."
-        )
-    p_value = 1 - chi2.cdf(hl_statistics, degree_of_freedom)
-
-    return p_value, hl_statistics, observed_probabilities, expected_probabilities
 
 
 def one_cal_ic(
@@ -197,87 +252,36 @@ def one_cal_ic(
     Returns
     -------
     p_value: float
-        The one-calibration p-value.
+        The one-calibration p-value, or NaN if too few nonempty bins remain.
     statistics: float
         The Hosmer-Lemeshow statistic.
+        Boundary probabilities contribute zero when observed and expected
+        probabilities agree, and infinity otherwise.
     observed_probabilities: list
         The observed probabilities in each bin.
     expected_probabilities: list
         The expected probabilities in each bin.
     """
-    binning_strategy = binning_strategy.lower()
     method = method.lower()
+    if method not in {"midpoint", "turnbull"}:
+        raise TypeError("Please enter one of 'MidPoint','Turnbull' for method.")
 
-    if binning_strategy == "c":
-        sorted_idx = np.argsort(-preds)
-        sorted_predictions = preds[sorted_idx]
-        sorted_left = left_limits[sorted_idx]
-        sorted_right = right_limits[sorted_idx]
-
-        binned_left = np.array_split(sorted_left, num_bins)
-        binned_right = np.array_split(sorted_right, num_bins)
-        binned_predictions = np.array_split(sorted_predictions, num_bins)
-    elif binning_strategy == "h":
-        binned_left = []
-        binned_right = []
-        binned_predictions = []
-
-        for bin_mask in _h_statistic_bin_masks(preds, num_bins):
-            binned_left.append(left_limits[bin_mask])
-            binned_right.append(right_limits[bin_mask])
-            binned_predictions.append(preds[bin_mask])
-    else:
-        error = "Please enter one of 'C','H' for binning_strategy."
-        raise TypeError(error)
-
-    hl_statistics = 0
-    observed_probabilities = []
-    expected_probabilities = []
-
-    for b in range(num_bins):
-        bin_size = len(binned_predictions[b])
-
-        if bin_size == 0:
-            # This is for H-statistics binning strategy,
-            # If a bin has no data, skip it
+    observed, expected, bin_sizes = [], [], []
+    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
+        if indices.size == 0:
             continue
-
-        l_limits = np.array(binned_left[b])
-        r_limits = np.array(binned_right[b])
-        mean_prob = np.mean(binned_predictions[b], dtype=float)
-
+        left, right = left_limits[indices], right_limits[indices]
         if method == "midpoint":
-            mid = l_limits + (r_limits - l_limits) / 2.0
-            finite_mid = np.isfinite(mid)
-            event_times = np.where(finite_mid, mid, l_limits)
-            event_indicators = finite_mid.astype(int)
-
-            km_model = KaplanMeier(event_times, event_indicators)
-            event_probability = 1 - km_model.predict(target_time)
-        elif method == "turnbull":
-            tb = TurnbullEstimatorLifelines(l_limits, r_limits)
-            event_probability = 1 - tb.predict(target_time)
+            mid = left + (right - left) / 2.0
+            finite = np.isfinite(mid)
+            estimator = KaplanMeier(np.where(finite, mid, left), finite)
         else:
-            error = "Please enter one of 'MidPoint','Turnbull' for method."
-            raise TypeError(error)
-        hl_statistics += (bin_size * event_probability - bin_size * mean_prob) ** 2 / (
-            bin_size * mean_prob * (1 - mean_prob)
-        )
+            estimator = TurnbullEstimatorLifelines(left, right)
+        observed.append(1 - estimator.predict(target_time))
+        expected.append(np.mean(preds[indices], dtype=float))
+        bin_sizes.append(indices.size)
 
-        observed_probabilities.append(event_probability)
-        expected_probabilities.append(mean_prob)
-
-    # recalculate the number of bins as the number of bins with data
-    num_bins = len(observed_probabilities)
-    degree_of_freedom = num_bins - 1 if num_bins <= 15 else num_bins - 2
-    if degree_of_freedom <= 0:
-        raise ValueError(
-            "The number of bins is too small to calculate the p-value. "
-            "Please increase the number of bins or check your data."
-        )
-    p_value = 1 - chi2.cdf(hl_statistics, degree_of_freedom)
-
-    return p_value, hl_statistics, observed_probabilities, expected_probabilities
+    return _calibration_result(observed, expected, bin_sizes)
 
 
 def integrated_calibration_index(
@@ -293,9 +297,9 @@ def integrated_calibration_index(
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
     The method is presented in [1]. The implementation is based on the R code available in Appendix A of [1].
 
-    We choose the implementation using splines + CoxPH (instead of the hazard regression) because
-    (1) the two methods can compariable performance and the difference is negligible (support by the paper)
-    (2) as far as I know, there is no implementation of flexible adaptive hazard regression in Python
+    Constant predictions use the Kaplan-Meier event probability at the target
+    time. Other predictions use a spline and Cox model, clipping probabilities
+    only for the log transform while retaining the original values for errors.
 
     Parameters
     ----------
@@ -338,54 +342,46 @@ def integrated_calibration_index(
         raise ValueError(
             "preds, event_time, and event_indicator must have the same shape."
         )
-    # get cdfs and cumulative log-log (CLL) values
-    pred_clls = np.log(-np.log(1 - preds))
-
-    spline = dmatrix(
-        f"bs(x, df={knots}, include_intercept=False)",
-        {"x": pred_clls},
-        return_type="dataframe",
-    )
-    fit_info = spline.design_info
-    df = pd.concat(
-        [
-            pd.Series(event_time, name="time"),
-            pd.Series(event_indicator, name="event"),
-            spline,
-        ],
-        axis=1,
-    )
-    # these model-based estimates are used as the value of observed risks
-    cal_fitter = CoxPHFitter().fit(df, duration_col="time", event_col="event")
-
-    # these model-based estimates are used as the value of observed risks
-    cal_pred = (
-        1
-        - cal_fitter.predict_survival_function(
-            spline, times=[target_time]
-        ).T.values.flatten()
-    )
-    abs_err = np.abs(preds - cal_pred)
-    ici = np.mean(abs_err, dtype=float)
-    e50 = np.median(abs_err)
-    e90 = np.quantile(abs_err, 0.9)
-    e_max = np.max(abs_err)
-    summary = {"ICI": ici, "E50": e50, "E90": e90, "E_max": e_max}
+    if np.any((preds < 0) | (preds > 1)):
+        raise ValueError("Event probabilities must be between 0 and 1.")
 
     grid = np.linspace(np.quantile(preds, 0.01), np.quantile(preds, 0.99), 100)
-    grid_cll = np.log(-np.log(1 - grid))
+    pred_clls = _cloglog(preds)
+    distinct_predictions = np.unique(pred_clls).size
+    if distinct_predictions == 1:
+        observed = 1 - KaplanMeier(event_time, event_indicator).predict(target_time)
+        calibrated = np.full(preds.size + grid.size, observed)
+    else:
+        spline_df = min(knots, distinct_predictions - 1)
+        spline = dmatrix(
+            f"bs(x, df={spline_df}, degree={min(3, spline_df)}, include_intercept=False) - 1",
+            {"x": pred_clls},
+            return_type="dataframe",
+        )
+        data = spline.copy()
+        data["time"] = event_time
+        data["event"] = event_indicator
+        fitter = CoxPHFitter().fit(data, duration_col="time", event_col="event")
+        evaluation_spline = dmatrix(
+            spline.design_info,
+            {"x": _cloglog(np.concatenate([preds, grid]))},
+            return_type="dataframe",
+        )
+        calibrated = (
+            1
+            - fitter.predict_survival_function(
+                evaluation_spline, times=[target_time]
+            ).values.flatten()
+        )
 
-    spline_grid = dmatrix(fit_info, {"x": grid_cll}, return_type="dataframe")
-    cal_pred = (
-        1
-        - cal_fitter.predict_survival_function(
-            spline_grid, times=[target_time]
-        ).T.values.flatten()
-    )
-
-    summary["curve"] = {
-        "grid": grid,
-        "cal_pred": cal_pred,
+    abs_err = np.abs(preds - calibrated[: preds.size])
+    cal_pred = calibrated[preds.size :]
+    summary = {
+        "ICI": np.mean(abs_err, dtype=float),
+        "E50": np.median(abs_err),
+        "E90": np.quantile(abs_err, 0.9),
+        "E_max": np.max(abs_err),
+        "curve": {"grid": grid, "cal_pred": cal_pred},
     }
 
     if draw_figure:
