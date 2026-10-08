@@ -63,6 +63,11 @@ def km_mean(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
 def infer_survival_probabilities(
     prediction_times, survival_times, survival_probabilities
 ):
+    """Evaluate a step survival curve with a linear tail at finite times.
+
+    Times before the first observation have survival 1. Positive infinity
+    has survival 0, including when the fitted tail is flat.
+    """
     indices = np.searchsorted(survival_times, prediction_times, side="right") - 1
     # Index -1 denotes the pre-observation baseline, where survival is still 1.
     before_first = indices < 0
@@ -72,7 +77,9 @@ def infer_survival_probabilities(
 
     # Extrapolate linearly for times beyond the last observed time point
     # using the line connecting (t_last, S(t_last)) and (t0, S(t0))
-    beyond_last = prediction_times > survival_times[-1]
+    beyond_last = np.isfinite(prediction_times) & (
+        prediction_times > survival_times[-1]
+    )
     if np.any(beyond_last):
         t0, s0 = survival_times[0], survival_probabilities[0]
         t_last, s_last = survival_times[-1], survival_probabilities[-1]
@@ -80,4 +87,5 @@ def infer_survival_probabilities(
         slope = 0.0 if denom == 0 else (s_last - s0) / denom
         extrapolated = s_last + slope * (prediction_times[beyond_last] - t_last)
         probs[beyond_last] = np.maximum(extrapolated, 0.0)
+    probs[np.isposinf(prediction_times)] = 0.0
     return probs

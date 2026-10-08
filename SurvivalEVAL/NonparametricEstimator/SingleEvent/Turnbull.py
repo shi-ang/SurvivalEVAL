@@ -235,6 +235,14 @@ class TurnbullEstimator:
 
 @dataclass
 class TurnbullEstimatorLifelines:
+    """Fit a Turnbull estimate using the upper survival-bound convention.
+
+    If all observation intervals intersect, a point mass at their common
+    upper endpoint maximizes the likelihood. Construct that estimate directly
+    rather than fitting a degenerate model. An infinite common upper endpoint
+    leaves survival equal to 1 at every finite time.
+    """
+
     left: InitVar[np.ndarray]
     right: InitVar[np.ndarray]
     alpha: InitVar[float] = 0.05
@@ -248,12 +256,19 @@ class TurnbullEstimatorLifelines:
     survival_probabilities: np.ndarray | None = field(init=False, default=None)
 
     def __post_init__(self, left, right, alpha, tol, label):
-        kmf = KaplanMeierFitter(alpha=alpha)
-        kmf.fit_interval_censoring(left, right, label=label, tol=tol)
-
-        self.survival_times = kmf.survival_function_.index.values
-        # We use the '_upper' column, as it has the same behavior as the Turnbull estimator in icensem package in R.
-        self.survival_probabilities = kmf.survival_function_[f"{label}_upper"].values
+        common_left, common_right = np.max(left), np.min(right)
+        if common_left <= common_right:
+            self.survival_times = np.unique([common_left, common_right]).astype(float)
+            self.survival_probabilities = (self.survival_times < common_right).astype(
+                float
+            )
+        else:
+            kmf = KaplanMeierFitter(alpha=alpha)
+            kmf.fit_interval_censoring(left, right, label=label, tol=tol)
+            self.survival_times = kmf.survival_function_.index.values
+            self.survival_probabilities = kmf.survival_function_[
+                f"{label}_upper"
+            ].values
 
         # If the last survival times is inf, we need to remove it
         if np.isinf(self.survival_times[-1]):

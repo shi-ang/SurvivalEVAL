@@ -789,11 +789,17 @@ def mean_error_ic(
 
     inside, is_right_cens = _compute_inside_mask(L, R, t_hat)
     outside = ~inside
-    error_to_L = error_func(t_hat - L)
-    error_to_R = np.where(is_right_cens, np.inf, error_func(t_hat - R))
-    d_i = np.where(outside, np.minimum(error_to_L, error_to_R), 0.0)
-
-    return float(np.mean(d_i, dtype=float))
+    errors = np.zeros(t_hat.shape)
+    error_to_right = np.full(np.count_nonzero(outside), np.inf)
+    np.subtract(
+        t_hat[outside],
+        R[outside],
+        out=error_to_right,
+        where=~is_right_cens[outside],
+    )
+    distances = np.minimum(np.abs(t_hat[outside] - L[outside]), np.abs(error_to_right))
+    errors[outside] = error_func(distances)
+    return float(np.mean(errors, dtype=float))
 
 
 if __name__ == "__main__":

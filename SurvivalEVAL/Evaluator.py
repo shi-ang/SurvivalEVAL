@@ -1574,8 +1574,7 @@ class SurvivalEvaluator:
             )
 
             # Local slope deviation, max slope with the highest ratio difference from 1
-            slopes = d_cal_pdf[::-1] / np.diff(optimal_cdf)
-            max_slope = np.max(np.maximum(slopes / (1 + 1e-8), (1 + 1e-8) / slopes))
+            max_slope = _maximum_local_deviation(d_cal_cdf, optimal_cdf)
 
             # horizontal histograms
             fig1, ax1 = plt.subplots()
