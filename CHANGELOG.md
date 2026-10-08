@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-10-08: Version 0.8.7
+
+1. Handle event-probability boundaries in ICI with a finite complementary log-log transform, preserving original
+   probabilities for errors. Constant predictions use Kaplan-Meier calibration; few distinct predictions use smaller
+   splines. Nonconstant predictions remain subject to Cox model convergence.
+2. Share binning and boundary-safe statistics for right- and interval-censored 1-calibration. Matching boundary
+   probabilities contribute zero and contradictions contribute infinity. Insufficient populated bins now return
+   a `NaN` p-value instead of raising an exception; detailed output handles tied probabilities without division warnings.
+3. Share scalar and vector survival-probability evaluation and define survival at positive infinity as zero for
+   predicted curves and nonparametric estimators, including flat tails.
+4. Simplify interval D-calibration with probability-bin overlap, handling equal endpoints at zero and one.
+   Construct Turnbull estimates directly when all observation intervals intersect, using their common upper endpoint.
+5. Handle unbounded prediction intervals in coverage without invalid subtraction: `[inf, inf]` covers no finite event
+   and reports infinite width. Linear coverage of right-censored observations uses the limiting overlap fraction as
+   the upper bound grows. Interval MAE/MSE/RMSE avoid undefined subtraction while preserving infinite penalties.
+6. Add regression coverage for constant and mixed curves, exact boundaries, both interpolation methods, float32 and
+   float64 inputs, finite/right-censored/mixed observations, and detailed calibration output. No new dependencies.
+
 ## 2026-10-04: Version 0.8.6
 
 1. Add `KaplanMeier(..., reverse=True)` to estimate censoring survival from original event indicators,
