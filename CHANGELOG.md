@@ -1,5 +1,147 @@
 # CHANGELOG
 
+## 2026-10-08: Version 0.8.7
+
+1. Handle event-probability boundaries in ICI with a finite complementary log-log transform, preserving original
+   probabilities for errors. Constant predictions use Kaplan-Meier calibration; few distinct predictions use smaller
+   splines. Nonconstant predictions remain subject to Cox model convergence.
+2. Share binning and boundary-safe statistics for right- and interval-censored 1-calibration. Matching boundary
+   probabilities contribute zero and contradictions contribute infinity. Insufficient populated bins now return
+   a `NaN` p-value instead of raising an exception; detailed output handles tied probabilities without division warnings.
+3. Share scalar and vector survival-probability evaluation and define survival at positive infinity as zero for
+   predicted curves and nonparametric estimators, including flat tails.
+4. Simplify interval D-calibration with probability-bin overlap, handling equal endpoints at zero and one.
+   Construct Turnbull estimates directly when all observation intervals intersect, using their common upper endpoint.
+5. Handle unbounded prediction intervals in coverage without invalid subtraction: `[inf, inf]` covers no finite event
+   and reports infinite width. Linear coverage of right-censored observations uses the limiting overlap fraction as
+   the upper bound grows. Interval MAE/MSE/RMSE avoid undefined subtraction while preserving infinite penalties.
+6. Add regression coverage for constant and mixed curves, exact boundaries, both interpolation methods, float32 and
+   float64 inputs, finite/right-censored/mixed observations, and detailed calibration output. No new dependencies.
+
+## 2026-10-04: Version 0.8.6
+
+1. Add `KaplanMeier(..., reverse=True)` to estimate censoring survival from original event indicators,
+   removing original events from the risk set before tied censorings.
+2. Use reverse KM consistently for Uno/IPCW concordance, time-dependent IPCW concordance, Brier scores
+   (including IBS), and IPCW-D MAE/MSE/RMSE. Mixed event/censoring ties in training data now produce
+   corrected censoring probabilities and can change metric values. Weights still use right-continuous
+   `G(t)` with the existing extrapolation and zero-survival handling.
+3. Add an [example notebook](examples/Reverse_Kaplan_Meier_IPCW.ipynb) explaining the old and corrected
+   censoring estimates, event-first risk sets, and their effect on IPCW metrics.
+
+## 2026-09-29: Version 0.8.5
+
+1. Compute IPCW-T surrogate times with sorted training events and suffix sums instead of rescanning the training
+   data for each censored test sample, retaining strict later-event selection and exclusion of unsupported times.
+2. Aggregate right-censored D-calibration contributions by bin and cumulative tail weights instead of building
+   a separate histogram for every sample.
+3. Share vectorized event counting across Kaplan-Meier, Nelson-Aalen, and Copula-Graphic estimators, avoiding
+   redundant sorting and Python index-building loops while preserving tied-time risk sets.
+4. Use direct linear interpolation for AUPRC CDF lookups instead of constructing interpolators for each query,
+   retaining the existing quadrature and boundary behavior.
+5. Predict conditional interval Brier endpoints in bounded batches instead of evaluating all sample-by-sample
+   combinations when only the diagonal probabilities are needed.
+6. Add regression coverage for numerical equivalence, probability and interpolation boundaries, tied event times,
+   read-only inputs, and bounded endpoint-prediction batches. No public API or dependency changes.
+
+## 2026-09-28: Version 0.8.4
+
+1. Count evaluator time-dependent concordance comparisons using sorted event-time groups and weighted rank queries
+   instead of visiting each comparable pair. Counting uses `O(n)` working memory and `O(n log n + n U log(M + 1))`
+   time, where `U` is the number of contributing event times and `M` is the largest event group. Counting remains
+   quadratic when all event times differ.
+2. Use per-group range-sum trees to preserve small concordant and risk-tie weights alongside much larger weights,
+   avoiding cancellation from subtracting cumulative totals that include unrelated pairs.
+3. Preserve once-per-sample curve prediction, existing interpolation, IPCW weights, strict `tau` truncation,
+   tie policies, and the dense risk-matrix API. No public API or dependency changes.
+4. Add regression coverage for grouped counting, floating-point tie boundaries, nonfinite risks, independent
+   group weights, and small pair weights beside much larger weights.
+
+## 2026-09-09: Version 0.8.3
+
+1. Stream time-dependent concordance predictions one sample at a time instead of constructing dense sample-by-event
+   risk matrices, reducing concordance working memory from `O(n²)` to `O(n)` plus `O(k)` temporary interpolation
+   storage for a curve with `k` grid points. These bounds exclude stored input curves and IPCW training data.
+   Pair counting takes `O(n log n + P)` time for `P` comparable pairs, remaining quadratic in the worst case.
+2. Evaluate hazards only at contributing anchor times for each sample, avoiding unnecessary out-of-grid predictions,
+   and validate target times consistently in the shared per-sample risk predictor.
+3. Update compatibility with the latest dependency versions and Python 3.10+.
+
+## 2026-08-23: Version 0.8.2
+
+1. Replace per-anchor enumeration of right-censored concordance pairs with a coordinate-compressed Fenwick tree,
+   reducing the core counting work from quadratic time to `O(n log n)` while retaining `O(n)` storage and avoiding
+   repeated candidate and pair-array allocations.
+2. Preserve Harrell/Naive, Uno/IPCW, and Margin concordance behavior for symmetric and anchor-only weights, strict
+   `tau` truncation, same-time events and censoring, and risk ties within the configured tolerance.
+3. Add randomized brute-force equivalence tests for weighted counts and tie tolerance, plus a 50,000-sample
+   scalability regression test.
+
+## 2026-08-19: Version 0.8.1
+
+1. Replace repeated multi-time Brier inputs with broadcast views, reuse one-dimensional censoring-survival predictions,
+   and accumulate the two error components sequentially with one dense floating-point workspace.
+2. Vectorize masked interval-censored Brier reductions and reuse the survival-status matrix for squared errors.
+3. Reduce time-dependent concordance work by selecting contributing anchors in linear time, predicting each active
+   unique anchor time once, and negating survival risks in place.
+4. Reuse interval-concordance contribution matrices and avoid a floating-point tie matrix.
+5. Avoid copying compatible NumPy time-point arrays during validation and add peak-allocation, prediction-shape,
+   randomized, and result-equivalence regression tests for the optimized paths.
+6. Modernize string formatting and type annotations across evaluation modules.
+7. Preserve compatible `float32` and `float64` input storage across evaluators, keep event indicators boolean, and
+   avoid copying compatible read-only arrays, memory maps, pandas objects, and CPU Torch tensors unless requested,
+   while supporting object-backed nullable numeric pandas inputs.
+
+## 2026-06-17: Version 0.8.0
+
+1. Add Antolini-style time-dependent concordance through the lower-level
+   `concordance_time_dependent` function and `SurvivalEvaluator.concordance_time_dependent`.
+2. Add survival-probability and hazard-rate risk modes for time-dependent concordance, including the
+   Gandy-Matcham hazard-rate IPCW usage for crossing-hazards models.
+3. Add IPCW weighting, strict before-`tau` anchor filtering, training-data validation, and tie handling for
+   time-dependent concordance.
+4. Add hazard prediction support and consistent target-time validation for evaluator probability and hazard lookups.
+5. Add regression tests for time-dependent pair counting, IPCW weighting, tie policies, `tau` filtering,
+   input validation, and evaluator end-to-end behavior.
+6. Reconstruct the README metric reference with paper-linked tables covering the documented right-censored,
+   interval-censored, helper, and estimator APIs.
+
+## 2026-06-16: Version 0.7.0
+
+1. Add Uno's right-censored concordance index through the `"Uno"` method, with `"IPCW"` kept as an alias.
+2. Add `tau` truncation support for right-censored concordance methods, using strict before-`tau` anchor filtering.
+3. Improve right-censored concordance pair accounting for Harrell/Naive, Uno/IPCW, and Margin methods, including
+   tie handling and final-block IPCW edge cases.
+4. Update evaluator concordance wrappers and docstrings to expose the new right-censored concordance options.
+5. Add regression tests for Uno/IPCW weighting, `tau` truncation, tie policies, Margin behavior, and evaluator
+   forwarding.
+
+## 2026-06-11: Version 0.6.3
+
+1. Fix zero-padding and prediction-input update paths so 1-D survival curves, raw replacements after padding, sample-specific time grids, and row-count mismatches are handled consistently in right- and interval-censored evaluators.
+2. Make string option handling case-insensitive across evaluator methods, interpolation choices, Brier score, concordance, calibration, residual, mean-error, and nonparametric estimator settings.
+3. Correct boundary handling for censored observations at target times in AUC and right-censored Brier score calculations, and for open-left/closed-right interval-censored Brier score cases.
+4. Improve utility behavior for repeated infinite monotonic values, degenerate all-one survival-to-quantile curves, zero-padded probability prediction, and vectorized tail extrapolation for multiple target times.
+5. Clean up evaluator prediction input APIs by adding shared `set_prediction_inputs`, refreshing dimension metadata and cached predictions on updates, and accepting list quantile levels.
+6. Correct setup license metadata to GPLv3 and align documentation/comments for evaluator, interval-censored, Brier score, and utility behavior.
+7. Add regression tests covering the new validation, boundary, zero-padding, quantile, utility, and metric behavior.
+
+## 2026-06-08: Version 0.6.2
+
+1. Improve survival-curve and time-coordinate validation, broadcasting, zero-padding, and monotonicity correction, including isotonic regression support.
+2. Fix calibration edge cases for probability-one predictions, uncensored bin sizes, interval-specific limits, and arbitrary D-calibration bin counts.
+3. Fix concordance, Brier score, RMST, coefficient of variation, and survival AUPRC behavior for interval-censored data and boundary cases.
+4. Correct nonparametric estimator baselines and exact-event handling for Kaplan-Meier, Nelson-Aalen, Copula Graphic, Turnbull, and Fiducial estimators.
+5. Improve evaluator input validation and defaults for prediction intervals, missing training data, duplicated time coordinates, and scikit-survival probability curves.
+6. Clarify event-indicator terminology, API documentation, and code comments throughout the package.
+7. Add regression tests for the corrected metrics, evaluators, utility functions, and nonparametric estimators.
+
+## 2026-01-22: Version 0.6.1
+
+1. Add a version of Concordance index for interval censoring based on comparable pairs only, just like Harrell's C for right censoring.
+2. Added Fiducial estimator for interval censored data. This haven't been integrated into the Evaluator class yet.
+3. Bug fixes for Distribution Calibration (for interval censoring), and coverage (for interval censoring).
+
 ## 2025-11-04: Version 0.6.0
 
 1. Add IntervalCenEvaluator.py for interval censoring evaluation. The new features include:
@@ -14,13 +156,12 @@
    - Survival AUPRC for both right and interval censoring
    - CRPS (degenerated version of interval Brier score) for both right and interval censoring
 2. Implement other metrics (from literature) that are currently not integrated in the Evaluator classes, including:
-    - Coefficient of variation (CoV)
-    - Calibration slope (for both right and interval censoring)
+   - Coefficient of variation (CoV)
+   - Calibration slope (for both right and interval censoring)
 3. Add converter to use the mid-point imputation for interval censored data to convert to right censored data for evaluation purpose.
 4. Add plot support for calibration metrics, integrated Brier score, for both right and interval censoring.
 5. Remove the reference of old Turnbull estimator, implement a new class TurnbullEstimatorLifelines based on the lifelines package.
 6. Update test scripts for the new features.
-
 
 ## 2025-09-09: Version 0.5.1
 

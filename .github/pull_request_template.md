@@ -20,9 +20,9 @@ List the issue fixes that are covered in this pull request. If this PR fixes an 
 
 - [ ] All new or modified features have corresponding test cases.
 
-- [ ] I have run all the tests, using `pytest --all`, and this is the log I get:
+- [ ] I have run all the tests, using `pytest`, and this is the log I get:
 
-```
+```bash
 Paste the results you get from running pytest tests here.
 ```
 
@@ -40,6 +40,6 @@ Paste the results you get from running pytest tests here.
 
 - [ ] Paste the remaining code TODOs using the command `grep -rI --color=auto --exclude-dir={.git,__pycache__,env_folder,.venv,venv,.cache,output,.github,} 'TODO' .` here, and explain them if necessary:
 
-```
+```bash
 Paste the results you get here
 ```

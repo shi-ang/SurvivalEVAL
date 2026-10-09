@@ -1,4 +1,4 @@
-from typing import Optional
+from __future__ import annotations
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -23,7 +23,8 @@ def d_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     num_bins: int
         The number of bins to use for the D-Calibration score.
 
@@ -37,23 +38,41 @@ def d_calibration(
         The binning histogram of the D-Calibration test.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
-    censor_indicators = 1 - event_indicators
+    event_indicators = event_indicators.astype(bool, copy=False)
+    censor_indicators = ~event_indicators
 
-    event_probs = pred_probs[event_indicators.astype(bool)]
+    event_probs = pred_probs[event_indicators]
     event_position = np.digitize(event_probs, quantile)
     event_position[event_position == 0] = 1  # class probability==1 to the first bin
 
-    event_hist = np.zeros([num_bins])
-    for i in range(len(event_position)):
-        event_hist[event_position[i] - 1] += 1
+    event_hist = np.bincount(event_position - 1, minlength=num_bins)
 
-    censored_probs = pred_probs[censor_indicators.astype(bool)]
+    censored_probs = pred_probs[censor_indicators]
 
-    censor_hist = np.zeros([num_bins])
-    if len(censored_probs) > 0:
-        for i in range(len(censored_probs)):
-            partial_binning = create_censor_hist(censored_probs[i], num_bins)
-            censor_hist += partial_binning
+    # Match create_censor_hist, which contributes zero outside [0, 1].
+    censored_probs = censored_probs[
+        (censored_probs >= 0) & (censored_probs <= 1)
+    ].astype(float, copy=False)
+    positions = np.maximum(np.digitize(censored_probs, quantile) - 1, 0)
+    partial_weights = np.divide(
+        censored_probs - quantile[positions + 1],
+        censored_probs,
+        out=np.ones(censored_probs.shape),
+        where=censored_probs != 0,
+    )
+    partial_weights[censored_probs == 1] = 1 / num_bins
+    censor_hist = np.bincount(positions, weights=partial_weights, minlength=num_bins)
+
+    # A censored sample adds the same weight to every subsequent bin. Group
+    # those weights by their starting bin, then accumulate once across bins.
+    # Samples already in the last bin need no tail weight (including p == 0).
+    has_tail = positions < num_bins - 1
+    tail_weights = np.bincount(
+        positions[has_tail],
+        weights=1 / (num_bins * censored_probs[has_tail]),
+        minlength=num_bins,
+    )
+    censor_hist[1:] += np.cumsum(tail_weights[:-1])
 
     combine_hist = event_hist + censor_hist
     statistic, pvalue = chisquare(combine_hist)
@@ -83,7 +102,7 @@ def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
     censor_binning = np.zeros(num_bins)
     for i in range(num_bins):
         if prob == 1:
-            censor_binning += 0.1
+            censor_binning += 1 / num_bins
             break
         elif quantile[i] > prob >= quantile[i + 1]:
             first_bin = (prob - quantile[i + 1]) / prob if prob != 0 else 1
@@ -159,7 +178,8 @@ def ksd_calibration(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     return_details: bool
         Whether to return the detailed information including the empirical distribution and the figure.
 
@@ -259,7 +279,7 @@ def ksd_cal_ic(
 
     # Fit a Turnbull estimator on the predicted probabilities
     n = len(pred_probs_left)
-    tb = TurnbullEstimatorLifelines(pred_probs_left, pred_probs_right)
+    tb = TurnbullEstimatorLifelines(pred_probs_right, pred_probs_left)
     x_support = tb.survival_times
     cdf_values = tb.cumulative_dens
 
@@ -301,76 +321,32 @@ def ksd_cal_ic(
 def create_interval_c_hist(
     prob_left: float, prob_right: float, num_bins: int
 ) -> np.ndarray:
+    """Distribute one observation's mass over descending probability bins.
+
+    A nonzero interval contributes its fractional overlap with each bin.
+    Equal endpoints contribute all mass to their containing bin, including
+    the boundary probabilities 0 and 1. Reversed endpoints are reordered.
     """
-    Create the binning histogram for an interval censored instance.
-    For interval censored instance, we have two predicted probabilities: left and right.
-    The left probability is the predicted survival probability at the left censored time,
-    and the right probability is the predicted survival probability at the right censored time.
+    prob_left, prob_right = max(prob_left, prob_right), min(prob_left, prob_right)
+    edges = np.linspace(1.0, 0.0, num_bins + 1)
+    if prob_left == prob_right:
+        hist = np.zeros(num_bins)
+        index = np.clip(np.digitize(prob_left, edges) - 1, 0, num_bins - 1)
+        hist[index] = 1.0
+        return hist
 
-    The bins are defined as follows:
-    [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
-
-    (1) If the left and right probabilities are within the same bin, then the histogram will be 1 for that bin,
-    and 0 for the rest of the bins.
-    (2) If the left and right probabilities are in different bins, then the histogram will be split:
-        - The bin (e.g., [b3, b4))that contains the left probability will have a probability of
-        (prob_left - b3) / (prob_left - prob_right)
-        - The bin (e.g., [b1, b2)) that contains the right probability will have a probability of
-        (b2 - prob_right) / (prob_left - prob_right)
-        - The intermediate bins (e.g., [b2, b3)) will have a probability of
-        1 / (num_bins * (prob_left - prob_right))
-
-    :param prob_left: float
-        The predicted probability at the left censored time of an interval censoring instance.
-    :param prob_right: float
-        The predicted probability at the right censored time of an interval censoring instance.
-    :param num_bins: int
-        The number of bins to use for the D-Calibration score.
-    :return:
-    hist: np.ndarray
-        The "split" histogram of this interval censored subject.
-    """
-    # make sure the left and right probabilities are in the range [0, 1]
-    if prob_right == 0:
-        # if the right probability is 0, then it is a right-censored instance,
-        return create_censor_hist(prob_left, num_bins)
-    else:
-        if prob_left < prob_right:
-            # enforce the natural order for survival probs
-            prob_left, prob_right = prob_right, prob_left
-
-        edges = np.linspace(1.0, 0.0, num_bins + 1)  # descending: 1, 1-1/K, ..., 0
-
-        left_idx = np.digitize(prob_left, edges) - 1 if prob_left < 1.0 else 0
-        right_idx = np.digitize(prob_right, edges) - 1
-        hist = np.zeros(num_bins, dtype=float)
-        if left_idx == right_idx:
-            hist[left_idx] = 1.0
-            return hist
-        else:
-            # if the left and right probabilities are in different bins
-            first_hist = (prob_left - edges[left_idx + 1]) / (prob_left - prob_right)
-            hist[left_idx] += first_hist
-
-            last_hist = (edges[right_idx] - prob_right) / (prob_left - prob_right)
-            hist[right_idx] += last_hist
-
-            # fill the intermediate bins with equal probability
-            if right_idx > left_idx + 1:
-                intermediate_hist = (1.0 - first_hist - last_hist) / (
-                    right_idx - left_idx - 1
-                )
-                hist[left_idx + 1 : right_idx] = intermediate_hist
-
-            return hist
+    overlap = np.maximum(
+        0.0, np.minimum(edges[:-1], prob_left) - np.maximum(edges[1:], prob_right)
+    )
+    return overlap / (prob_left - prob_right)
 
 
 _residual_names = {
-    "CoxSnell": "Cox-Snell Residuals",
-    "Modified CoxSnell-v1": "Cox-Snell Residuals",
-    "Modified CoxSnell-v2": "Cox-Snell Residuals",
-    "Martingale": "Martingale Residuals",
-    "Deviance": "Deviance Residuals",
+    "coxsnell": "Cox-Snell Residuals",
+    "modified coxsnell-v1": "Cox-Snell Residuals",
+    "modified coxsnell-v2": "Cox-Snell Residuals",
+    "martingale": "Martingale Residuals",
+    "deviance": "Deviance Residuals",
 }
 
 
@@ -390,7 +366,8 @@ def residuals(
     pred_probs: np.ndarray
         The predicted survival probabilities at individual's event/censor time.
     event_indicators: np.ndarray
-        The event indicators.
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
     method: str
         The method to calculate residuals. Options are "CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2",
         "Martingale", "Deviance".
@@ -402,20 +379,22 @@ def residuals(
         The calculated residuals.
     """
     cox_residuals = -np.log(pred_probs)
+    event_indicators = event_indicators.astype(bool, copy=False)
+    method = method.lower()
 
-    if method == "CoxSnell":
+    if method == "coxsnell":
         residuals = cox_residuals
-    elif method == "Modified CoxSnell-v1" or method == "Modified CoxSnell-v2":
+    elif method in ["modified coxsnell-v1", "modified coxsnell-v2"]:
         # Compare with standard CoxSnell residuals, this method adds an 'excess residual' for censored instances.
         # The excess residual should also follow a unit exponential distribution, based on the lack of memory property.
         # There are two choices of excess residuals:
         # (1) use the mean of the unit exponential distribution, which is 1,
         # or (2) use the median of the unit exponential distribution, which is ln(2).
-        excess_residual = 1 if method == "Modified CoxSnell-v1" else np.log(2)
-        residuals = cox_residuals + excess_residual * (1 - event_indicators)
-    elif method == "Martingale":
+        excess_residual = 1 if method == "modified coxsnell-v1" else np.log(2)
+        residuals = cox_residuals + excess_residual * (~event_indicators)
+    elif method == "martingale":
         residuals = event_indicators - cox_residuals
-    elif method == "Deviance":
+    elif method == "deviance":
 
         def safe_log(x):
             return np.log(x + 1e-8)
@@ -427,12 +406,12 @@ def residuals(
             -2 * (martingale_res + event_indicators * safe_log(cox_residuals))
         )
     else:
-        raise ValueError("Unknown method {}".format(method))
+        raise ValueError(f"Unknown method {method}")
 
     if draw_figure:
         cum_haz_empirical = NelsonAalen(cox_residuals, event_indicators)
         max_res = np.max(cox_residuals)
-        fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
+        _fig, ax = plt.subplots(nrows=1, ncols=2, tight_layout=True, dpi=400)
         ax[0].plot(
             cum_haz_empirical.survival_times,
             cum_haz_empirical.cumulative_hazard,
@@ -447,7 +426,6 @@ def residuals(
 
         # use solid scatter points for uncensored instances and hollow scatter points for censored instances
         idx = np.arange(len(residuals))
-        event_indicators = event_indicators.astype(bool)
         ax[1].scatter(
             idx[event_indicators],
             residuals[event_indicators],
@@ -500,7 +478,11 @@ def km_calibration(
     event_times: np.ndarray
         The event time of the test data.
     event_indicators: np.ndarray
-        The event indicator of the test data.\
+        Binary event indicators: 1 denotes an observed event and 0 denotes a
+        censored observation.
+    interpolation_method: str, default "Linear"
+        Interpolation method for evaluating the average survival curve.
+        Options are "Linear" and "Pchip".
     draw_figure: bool
         Whether to visualize the comparison of the KM curve and average curve.
 
@@ -511,7 +493,7 @@ def km_calibration(
     fig: tuple(plt.Figure, plt.Axes)
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
         is True.
-    
+
     References
     ----------
     [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
@@ -548,7 +530,7 @@ def km_calibration(
         )
         ax.plot(unique_event_times, km_curve, label="KM Curve")
         ax.fill_between(unique_event_times, average_survival_curve, km_curve, alpha=0.2)
-        score_text = r"KM-Calibration$= {:.3f}$".format(mse)
+        score_text = rf"KM-Calibration$= {mse:.3f}$"
         ax.plot([], [], " ", label=score_text)
         ax.legend()
         ax.set_xlabel("Time")
@@ -564,8 +546,8 @@ def coverage_ic(
     pred_r: np.ndarray,
     obs_l: np.ndarray,
     obs_r: np.ndarray,
-    obs_l_train: Optional[np.ndarray] = None,
-    obs_r_train: Optional[np.ndarray] = None,
+    obs_l_train: np.ndarray | None = None,
+    obs_r_train: np.ndarray | None = None,
     cov_level: float = 0.95,
     method: str = "Turnbull",
     eps: float = 1e-12,
@@ -605,7 +587,11 @@ def coverage_ic(
     method : str, default "Turnbull"
         Method to compute the coverage.
         - "Turnbull": use the empirical distribution (Turnbull estimator) of censoring intervals from the training data.
-        - "linear": use linear interpolation between the left and right bounds of the censoring intervals.
+        - "linear": use the overlap fraction for finite observed intervals.
+          For unbounded observed intervals, finite overlap contributes 0 and
+          unbounded overlap contributes 1, the limit as the upper bound grows.
+    eps : float, default 1e-12
+        Numerical tolerance for treating the conditional coverage denominator as zero.
 
     Returns
     -------
@@ -614,7 +600,9 @@ def coverage_ic(
     cov_gap : float
         Difference between observed coverage and the target level (observed_cov - cov_level).
     avg_length : float
-        Average length of the predicted intervals.
+        Average length of the predicted intervals. Infinite lower bounds
+        indicate unbounded predicted quantiles and give infinite width.
+        Predictions [inf, inf] cover no finite event time.
     """
     if pred_l.ndim != 1 or pred_r.ndim != 1:
         raise ValueError("pred_l and pred_r must be 1-dimensional arrays.")
@@ -625,68 +613,50 @@ def coverage_ic(
             "pred_l, pred_r, obs_l, and obs_r must contain the same number of samples."
         )
 
-    if method == "linear":
-        # Linear interpolation method, assumes uniform distribution within each censoring interval
-        overlap_left = np.maximum(obs_l, pred_l)
-        overlap_right = np.minimum(obs_r, pred_r)
+    overlap_left = np.maximum(obs_l, pred_l)
+    overlap_right = np.minimum(obs_r, pred_r)
+    intersects = (overlap_left <= overlap_right) & np.isfinite(overlap_left)
 
+    method = method.lower()
+    if method == "linear":
         denom = obs_r - obs_l
-        numer = np.maximum(0.0, overlap_right - overlap_left)
-    elif method == "Turnbull":
-        # error if training is None
+        numer = np.zeros_like(denom, dtype=float)
+        np.subtract(overlap_right, overlap_left, out=numer, where=intersects)
+    elif method == "turnbull":
         if obs_l_train is None or obs_r_train is None:
             raise ValueError(
                 "obs_l_train and obs_r_train must be provided for Turnbull method."
             )
-
         if obs_l_train.ndim != 1 or obs_r_train.ndim != 1:
             raise ValueError(
                 "obs_l_train and obs_r_train must be 1-dimensional arrays."
             )
-
         if np.any(obs_l_train > obs_r_train):
             raise ValueError("Found training intervals with left > right.")
 
         tb = TurnbullEstimatorLifelines(obs_l_train, obs_r_train)
-
-        def S(x: np.ndarray) -> np.ndarray:
-            return np.asarray(tb.predict(x), dtype=float)
-
-        S_L = S(obs_l)
-        S_R = S(obs_r)
-
-        overlap_left = np.maximum(obs_l, pred_l)
-        overlap_right = np.minimum(obs_r, pred_r)
-
-        S_overlap_left = S(overlap_left)
-        S_overlap_right = S(overlap_right)
-
-        denom = S_L - S_R
-        numer = S_overlap_left - S_overlap_right
+        denom = tb.predict(obs_l) - tb.predict(obs_r)
+        numer = tb.predict(overlap_left) - tb.predict(overlap_right)
     else:
-        raise ValueError("Unknown method: {}".format(method))
+        raise ValueError(f"Unknown method: {method}")
 
-    coverage = np.zeros_like(denom, dtype=float)
-    valid = denom > eps
+    coverage = intersects.astype(float)
+    np.divide(numer, denom, out=coverage, where=(denom > eps) & np.isfinite(denom))
+    if method == "linear":
+        unbounded = np.isposinf(denom)
+        coverage[unbounded] = intersects[unbounded] & np.isposinf(
+            overlap_right[unbounded]
+        )
+    coverage = np.clip(coverage, 0.0, 1.0)
 
-    if np.any(valid):
-        ratio = numer[valid] / denom[valid]
-        coverage[valid] = np.clip(ratio, 0.0, 1.0)
-
-    # Handle degenerate censoring intervals where S(L) ~= S(U)
-    if np.any(~valid):
-        intersects = (pred_r >= obs_l) & (pred_l <= obs_r)
-        coverage[~valid] = intersects[~valid].astype(float)
-
+    widths = np.full(pred_l.shape, np.inf)
+    np.subtract(pred_r, pred_l, out=widths, where=np.isfinite(pred_l))
     observed_cov = float(np.mean(coverage))
-    cov_gap = observed_cov - float(cov_level)
-    avg_length = float(np.mean(pred_r - pred_l))
-
-    return observed_cov, cov_gap, avg_length
+    return observed_cov, observed_cov - float(cov_level), float(np.mean(widths))
 
 
 def discrepancy_to_uniform(
-    x: np.ndarray, cdf: np.ndarray, x_support: Optional[tuple[float, float]] = None
+    x: np.ndarray, cdf: np.ndarray, x_support: tuple[float, float] | None = None
 ) -> float:
     """
     Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
@@ -699,7 +669,7 @@ def discrepancy_to_uniform(
         The support points of the empirical CDF.
     cdf: np.ndarray
         The values of the empirical CDF at the support points.
-    x_support: Optional[tuple[float, float]]
+    x_support: tuple[float, float] | None
         The support points of the uniform distribution. If None, it is assumed to be [0, 1].
     Returns
     -------
@@ -748,7 +718,7 @@ def ks_pvalue(D_n: float, n: int) -> float:
 
 
 if __name__ == "__main__":
-    ### test the KM calibration
+    # Test the KM calibration.
 
     # # first we define the time coordinates
     # times = np.linspace(0, 100, 11)

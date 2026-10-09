@@ -1,1 +1,11 @@
-global-include *.txt *.py
+include CHANGELOG.md
+include LICENSE
+include README.md
+include requirements.txt
+recursive-include SurvivalEVAL *.py
+global-exclude *.py[cod]
+global-exclude __pycache__
+prune build
+prune dist
+prune examples
+prune tests

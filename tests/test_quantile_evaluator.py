@@ -29,7 +29,7 @@ def quantile_evaluator():
 
     quantile_levels = np.linspace(0.05, 0.95, 10)
 
-    train_rates, train_times, train_indicators = _generate_dataset(rng, n_train)
+    _train_rates, train_times, train_indicators = _generate_dataset(rng, n_train)
     test_rates, test_times, test_indicators = _generate_dataset(rng, n_test)
 
     rate_scale = rng.lognormal(mean=0.0, sigma=0.1, size=n_test)
@@ -76,6 +76,17 @@ def test_quantile_prediction_utilities(quantile_evaluator):
     intervals = evaluator.predict_interval(cov_level=0.8)
     assert intervals.shape == (n_test, 2)
     assert np.all(intervals[:, 0] <= intervals[:, 1])
+
+
+def test_quantile_evaluator_accepts_list_quantile_levels():
+    evaluator = QuantileRegEvaluator(
+        pred_regs=np.array([[0.0, 2.0], [0.0, 3.0]]),
+        quantile_levels=[0.25, 0.5],
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 1]),
+    )
+
+    np.testing.assert_allclose(evaluator.pred_survs, [0.75, 0.5])
 
 
 def test_quantile_concordance_and_auc(quantile_evaluator):

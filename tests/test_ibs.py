@@ -3,6 +3,8 @@
 Test cases for IBS hinge loss implementation for interval-censored survival data.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 
@@ -22,8 +24,8 @@ def ibs_hinge_ic(
     time_coordinates: np.ndarray,  # (T,): time points corresponding to survival probabilities
     left_limits: np.ndarray,  # (N,): left limits of interval censoring
     right_limits: np.ndarray,  # (N,): right limits of interval censoring
-    train_left_limits: np.ndarray = None,  # (N_train,): left limits
-    train_right_limits: np.ndarray = None,  # (N_train,): right limits
+    train_left_limits: np.ndarray | None = None,  # (N_train,): left limits
+    train_right_limits: np.ndarray | None = None,  # (N_train,): right limits
     method: str = "uncensored",  # "uncensored" | "Tsouprou-marginal"
     integration_method: str = "trapezoidal",  # "trapezoidal" | "simpson"
 ) -> float:
