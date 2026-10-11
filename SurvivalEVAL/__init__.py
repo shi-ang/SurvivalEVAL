@@ -10,6 +10,8 @@ from SurvivalEVAL.Evaluations.BrierScore import (
 from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
 from SurvivalEVAL.Evaluations.DistributionCalibration import (
     coverage_ic,
+    cr_d_calibration,
+    cr_d_calibration_per_event,
     d_cal_ic,
     d_calibration,
     km_calibration,
@@ -65,6 +67,8 @@ __all__ = [
     "concordance_time_dependent",
     "coverage_ic",
     "d_calibration",
+    "cr_d_calibration",
+    "cr_d_calibration_per_event",
     "km_calibration",
     "residuals",
     "d_cal_ic",
