@@ -7,24 +7,22 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_score_ic,
     single_brier_score,
 )
-from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
-from SurvivalEVAL.Evaluations.DistributionCalibration import (
+from SurvivalEVAL.Evaluations.Calibration import (
     coverage_ic,
     cr_d_calibration,
     cr_d_calibration_per_event,
     d_cal_ic,
     d_calibration,
+    integrated_calibration_index,
     km_calibration,
     ksd_cal_ic,
     ksd_calibration,
-    residuals,
-)
-from SurvivalEVAL.Evaluations.MeanError import mean_error, mean_error_ic
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
-    integrated_calibration_index,
     one_cal_ic,
     one_calibration,
+    residuals,
 )
+from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
+from SurvivalEVAL.Evaluations.MeanError import mean_error, mean_error_ic
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
 from SurvivalEVAL.Evaluator import (
     DistributionEvaluator,

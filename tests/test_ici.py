@@ -2,7 +2,7 @@ import lifelines
 from lifelines import CoxPHFitter
 from matplotlib import pyplot as plt
 
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
+from SurvivalEVAL.Evaluations.Calibration.SingleTime import (
     integrated_calibration_index,
     one_calibration,
 )

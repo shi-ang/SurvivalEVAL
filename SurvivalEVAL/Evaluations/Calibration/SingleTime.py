@@ -1,3 +1,5 @@
+"""Calibration metrics for predicted event probabilities at a specified time."""
+
 from __future__ import annotations
 
 import matplotlib.pyplot as plt

@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
+from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_cal_ic
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimator
 

@@ -14,7 +14,7 @@ from SurvivalEVAL import (
     SingleTimeEvaluator,
     SurvivalEvaluator,
 )
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
+from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_calibration
 
 
 class _StepFunction:

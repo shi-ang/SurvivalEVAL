@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import IntervalCenEvaluator
-from SurvivalEVAL.Evaluations.DistributionCalibration import (
+from SurvivalEVAL.Evaluations.Calibration.Distributional import (
     coverage_ic,
     create_censor_hist,
     create_interval_c_hist,

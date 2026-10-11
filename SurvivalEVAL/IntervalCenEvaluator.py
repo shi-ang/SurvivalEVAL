@@ -13,22 +13,20 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points_ic,
     brier_score_ic,
 )
+from SurvivalEVAL.Evaluations.Calibration import (
+    coverage_ic,
+    d_cal_ic,
+    ksd_cal_ic,
+    one_cal_ic,
+)
+from SurvivalEVAL.Evaluations.Calibration.SingleTime import _maximum_local_deviation
 from SurvivalEVAL.Evaluations.Concordance import (
     concordance,
     concordance_ic,
     impute_times_midpoint,
 )
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.DistributionCalibration import (
-    coverage_ic,
-    d_cal_ic,
-    ksd_cal_ic,
-)
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
-    _maximum_local_deviation,
-    one_cal_ic,
-)
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
     fit_least_squares,

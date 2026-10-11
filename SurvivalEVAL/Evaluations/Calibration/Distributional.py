@@ -1,3 +1,5 @@
+"""Calibration metrics for complete survival and competing-risks distributions."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -278,9 +280,9 @@ def cr_d_calibration_per_event(
     num_bins : int, default=100
         Number of equal-width intervals in the risk grid over [0, 1].
     alpha : float, default=2
-        Finite exponent at least 1 for the integral norm. `alpha=1`: area under 
-        the absolute-error curve; errors contribute linearly. 
-        `alpha=2` (default): root integrated squared error; 
+        Finite exponent at least 1 for the integral norm. `alpha=1`: area under
+        the absolute-error curve; errors contribute linearly.
+        `alpha=2` (default): root integrated squared error;
         Ignored for KS.
     method : {"integral", "ks"}, default="integral"
         Integral returns the L_alpha norm of b_k(rho) - rho over [0, 1],
@@ -399,9 +401,9 @@ def cr_d_calibration(
         See ``cr_d_calibration_per_event``. The default sums the paper's L_alpha
         scores; ``method="ks"`` instead aggregates maximum grid deviations.
     alpha : float, default=2
-        Finite exponent at least 1 for the integral norm. `alpha=1`: area under 
-        the absolute-error curve; errors contribute linearly. 
-        `alpha=2` (default): root integrated squared error; 
+        Finite exponent at least 1 for the integral norm. `alpha=1`: area under
+        the absolute-error curve; errors contribute linearly.
+        `alpha=2` (default): root integrated squared error;
         Ignored for KS.
     reduction : {"sum", "mean", "max"}, default="sum"
         Reduction of per-cause scores. Sum follows the paper's definition.

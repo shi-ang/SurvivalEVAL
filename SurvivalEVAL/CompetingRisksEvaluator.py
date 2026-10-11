@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.Evaluations.DistributionCalibration import cr_d_calibration
 from SurvivalEVAL.Evaluations.util import check_and_convert, interpolated_curve
 
 
@@ -120,9 +120,9 @@ class CompetingRisksEvaluator:
         num_bins : int, default=100
             Number of equal-width intervals in the calibration risk grid.
         alpha : float, default=2
-            Finite exponent at least 1 for the integral norm. `alpha=1`: area under 
-            the absolute-error curve; errors contribute linearly. 
-            `alpha=2` (default): root integrated squared error; 
+            Finite exponent at least 1 for the integral norm. `alpha=1`: area under
+            the absolute-error curve; errors contribute linearly.
+            `alpha=2` (default): root integrated squared error;
             Ignored for KS.
         method : {"integral", "ks"}, default="integral"
             Integral norm or maximum grid deviation from the identity curve.
