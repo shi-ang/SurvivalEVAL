@@ -351,6 +351,8 @@ calibration slope and coefficient of variation.
 
 ## Nonparametric Estimators
 
+### Single-event models
+
 The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 
 | Method | Description | Code | Paper Link |
@@ -367,6 +369,58 @@ For censoring survival, use `SingleEvent.KaplanMeier(times, event_indicators, re
 with the original event indicators (`1` = observed event, `0` = censored). Original events
 leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate and
 evaluate right-continuous `G(t)`, including the censoring update at time `t`.
+
+### Competing risks and multi-state models
+
+`AalenJohansenCompetingRisks` estimates overall survival and one cumulative
+incidence function (CIF) per cause from right-censored observations. Event labels
+are `0` for censoring and `1..K` for causes. Set `n_causes` in the constructor to
+include unobserved causes or fit data containing only censorings; otherwise it is
+inferred on each fit.
+
+```python
+from SurvivalEVAL.NonparametricEstimator.CompetingRisks import AalenJohansenCompetingRisks
+
+aj = AalenJohansenCompetingRisks(n_causes=2).fit(
+    times=[1, 1, 1, 2, 3], events=[1, 2, 0, 2, 0]
+)
+survival = aj.predict_surv([0, 1, 2])  # [1.0, 0.6, 0.3]
+cif = aj.predict_cif([0, 1, 2])       # [[0, 0], [0.2, 0.2], [0.2, 0.5]]
+```
+
+`AalenJohansenMultiState` estimates full transition matrices from aggregated
+data. Supply strictly increasing times, risk sets with shape `(J, n_states)`,
+and transition counts with shape `(J, n_states, n_states)`. Counts run from row
+(source) to column (destination); their diagonal must be zero. The estimator
+computes the negative outgoing hazard on the diagonal itself. Total departures
+cannot exceed the corresponding risk set.
+
+```python
+from SurvivalEVAL.NonparametricEstimator.MultiState import AalenJohansenMultiState
+
+aj = AalenJohansenMultiState(n_states=2).fit(
+    event_times=[1, 2],
+    risk_sets=[[4, 0], [2, 2]],
+    transitions=[[[0, 2], [0, 0]], [[0, 1], [0, 0]]],
+)
+matrix = aj.predict_P(2)  # [[0.25, 0.75], [0.0, 1.0]]
+# For any initial state distribution p0, occupation probabilities are p0 @ matrix.
+```
+
+Both estimators aggregate tied transitions without jittering. Risk sets include
+censorings at the update time. Predictions are right-continuous steps: before
+the first update, survival is one, CIFs are zero, and transition matrices are
+identity. Beyond the final update, including positive infinity, estimates remain
+constant. Scalar and array queries are supported; CIFs and matrices append their
+cause/state dimensions to the query shape. Every transition matrix has rows that
+sum to one, and absorbing states retain their identity rows.
+
+The multi-state estimator exposes transition matrices directly; state occupation
+probabilities can decrease when onward or return transitions occur. Full
+transition probabilities use the usual Markov interpretation. See the
+[R survival documentation, sections 2.3–2.4](https://stat.ethz.ch/R-manual/R-patched/library/survival/doc/survival.pdf)
+for the Aalen–Johansen construction. These estimators provide point estimates;
+confidence intervals and individual delayed-entry data are not implemented.
 
 ## Citing This Work
 

@@ -6,7 +6,7 @@ from dataclasses import InitVar, dataclass, field
 import numpy as np
 from scipy.integrate import trapezoid
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+from SurvivalEVAL.NonparametricEstimator.util import (
     _compute_event_counts,
     infer_survival_probabilities,
 )

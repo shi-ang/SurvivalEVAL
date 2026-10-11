@@ -4,7 +4,7 @@ from dataclasses import InitVar, dataclass, field
 
 import numpy as np
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import _compute_event_counts
+from SurvivalEVAL.NonparametricEstimator.util import _compute_event_counts
 
 
 @dataclass

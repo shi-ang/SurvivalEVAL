@@ -1,6 +1,25 @@
+"""Counting, integration, and prediction helpers for nonparametric estimators."""
+
 import numpy as np
 
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
+
+
+def _predict_step(t, event_times, values, baseline):
+    """Evaluate right-continuous scalar/vector/matrix steps at arbitrary shapes."""
+    if event_times is None:
+        raise RuntimeError("Call fit() before prediction.")
+    times = np.asarray(t, dtype=float)
+    if np.any(np.isnan(times)) or np.any(times < 0):
+        raise ValueError(
+            "Prediction times must be non-negative and must not contain NaN."
+        )
+
+    indices = np.searchsorted(event_times, times.ravel(), side="right") - 1
+    result = np.broadcast_to(baseline, (times.size,) + values.shape[1:]).copy()
+    after_first = indices >= 0
+    result[after_first] = values[indices[after_first]]
+    return result.reshape(times.shape + values.shape[1:])
 
 
 def _compute_event_counts(

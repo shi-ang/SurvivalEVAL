@@ -5,7 +5,7 @@ from dataclasses import InitVar, dataclass, field
 import numpy as np
 from lifelines import KaplanMeierFitter
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent.util import (
+from SurvivalEVAL.NonparametricEstimator.util import (
     infer_survival_probabilities,
 )
 

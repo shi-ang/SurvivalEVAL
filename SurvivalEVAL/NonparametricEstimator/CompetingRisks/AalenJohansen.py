@@ -1,225 +1,136 @@
-"""
-Aalen–Johansen Estimator
-==========================================================
-
-This module implements the Aalen–Johansen (AJ) estimator using the standard
-**aggregate-at-unique-times** approach. Theoretically, the AJ product-integral
-formulation assumes a continuous-time process where no two distinct transitions
-occur at exactly the same instant. 
-
-However, real datasets often exhibit *tied event times*.
-
-There are two common strategies for handling tied heterogeneous events:
-
-1. **Jittering (e.g., in lifelines' implementation)**  
-   Small random noise is added to tied event times to artificially impose a
-   strict temporal ordering. 
-
-2. **Aggregate-at-unique-times (e.g., in R's `mstate`, `cmprsk` implementations)**  
-   All transitions sharing the same recorded time are grouped together, and a
-   single Nelson–Aalen increment \Delta A(t) is computed using aggregated counts.
-   The AJ estimator then applies one joint jump matrix at each distinct event
-   time. 
-
-This module follows the second approach. Aggregating tied transitions into a
-single time point avoids unnecessary randomness.
-"""
+"""Aalen–Johansen estimation for right-censored competing risks."""
 
 import numpy as np
 
+from SurvivalEVAL.NonparametricEstimator.util import _predict_step
+
+
 class AalenJohansenCompetingRisks:
-    """
-    Aalen–Johansen estimator in a competing risks setting
-    (no further multi-state transitions).
+    """Estimate survival and cause-specific cumulative incidence functions.
 
-    States:
-        0      : initial / no-event state
-        1..K   : absorbing event states (one per cause)
-
-    Data encoding:
-        events = 0      -> censored
-        events = 1..K   -> event of cause k
+    State 0 is the initial state; states 1 through K are absorbing causes.
+    Events and censorings at the same time share the risk set immediately
+    before that time. All causes at a tied time are updated together, without
+    jittering. Observations enter at time zero; delayed entry is not supported.
 
     Parameters
     ----------
     n_causes : int, optional
-        Number of competing causes. If None, inferred from max(events).
+        Number of causes. If omitted, infer it from the largest event label
+        on each fit. Specify it to include unobserved causes or fit data with
+        only censorings.
 
     Attributes
     ----------
-    n_causes : int
-        Number of competing causes.
-    n_states : int
-        Number of states (K + 1, including the initial no-event state).
+    n_causes_ : int
+        Number of causes in the fitted model.
     unique_times_ : ndarray, shape (J,)
-        Sorted distinct event times (any cause).
+        Sorted distinct event times, excluding censoring-only times.
     surv_ : ndarray, shape (J,)
-        Overall survival S(t_j) at event times.
-    cif_ : ndarray, shape (n_causes, J)
-        Cumulative incidence functions F_k(t_j) for each cause k at event times.
-        cif_[k-1, j] corresponds to cause k at time unique_times_[j].
-    P_ : ndarray, shape (J, n_states, n_states)
-        Transition matrices P(t_j). Currently only the first row is non-zero:
-            P_[j, 0, 0]   = S(t_j)
-            P_[j, 0, k]   = F_k(t_j),  k = 1..K
-            P_[j, r, :]   = 0 for r >= 1
+        Probability of remaining in state 0 after each event time.
+    cif_ : ndarray, shape (K, J)
+        Cumulative incidence for each cause; row k corresponds to cause k + 1.
     """
 
-    def __init__(self, n_causes=None):
+    def __init__(self, n_causes: int | None = None):
+        if n_causes is not None and (
+            isinstance(n_causes, (bool, np.bool_))
+            or not isinstance(n_causes, (int, np.integer))
+            or n_causes < 1
+        ):
+            raise ValueError("n_causes must be a positive integer.")
         self.n_causes = n_causes
-        self.n_states = None
+        self.n_causes_ = None
         self.unique_times_ = None
         self.surv_ = None
         self.cif_ = None
-        self.P_ = None
 
-    def fit(self, times, events, n_causes=None):
-        """
-        Fit the Aalen–Johansen estimator in competing risks.
+    def fit(self, times, events):
+        """Fit from observed times and event labels, returning self.
 
         Parameters
         ----------
-        times : array-like of shape (n,)
-            Observed times (event or censoring).
-        events : array-like of shape (n,)
-            Event indicators: 0 = censored, 1..K = cause k.
-        n_causes : int, optional
-            Number of causes. If None, use self.n_causes or max(events).
+        times : array-like, shape (n,)
+            Nonempty, finite, non-negative event or censoring times.
+        events : array-like, shape (n,)
+            Integer labels: 0 for censoring, 1 through K for event causes.
 
-        Returns
-        -------
-        self
+        Notes
+        -----
+        At each distinct event time, survival is multiplied by
+        ``1 - total_events / at_risk``. Each CIF increases by
+        ``survival_before_time * cause_events / at_risk``.
+        Grouped counts give O(n log n + K J) time and O(n + K J) memory.
         """
         times = np.asarray(times, dtype=float)
-        events = np.asarray(events, dtype=int)
-        if times.shape != events.shape:
-            raise ValueError("times and events must have the same shape")
+        events = np.asarray(events, dtype=float)
+        if times.ndim != 1 or times.size == 0 or events.shape != times.shape:
+            raise ValueError(
+                "times and events must be nonempty 1D arrays of equal length."
+            )
+        if not np.all(np.isfinite(times)) or np.any(times < 0):
+            raise ValueError("times must be finite and non-negative.")
+        if (
+            not np.all(np.isfinite(events))
+            or np.any(events < 0)
+            or np.any(events != np.floor(events))
+        ):
+            raise ValueError("events must be non-negative integer labels.")
 
-        # Infer number of causes if needed
-        if n_causes is None:
-            if self.n_causes is not None:
-                n_causes = self.n_causes
-            else:
-                if events.max() < 1:
-                    raise ValueError("No events found (all events == 0).")
-                n_causes = int(events.max())
-        self.n_causes = n_causes
-        self.n_states = n_causes + 1  # state 0 + K event states
+        n_causes = self.n_causes if self.n_causes is not None else int(events.max())
+        if n_causes < 1:
+            raise ValueError("Specify n_causes when all observations are censored.")
+        if np.any(events > n_causes):
+            raise ValueError("Event labels must not exceed n_causes.")
 
-        # Sort by time
-        order = np.argsort(times)
-        t_sorted = times[order]
-        e_sorted = events[order]
+        observed = events > 0
+        unique_times, groups = np.unique(times[observed], return_inverse=True)
+        at_risk = times.size - np.searchsorted(np.sort(times), unique_times)
+        counts = np.zeros((n_causes, unique_times.size), dtype=float)
+        np.add.at(counts, (events[observed].astype(np.intp) - 1, groups), 1)
 
-        # Extract distinct times with at least one event
-        mask_event = e_sorted > 0
-        event_times = t_sorted[mask_event]
-        if event_times.size == 0:
-            raise ValueError("No events observed; cannot fit AJ estimator.")
-        unique_times = np.unique(event_times)
-        n_times = unique_times.shape[0]
+        survival = np.cumprod(1 - counts.sum(axis=0) / at_risk)
+        survival_before = np.r_[1.0, survival][:-1]
+        counts *= survival_before / at_risk
+        np.cumsum(counts, axis=1, out=counts)
 
-        surv = np.empty(n_times, dtype=float)
-        cif = np.zeros((n_causes, n_times), dtype=float)
-
-        S_prev = 1.0
-        cif_prev = np.zeros(n_causes, dtype=float)
-
-        # Core AJ recursion (competing risks form)
-        for j, t in enumerate(unique_times):
-            # Risk set Y_j: all with T_i >= t
-            at_risk = t_sorted >= t
-            Y_j = at_risk.sum()
-
-            if Y_j == 0:
-                # No one at risk anymore: survival and CIF stay constant
-                surv[j:] = S_prev
-                cif[:, j:] = cif_prev[:, None]
-                break
-
-            # All events at time t
-            at_t = t_sorted == t
-            counts = np.bincount(
-                e_sorted[at_t],
-                minlength=self.n_causes + 1
-            )  # index 0 = censored, 1..K = causes
-            dNk = counts[1:]
-            dN = dNk.sum()
-
-            if dN == 0:
-                surv[j] = S_prev
-                cif[:, j] = cif_prev
-                continue
-
-            # All-cause hazard increment
-            hazard = dN / Y_j
-
-            # Survival update
-            S_j = S_prev * (1.0 - hazard)
-
-            # CIF increments
-            dFk = S_prev * dNk / Y_j
-            cif_j = cif_prev + dFk
-
-            surv[j] = S_j
-            cif[:, j] = cif_j
-
-            S_prev = S_j
-            cif_prev = cif_j
-
+        self.n_causes_ = n_causes
         self.unique_times_ = unique_times
-        self.surv_ = surv
-        self.cif_ = cif
-
-        # Build P(t_j) matrices with only first row non-zero
-        P = np.zeros((n_times, self.n_states, self.n_states), dtype=float)
-        for j in range(n_times):
-            P[j, 0, 0] = surv[j]            # P_00(t_j) = S(t_j)
-            P[j, 0, 1:] = cif[:, j]         # P_0k(t_j) = F_k(t_j), k = 1..K
-
-        self.P_ = P
+        self.surv_ = survival
+        self.cif_ = counts
         return self
 
     def predict_surv(self, t):
-        """Evaluate S(t) as a right-continuous step function."""
-        if self.unique_times_ is None:
-            raise RuntimeError("Must call fit() before predict_surv().")
+        """Return survival at scalar or array times, preserving the input shape.
 
-        t = np.asarray(t, dtype=float)
-        S = np.ones_like(t, dtype=float)
-        idx = np.searchsorted(self.unique_times_, t, side="right") - 1
-        valid = idx >= 0
-        S[valid] = self.surv_[idx[valid]]
-        return S
+        Predictions include events at t (right continuity), equal 1 before
+        the first event, and remain constant after the last event. Positive
+        infinity returns the final estimate; negative times and NaN are invalid.
+        """
+        survival = _predict_step(t, self.unique_times_, self.surv_, 1.0)
+        return survival.item() if survival.ndim == 0 else survival
 
     def predict_cif(self, t):
-        """Evaluate CIFs F_k(t) as right-continuous step functions."""
-        if self.unique_times_ is None:
-            raise RuntimeError("Must call fit() before predict_cif().")
+        """Return CIFs with shape ``shape(t) + (K,)``.
 
-        t = np.asarray(t, dtype=float)
-        m = t.shape[0]
-        F = np.zeros((m, self.n_causes), dtype=float)
-
-        idx = np.searchsorted(self.unique_times_, t, side="right") - 1
-        valid = idx >= 0
-        F[valid, :] = self.cif_[:, idx[valid]].T
-        return F
+        Uses the same right-continuous step convention as ``predict_surv``;
+        all CIFs are zero before the first event.
+        """
+        values = None if self.cif_ is None else self.cif_.T
+        return _predict_step(t, self.unique_times_, values, 0.0)
 
     def predict_P(self, t):
+        """Return transition matrices with shape ``shape(t) + (K + 1, K + 1)``.
+
+        Row 0 contains survival and CIFs. Each absorbing state's row is its
+        identity row. Before the first event the entire matrix is the identity.
+        Matrices are constructed on demand; fitting stores only survival/CIFs.
         """
-        Evaluate the transition matrices P(t) at given times.
-
-        For this class (competing risks), only the first row is non-zero.
-        """
-        if self.P_ is None or self.unique_times_ is None:
-            raise RuntimeError("Must call fit() before predict_P().")
-
-        t = np.asarray(t, dtype=float)
-        m = t.shape[0]
-        P_t = np.zeros((m, self.n_states, self.n_states), dtype=float)
-
-        idx = np.searchsorted(self.unique_times_, t, side="right") - 1
-        valid = idx >= 0
-        P_t[valid] = self.P_[idx[valid]]
-        return P_t
+        survival = self.predict_surv(t)
+        n_states = self.n_causes_ + 1
+        matrices = np.broadcast_to(
+            np.eye(n_states), np.shape(survival) + (n_states, n_states)
+        ).copy()
+        matrices[..., 0, 0] = survival
+        matrices[..., 0, 1:] = self.predict_cif(t)
+        return matrices

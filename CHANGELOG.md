@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## Unreleased
+
+1. Fit competing-risks Aalen–Johansen estimates with grouped event counts and
+   vectorized survival/CIF updates, avoiding repeated scans of the observations.
+   Construct complete transition matrices on demand with absorbing identity rows.
+2. Make multi-state Aalen–Johansen estimation independent of competing risks and
+   organize it under the `MultiState` package. Compute diagonal hazard increments
+   from outgoing transition counts. Validate risk sets, transition counts, and
+   update ordering; support scalar/array step
+   predictions and identity matrices before the first update.
+3. Simplify the new estimator API: configure causes only in the constructor,
+   expose the fitted count as `n_causes_`, and keep `P_` only for multi-state fits.
+   Multi-state input names are `risk_sets` and `transitions`; occupation
+   probabilities are computed from transition matrices rather than survival/CIF
+   aliases. Add examples and regression tests for ties, conservation, boundaries,
+   and multi-state products. No new dependencies.
+4. Consolidate nonparametric counting, integration, and prediction helpers in
+   `NonparametricEstimator/util.py`. Update estimator and metric imports and
+   remove `SingleEvent/util.py`; import `km_mean` from the shared utility module.
+
 ## 2026-10-08: Version 0.8.7
 
 1. Handle event-probability boundaries in ICI with a finite complementary log-log transform, preserving original

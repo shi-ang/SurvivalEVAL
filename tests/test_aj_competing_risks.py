@@ -1,136 +1,176 @@
 import numpy as np
 import pytest
-from lifelines import AalenJohansenFitter
+from lifelines import AalenJohansenFitter, KaplanMeierFitter
 
-from SurvivalEVAL.NonparametricEstimator.CompetingRisks import AalenJohansenCompetingRisks
-
-
-def _generate_data_no_cross_ties(n=200, random_state=12345):
-    """
-    Generate synthetic competing-risks data where:
-        - 0 = censored, 1..K = causes
-        - There are NO ties between different causes (>0),
-          but ties ARE allowed within the same cause.
-
-    Strategy:
-        - Create a small discrete grid of base times.
-        - Assign disjoint time grids to each cause (1 and 2).
-        - Add some duplicate times within each cause to create same-cause ties.
-    """
-    rng = np.random.default_rng(random_state)
-
-    # Two causes: 1 and 2
-    base_times_c1 = np.array([1.0, 2.0, 3.0, 4.0])
-    base_times_c2 = np.array([1.5, 2.5, 3.5, 4.5])
-
-    # Sample indices with replacement to allow ties *within* each cause
-    idx_c1 = rng.integers(0, len(base_times_c1), size=n // 3)
-    idx_c2 = rng.integers(0, len(base_times_c2), size=n // 3)
-
-    times_c1 = base_times_c1[idx_c1]
-    times_c2 = base_times_c2[idx_c2]
-
-    # Remaining subjects are censored; sample censoring times
-    n_cens = n - times_c1.size - times_c2.size
-    times_cens = rng.uniform(0.5, 5.0, size=n_cens)
-
-    # Stack everything together
-    times = np.concatenate([times_c1, times_c2, times_cens])
-    events = np.concatenate([
-        np.full(times_c1.shape, 1, dtype=int),  # cause 1
-        np.full(times_c2.shape, 2, dtype=int),  # cause 2
-        np.zeros(times_cens.shape, dtype=int),  # censored
-    ])
-
-    # Shuffle jointly
-    order = rng.permutation(n)
-    times = times[order]
-    events = events[order]
-
-    # Sanity check: no ties between different event types
-    unique_times = np.unique(times)
-    for t in unique_times:
-        mask_t = times == t
-        causes_at_t = np.unique(events[mask_t])
-        active_causes = causes_at_t[causes_at_t > 0]
-        assert active_causes.size <= 1
-
-    return times, events
+from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
+    AalenJohansenCompetingRisks,
+)
 
 
-@pytest.mark.parametrize("event_of_interest", [1, 2])
-def test_aj_matches_lifelines_no_cross_ties(event_of_interest):
-    """
-    In the absence of ties between different event types (but allowing ties
-    within each event type), our Aalen-Johansen implementation and lifelines'
-    AalenJohansenFitter should produce numerically identical CIF/S(t)
-    (up to floating-point tolerance), provided that:
-        - jitter_level=0 (no artificial jitter),
-        - no left-truncation, no weights.
+@pytest.fixture
+def no_cross_ties():
+    """Disjoint cause timelines allow a deterministic comparison with lifelines."""
+    rng = np.random.default_rng(12345)
+    times = np.r_[
+        rng.choice([1.0, 2.0, 3.0, 4.0], 66),
+        rng.choice([1.5, 2.5, 3.5, 4.5], 66),
+        rng.uniform(0.5, 5.0, 68),
+    ]
+    events = np.repeat([1, 2, 0], [66, 66, 68])
+    order = rng.permutation(times.size)
+    return times[order], events[order]
 
-    We compare:
-        - CIF for the chosen event_of_interest
-        - overall survival S(t) = 1 - sum_k F_k(t)
-    evaluated on lifelines' default timeline.
-    """
 
-    # 1. Generate data
-    times, events = _generate_data_no_cross_ties(n=200, random_state=12345)
+@pytest.mark.parametrize("cause", [1, 2])
+def test_aj_matches_lifelines_no_cross_ties(no_cross_ties, cause):
+    times, events = no_cross_ties
+    reference = AalenJohansenFitter(jitter_level=0.0, calculate_variance=False)
+    reference.fit(times, events, event_of_interest=cause)
+    timeline = reference.cumulative_density_.index.to_numpy()
+    estimator = AalenJohansenCompetingRisks().fit(times, events)
 
-    # 2. Fit lifelines AJ for event_of_interest (no jitter, no variance)
-    aj_life = AalenJohansenFitter(jitter_level=0.0, calculate_variance=False)
-    aj_life.fit(times, events, event_of_interest=event_of_interest)
-
-    # Lifelines' timeline and CIF for the event_of_interest
-    timeline = aj_life.cumulative_density_.index.values.astype(float)
-    cif_life = aj_life.cumulative_density_.iloc[:, 0].values  # column is event_of_interest
-
-    # 3. Fit our AJ competing-risks implementation on the same data
-    aj_ours = AalenJohansenCompetingRisks()
-    aj_ours.fit(times, events)
-
-    # 4. Evaluate our CIF and survival on the *same* timeline
-    cif_ours_full = aj_ours.predict_cif(timeline)  # shape (len(timeline), n_causes)
-    cif_ours_event = cif_ours_full[:, event_of_interest - 1]
-    surv_ours = aj_ours.predict_surv(timeline)
-
-    # 5. Compare with tight tolerances
     np.testing.assert_allclose(
-        cif_ours_event, cif_life, rtol=1e-12, atol=1e-12,
-        err_msg="CIF for event_of_interest does not match lifelines."
+        estimator.predict_cif(timeline)[:, cause - 1],
+        reference.cumulative_density_.iloc[:, 0],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    km = KaplanMeierFitter().fit(times, events > 0)
+    np.testing.assert_allclose(estimator.predict_surv(timeline), km.predict(timeline))
+
+
+def test_cross_cause_and_censoring_ties():
+    # At time 1 all five subjects are at risk, including the tied censoring.
+    estimator = AalenJohansenCompetingRisks().fit([1, 1, 1, 2, 3], [1, 2, 0, 2, 0])
+    query = [0, np.nextafter(1.0, 0.0), 1, 1.5, 2, np.inf]
+    np.testing.assert_allclose(
+        estimator.predict_surv(query), [1, 1, 0.6, 0.6, 0.3, 0.3]
+    )
+    np.testing.assert_allclose(
+        estimator.predict_cif(query),
+        [[0, 0], [0, 0], [0.2, 0.2], [0.2, 0.2], [0.2, 0.5], [0.2, 0.5]],
+    )
+
+    matrices = estimator.predict_P(query)
+    np.testing.assert_allclose(matrices[0], np.eye(3))
+    np.testing.assert_allclose(matrices.sum(axis=-1), 1)
+    np.testing.assert_allclose(matrices[:, 1:, :], np.tile(np.eye(3)[1:], (6, 1, 1)))
+
+
+def test_events_at_zero_are_included():
+    estimator = AalenJohansenCompetingRisks().fit([0, 0, 1], [1, 0, 2])
+    assert estimator.predict_surv(0) == pytest.approx(2 / 3)
+    np.testing.assert_allclose(estimator.predict_cif(0), [1 / 3, 0])
+    np.testing.assert_allclose(estimator.predict_cif(1), [1 / 3, 2 / 3])
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_grouped_estimates_match_direct_recursion(seed):
+    rng = np.random.default_rng(seed)
+    times = rng.integers(0, 30, 150)
+    events = rng.integers(0, 4, times.size)
+    event_times = np.unique(times[events > 0])
+    survival = 1.0
+    cif = np.zeros(4)
+    expected = []
+    for t in event_times:
+        risk = np.count_nonzero(times >= t)
+        for cause in range(1, 5):
+            cif[cause - 1] += (
+                survival * np.count_nonzero((times == t) & (events == cause)) / risk
+            )
+        survival *= 1 - np.count_nonzero((times == t) & (events > 0)) / risk
+        expected.append(np.r_[survival, cif])
+
+    times.flags.writeable = False
+    events.flags.writeable = False
+    estimator = AalenJohansenCompetingRisks(n_causes=4).fit(times, events)
+    actual = estimator.predict_P(event_times)[:, 0, :]
+    np.testing.assert_allclose(actual, expected, atol=1e-14)
+    np.testing.assert_allclose(actual.sum(axis=1), 1)
+    assert np.all(np.diff(estimator.surv_) <= 0)
+    assert np.all(np.diff(estimator.cif_, axis=1) >= 0)
+    np.testing.assert_array_equal(estimator.cif_[3], 0)
+
+
+def test_one_cause_reduces_to_kaplan_meier():
+    times, events = [1, 1, 2, 3, 4], [1, 0, 1, 1, 0]
+    estimator = AalenJohansenCompetingRisks().fit(times, events)
+    km = KaplanMeierFitter().fit(times, events)
+    query = [0, 1, 1.5, 2, 3, 4, np.inf]
+    np.testing.assert_allclose(estimator.predict_surv(query), km.predict(query))
+    np.testing.assert_allclose(
+        estimator.predict_surv(query) + estimator.predict_cif(query)[:, 0], 1
     )
 
 
-def test_aj_mass_conservation_all_causes():
-    """
-    Check that, for all causes simultaneously, the total probability mass is
-    conserved for both our implementation:
+def test_censoring_only_requires_known_causes():
+    with pytest.raises(ValueError, match="Specify n_causes"):
+        AalenJohansenCompetingRisks().fit([1, 2], [0, 0])
+    estimator = AalenJohansenCompetingRisks(n_causes=2).fit([1, 2], [0, 0])
+    assert estimator.unique_times_.size == 0
+    np.testing.assert_array_equal(estimator.predict_surv([0, 3, np.inf]), 1)
+    np.testing.assert_array_equal(estimator.predict_cif([0, 3, np.inf]), 0)
+    np.testing.assert_array_equal(estimator.predict_P(3), np.eye(3))
 
-        S(t) + sum_k F_k(t) ≈ 1  for all t,
 
-    in the setting with:
-        - no ties between different event types,
-        - ties allowed within each cause,
-        - jitter_level=0, no left truncation, no weights.
-    """
+def test_refit_infers_causes_from_current_data():
+    estimator = AalenJohansenCompetingRisks().fit([1, 2], [1, 0])
+    estimator.fit([1, 2], [2, 0])
+    assert estimator.n_causes_ == 2
+    np.testing.assert_allclose(estimator.predict_cif(1), [0, 0.5])
+    estimator.fit([1, 2], [1, 0])
+    assert estimator.n_causes_ == 1
+    assert estimator.predict_P(1).shape == (2, 2)
 
-    times, events = _generate_data_no_cross_ties(n=200, random_state=12345)
-    K = int(events.max())
-    assert K >= 1
 
-    # Use a common explicit timeline: distinct event times (any cause)
-    timeline = np.unique(times[events > 0])
+@pytest.mark.parametrize("shape", [(), (3,), (2, 3), (0,), (2, 0)])
+def test_prediction_shapes(shape):
+    estimator = AalenJohansenCompetingRisks(n_causes=2).fit([1, 2], [1, 2])
+    query = np.full(shape, 1.0)
+    assert np.shape(estimator.predict_surv(query)) == shape
+    assert estimator.predict_cif(query).shape == shape + (2,)
+    assert estimator.predict_P(query).shape == shape + (3, 3)
+    if query.size:
+        np.testing.assert_allclose(
+            estimator.predict_cif(query), np.tile([0.5, 0], shape + (1,))
+        )
 
-    # --- Our implementation ---
-    aj_ours = AalenJohansenCompetingRisks()
-    aj_ours.fit(times, events)
 
-    surv_ours = aj_ours.predict_surv(timeline)           # shape (T,)
-    cif_ours_all = aj_ours.predict_cif(timeline)         # shape (T, K)
-    sum_prob_ours = surv_ours + cif_ours_all.sum(axis=1)
+@pytest.mark.parametrize("method", ["predict_surv", "predict_cif", "predict_P"])
+def test_prediction_requires_fit_and_valid_times(method):
+    estimator = AalenJohansenCompetingRisks()
+    with pytest.raises(RuntimeError, match="fit"):
+        getattr(estimator, method)(0)
+    estimator.fit([1, 2], [1, 2])
+    for t in (-1, -np.inf, np.nan, [0, np.nan]):
+        with pytest.raises(ValueError, match="Prediction times"):
+            getattr(estimator, method)(t)
 
-    np.testing.assert_allclose(
-        sum_prob_ours, np.ones_like(sum_prob_ours),
-        rtol=1e-12, atol=1e-12,
-        err_msg="Our AJ implementation does not conserve probability mass."
-    )
+
+@pytest.mark.parametrize("n_causes", [0, -1, 1.5, 2.0, True, np.bool_(True), np.nan])
+def test_invalid_cause_count(n_causes):
+    with pytest.raises(ValueError, match="positive integer"):
+        AalenJohansenCompetingRisks(n_causes)
+
+
+@pytest.mark.parametrize(
+    "times, events",
+    [
+        ([], []),
+        ([[1, 2]], [[1, 2]]),
+        ([1, 2], [1]),
+        ([1, 2], [[1, 2]]),
+        ([-1, 2], [1, 2]),
+        ([np.nan, 2], [1, 2]),
+        ([np.inf, 2], [1, 2]),
+        ([1, 2], [-1, 2]),
+        ([1, 2], [0.5, 2]),
+        ([1, 2], [np.nan, 2]),
+        ([1, 2], [np.inf, 2]),
+        ([1, 2], [1, 3]),
+    ],
+)
+def test_invalid_observations(times, events):
+    with pytest.raises(ValueError):
+        AalenJohansenCompetingRisks(n_causes=2).fit(times, events)
