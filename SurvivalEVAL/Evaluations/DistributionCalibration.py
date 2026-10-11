@@ -398,6 +398,11 @@ def cr_d_calibration(
     num_bins, alpha, method
         See ``cr_d_calibration_per_event``. The default sums the paper's L_alpha
         scores; ``method="ks"`` instead aggregates maximum grid deviations.
+    alpha : float, default=2
+        Finite exponent at least 1 for the integral norm. `alpha=1`: area under 
+        the absolute-error curve; errors contribute linearly. 
+        `alpha=2` (default): root integrated squared error; 
+        Ignored for KS.
     reduction : {"sum", "mean", "max"}, default="sum"
         Reduction of per-cause scores. Sum follows the paper's definition.
     return_details : bool, default=False

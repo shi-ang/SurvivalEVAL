@@ -20,12 +20,16 @@
    `NonparametricEstimator/util.py`. Update estimator and metric imports and
    remove `SingleEvent/util.py`; import `km_mean` from the shared utility module.
 5. Add exported `CompetingRisksEvaluator` and `MultiStateEvaluator` class
-   scaffolds. Their input APIs and evaluation methods are not implemented yet.
+   scaffolds.
 6. Add exported `cr_d_calibration_per_event` and `cr_d_calibration` metrics for
    competing risks. Use the paper's integral norm and sum over causes by default,
    with optional KS grid deviations, calibration curves, and approximate KS
    p-values. Accumulate censoring contributions with grouped bucket weights;
    preserve marginal calibration errors and evaluate all predicted causes.
+7. Implement `CompetingRisksEvaluator` for CIF curves on a shared time grid.
+   Its `cr_d_calibration` method interpolates CIFs at observed times, derives
+   overall survival, and reuses the standalone metric. Support Linear/Pchip
+   interpolation and explicit eventual cause probabilities for finite horizons.
 
 ## 2026-10-08: Version 0.8.7
 
