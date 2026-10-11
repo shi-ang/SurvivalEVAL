@@ -1,3 +1,4 @@
+from SurvivalEVAL.CompetingRisksEvaluator import CompetingRisksEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_right_censor
 from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
@@ -34,6 +35,7 @@ from SurvivalEVAL.Evaluator import (
     SurvivalEvaluator,
 )
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
+from SurvivalEVAL.MultiStateEvaluator import MultiStateEvaluator
 from SurvivalEVAL.version import __version__
 
 __author__ = ("Shi-ang Qi", "Weijie Sun")
@@ -49,6 +51,8 @@ __all__ = [
     "ScikitSurvivalEvaluator",
     "LifelinesEvaluator",
     "IntervalCenEvaluator",
+    "CompetingRisksEvaluator",
+    "MultiStateEvaluator",
     "auc",
     "auprc_right_censor",
     "auprc_ic",

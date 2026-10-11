@@ -349,6 +349,9 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 `SurvivalEVAL.Evaluations.OtherMetrics` includes research helpers such as
 calibration slope and coefficient of variation.
 
+`CompetingRisksEvaluator` and `MultiStateEvaluator` are available as class
+scaffolds through `from SurvivalEVAL import ...`.
+
 ## Nonparametric Estimators
 
 ### Single-event models

@@ -19,6 +19,8 @@
 4. Consolidate nonparametric counting, integration, and prediction helpers in
    `NonparametricEstimator/util.py`. Update estimator and metric imports and
    remove `SingleEvent/util.py`; import `km_mean` from the shared utility module.
+5. Add exported `CompetingRisksEvaluator` and `MultiStateEvaluator` class
+   scaffolds. Their input APIs and evaluation methods are not implemented yet.
 
 ## 2026-10-08: Version 0.8.7
 
