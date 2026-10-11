@@ -26,7 +26,9 @@ from SurvivalEVAL.Evaluations.Calibration import (
     one_calibration,
     residuals,
 )
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import _maximum_local_deviation
+from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
+    _maximum_local_deviation,
+)
 from SurvivalEVAL.Evaluations.Concordance import concordance
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.MeanError import mean_error

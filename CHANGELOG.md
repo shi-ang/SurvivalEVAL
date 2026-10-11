@@ -30,11 +30,13 @@
    Its `cr_d_calibration` method interpolates CIFs at observed times, derives
    overall survival, and reuses the standalone metric. Support Linear/Pchip
    interpolation and explicit eventual cause probabilities for finite horizons.
-8. Group calibration metrics under `Evaluations/Calibration`, with a
-   `Distributional` package and a `SingleTime.py` module. Group
+8. Group calibration metrics under `Evaluations/Calibration`, with
+   `Distributional` and `SingleTime` packages. Group
    D-calibration, CR-D-calibration, and KS D-calibration together in
    `DistributionCalibration.py`, alongside KM calibration, coverage, and
-   residual modules, with shared KS helpers in `util.py`. Export
+   residual modules, with shared KS helpers in `util.py`. Organize single-time
+   metrics into `OneCalibration.py` and `IntegratedCalibrationIndex.py`, with
+   shared curve diagnostics in `SingleTime/util.py`. Export
    public metrics from the packages. Replace the previous
    `DistributionCalibration` and `SingleTimeCalibration` module paths.
 

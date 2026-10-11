@@ -19,7 +19,9 @@ from SurvivalEVAL.Evaluations.Calibration import (
     ksd_cal_ic,
     one_cal_ic,
 )
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import _maximum_local_deviation
+from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
+    _maximum_local_deviation,
+)
 from SurvivalEVAL.Evaluations.Concordance import (
     concordance,
     concordance_ic,
