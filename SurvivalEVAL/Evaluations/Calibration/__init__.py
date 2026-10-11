@@ -1,6 +1,8 @@
 """Distributional and single-time calibration metrics."""
 
 from .Distributional import (
+    aj_calibration,
+    aj_calibration_per_event,
     coverage_ic,
     cr_d_calibration,
     cr_d_calibration_per_event,
@@ -14,6 +16,8 @@ from .Distributional import (
 from .SingleTime import integrated_calibration_index, one_cal_ic, one_calibration
 
 __all__ = [
+    "aj_calibration",
+    "aj_calibration_per_event",
     "coverage_ic",
     "cr_d_calibration",
     "cr_d_calibration_per_event",

@@ -8,6 +8,8 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     single_brier_score,
 )
 from SurvivalEVAL.Evaluations.Calibration import (
+    aj_calibration,
+    aj_calibration_per_event,
     coverage_ic,
     cr_d_calibration,
     cr_d_calibration_per_event,
@@ -64,6 +66,8 @@ __all__ = [
     "concordance_ic",
     "concordance_time_dependent",
     "coverage_ic",
+    "aj_calibration",
+    "aj_calibration_per_event",
     "d_calibration",
     "cr_d_calibration",
     "cr_d_calibration_per_event",
