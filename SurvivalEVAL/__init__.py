@@ -1,6 +1,5 @@
 from SurvivalEVAL.CompetingRisksEvaluator import CompetingRisksEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_right_censor
-from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points,
     brier_multiple_points_ic,
@@ -23,14 +22,15 @@ from SurvivalEVAL.Evaluations.Calibration import (
     one_calibration,
     residuals,
 )
-from SurvivalEVAL.Evaluations.Concordance import (
+from SurvivalEVAL.Evaluations.Discrimination import (
+    auc,
     concordance,
     concordance_cr,
     concordance_cr_per_event,
     concordance_ic,
+    concordance_time_dependent,
 )
 from SurvivalEVAL.Evaluations.MeanError import mean_error, mean_error_ic
-from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
 from SurvivalEVAL.Evaluator import (
     DistributionEvaluator,
     LifelinesEvaluator,

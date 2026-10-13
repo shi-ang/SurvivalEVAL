@@ -22,12 +22,11 @@ from SurvivalEVAL.Evaluations.Calibration import (
 from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
     _maximum_local_deviation,
 )
-from SurvivalEVAL.Evaluations.Concordance import (
-    concordance,
-    concordance_ic,
+from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
+from SurvivalEVAL.Evaluations.Discrimination import concordance, concordance_ic
+from SurvivalEVAL.Evaluations.Discrimination.IntervalConcordance import (
     impute_times_midpoint,
 )
-from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,

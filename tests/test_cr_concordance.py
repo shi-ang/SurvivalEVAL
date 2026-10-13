@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import concordance, concordance_cr, concordance_cr_per_event
-from SurvivalEVAL.Evaluations._concordance_utils import (
+from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )

@@ -11,9 +11,7 @@ import pandas as pd
 from lifelines.statistics import logrank_test
 from scipy.integrate import simpson, trapezoid
 
-from SurvivalEVAL.Evaluations._concordance_utils import _normalize_ties
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
-from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points,
     single_brier_score,
@@ -29,13 +27,14 @@ from SurvivalEVAL.Evaluations.Calibration import (
 from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
     _maximum_local_deviation,
 )
-from SurvivalEVAL.Evaluations.Concordance import concordance
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
-from SurvivalEVAL.Evaluations.MeanError import mean_error
-from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination import auc, concordance
+from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import _normalize_ties
+from SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance import (
     _concordance_time_dependent,
     _normalize_time_dependent_method,
 )
+from SurvivalEVAL.Evaluations.MeanError import mean_error
 from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,

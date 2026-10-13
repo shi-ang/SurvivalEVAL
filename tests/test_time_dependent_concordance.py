@@ -3,13 +3,13 @@ import tracemalloc
 import numpy as np
 import pytest
 
-import SurvivalEVAL.Evaluations.TimeDependentConcordance as td_concordance
+import SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance as td_concordance
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations._concordance_utils import (
+from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )
-from SurvivalEVAL.Evaluations.TimeDependentConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance import (
     _select_risk_anchors,
     _time_dependent_risk_counts,
     _time_dependent_risk_counts_from_predictions,
@@ -336,9 +336,9 @@ def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final
 
     np.testing.assert_allclose(default_ties, (1.0, 2.0, 2.0))
     np.testing.assert_allclose(no_ties, (1.0, 2.0, 2.0))
-    with pytest.raises(ValueError, match="Censoring survival probability is zero"):
+    with pytest.raises(ValueError, match="Censoring survival is zero"):
         concordance_time_dependent(**kwargs, ties="Time")
-    with pytest.raises(ValueError, match="Censoring survival probability is zero"):
+    with pytest.raises(ValueError, match="Censoring survival is zero"):
         concordance_time_dependent(**kwargs, ties="All")
 
 
@@ -347,9 +347,9 @@ def test_time_dependent_concordance_validates_inputs():
     event_indicators = np.array([1, 1, 1])
     risk_scores = np.ones((3, 3))
 
-    with pytest.raises(ValueError, match="2D array"):
+    with pytest.raises(ValueError, match="shape"):
         concordance_time_dependent(np.ones(3), event_times, event_indicators)
-    with pytest.raises(ValueError, match="same"):
+    with pytest.raises(ValueError, match="one row"):
         concordance_time_dependent(np.ones((2, 3)), event_times, event_indicators)
     with pytest.raises(ValueError, match="observed events"):
         concordance_time_dependent(np.ones((3, 2)), event_times, event_indicators)
@@ -359,7 +359,7 @@ def test_time_dependent_concordance_validates_inputs():
         concordance_time_dependent(
             risk_scores, event_times, event_indicators, method="Harrell"
         )
-    with pytest.raises(ValueError, match="must be provided"):
+    with pytest.raises(ValueError, match="required for IPCW"):
         concordance_time_dependent(
             risk_scores, event_times, event_indicators, method="IPCW"
         )

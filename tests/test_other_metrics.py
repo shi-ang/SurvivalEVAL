@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.AreaUnderROCurve import auc
+from SurvivalEVAL.Evaluations.Discrimination.AreaUnderROCurve import auc
 from SurvivalEVAL.Evaluations.OtherMetrics import cov
 
 

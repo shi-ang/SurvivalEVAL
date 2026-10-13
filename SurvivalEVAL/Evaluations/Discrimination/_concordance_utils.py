@@ -5,6 +5,98 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert_event_data,
+    validate_time_point,
+)
+from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+
+
+def _check_survival_event_data(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return matching 1D observed times and validated binary event indicators.
+
+    Observed times must be finite and non-negative. Indicators are 1 for
+    observed events and 0 for censoring, returned as booleans. Compatible
+    arrays are reused without modifying inputs.
+    """
+    times, events = check_and_convert_event_data(event_times, event_indicators)
+    if times.ndim != 1:
+        raise ValueError("Event times and indicators must be 1D arrays.")
+    if not np.all(np.isfinite(times)) or np.any(times < 0):
+        raise ValueError("Event times must be finite and non-negative.")
+    return times, events
+
+
+def _validate_tau(tau: float | None) -> float | None:
+    """Return None or a finite, non-negative scalar truncation time."""
+    if tau is None:
+        return None
+    tau = validate_time_point(tau, "tau")
+    if not np.isfinite(tau):
+        raise ValueError("tau must be finite.")
+    return tau
+
+
+def _ipcw_weights(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
+    ties: str,
+    tau: float | None,
+) -> np.ndarray:
+    """Estimate inverse censoring weights for ordinary-survival event anchors.
+
+    Parameters
+    ----------
+    event_times, event_indicators : ndarray, shape (n_samples,)
+        Validated observed times and binary indicators of the testing data.
+    train_event_times, train_event_indicators : array-like, shape (n_train_samples,)
+        Training outcomes, required to fit reverse Kaplan-Meier.
+    ties : str
+        Normalized concordance tie policy.
+    tau : float, optional
+        Validated strict truncation time for event anchors.
+
+    Returns
+    -------
+    weights : ndarray, shape (n_samples,)
+        1/G(t) for contributing anchors; zero elsewhere. Directed comparable
+        pairs receive the square of the anchor weight. Same-time event pairs
+        receive the product of their weights when the tie policy retains them.
+
+    Notes
+    -----
+    Final event-only anchors contribute only when Time/All retains their
+    time ties. Unused observations do not require positive censoring survival.
+    G(t) is right-continuous, using the events-first convention at training ties.
+    """
+    if train_event_times is None or train_event_indicators is None:
+        raise ValueError("Training event times and indicators are required for IPCW.")
+    train_times, train_events = _check_survival_event_data(
+        train_event_times, train_event_indicators
+    )
+    contributing = event_indicators & _is_before_tau(event_times, tau)
+    final_block = event_times == event_times.max()
+    final_has_comparators = np.any(final_block & ~event_indicators) or (
+        ties in {"time", "all"} and np.count_nonzero(final_block & event_indicators) > 1
+    )
+    if not final_has_comparators:
+        contributing &= ~final_block
+
+    censoring_model = KaplanMeier(train_times, train_events, reverse=True)
+    survival = censoring_model.predict(event_times[contributing])
+    if np.any(survival <= 0):
+        raise ValueError(
+            "Censoring survival is zero at a contributing event; choose a smaller tau."
+        )
+    weights = np.zeros(event_times.shape, dtype=float)
+    weights[contributing] = 1 / survival
+    return weights
+
 
 @dataclass
 class _ConcordanceCounts:

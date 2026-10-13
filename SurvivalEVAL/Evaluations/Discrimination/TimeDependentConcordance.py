@@ -4,17 +4,20 @@ from collections.abc import Callable
 
 import numpy as np
 
-from SurvivalEVAL.Evaluations._concordance_utils import (
+from SurvivalEVAL.Evaluations.util import check_and_convert
+
+from ._concordance_utils import (
     _check_has_any_pairs,
+    _check_survival_event_data,
     _ConcordanceCounts,
     _count_directed_risk_pairs,
     _finalize_counts,
-    _is_before_tau,
+    _ipcw_weights,
     _iter_time_blocks,
     _normalize_ties,
     _same_time_pair_weight,
+    _validate_tau,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def _normalize_time_dependent_method(method: str) -> str:
@@ -80,7 +83,7 @@ def concordance_time_dependent(
         include one column for each of those samples in observed-event sample
         order.
     event_times: np.ndarray, shape = (n_samples,)
-        The true survival times.
+        Finite, non-negative observed event or censoring times.
     event_indicators: np.ndarray, shape = (n_samples,)
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
@@ -102,7 +105,7 @@ def concordance_time_dependent(
         A string indicating the way ties should be handled.
         Options: "None", "Time", "Risk" (default), or "All"
     tau: float, optional
-        Truncation time. If provided, only event anchors whose observed time is
+        Finite, non-negative truncation time. If provided, only event anchors whose observed time is
         strictly before ``tau`` are counted. If None, no truncation is applied.
 
     Returns
@@ -114,31 +117,8 @@ def concordance_time_dependent(
     num_total_pairs: float
         The number of total pairs.
     """
-    event_indicators = event_indicators.astype(bool, copy=False)
-
-    if risk_scores.ndim != 2:
-        raise ValueError(
-            f"risk_scores should be a 2D array of shape (n_samples, n_anchor_times), but got shape {risk_scores.shape}."
-        )
-    if event_times.ndim != 1 or event_indicators.ndim != 1:
-        raise ValueError("event_times and event_indicators must be 1-D arrays.")
-
-    # check if the predicted risk scores has the dimension of (n_samples, n_anchor_times)
-    n_samples, n_anchor_times = risk_scores.shape
-    if not (n_samples == event_times.shape[0] == event_indicators.shape[0]):
-        raise ValueError(
-            "The lengths of risk_scores, event_times, and event_indicators must be the same."
-        )
-
-    n_observed_events = int(event_indicators.sum())
-    if n_observed_events == 0:
-        raise ValueError(
-            "Data has no observed events, cannot estimate time-dependent concordance index."
-        )
-    if n_anchor_times != n_observed_events:
-        raise ValueError(
-            "The number of anchor times (columns in risk_scores) must match the number of observed events."
-        )
+    if callable(risk_scores):
+        raise TypeError("risk_scores must be a numeric array.")
 
     return _concordance_time_dependent(
         risk_scores,
@@ -162,70 +142,47 @@ def _concordance_time_dependent(
     ties: str = "Risk",
     tau: float | None = None,
 ) -> tuple[float, float, float]:
-    """Evaluate validated arrays or a predictor for one sample at a time.
+    """Validate outcomes and evaluate a risk array or a per-sample predictor.
 
     A callable receives a sample index and unique, increasing anchor times,
     and returns a 1-D array of that sample's risks at those times. This lets
     the evaluator count pairs without allocating the dense risk matrix.
     """
-    event_indicators = event_indicators.astype(bool, copy=False)
+    event_times, event_indicators = _check_survival_event_data(
+        event_times, event_indicators
+    )
     if not np.any(event_indicators):
         raise ValueError(
             "Data has no observed events, cannot estimate time-dependent concordance index."
         )
+    if not callable(risk_scores):
+        risk_scores = check_and_convert(risk_scores)
+        if risk_scores.ndim != 2:
+            raise ValueError(
+                "risk_scores must have shape (n_samples, n_observed_events)."
+            )
+        if risk_scores.shape[0] != event_times.size:
+            raise ValueError("risk_scores must have one row per observed subject.")
+        if risk_scores.shape[1] != np.count_nonzero(event_indicators):
+            raise ValueError("Risk columns must match the number of observed events.")
 
     method = _normalize_time_dependent_method(method)
     ties = _normalize_ties(ties)
+    tau = _validate_tau(tau)
 
     if method == "antolini" or method == "naive":
         sample_weights = None
         anchor_pair_weights = None
     elif method == "ipcw":
-        if train_event_times is None or train_event_indicators is None:
-            raise ValueError(
-                "train_event_times and train_event_indicators must be provided for IPCW method."
-            )
-        train_event_indicators = train_event_indicators.astype(bool, copy=False)
-
-        censoring_model = KaplanMeier(
-            train_event_times, train_event_indicators, reverse=True
+        sample_weights = _ipcw_weights(
+            event_times,
+            event_indicators,
+            train_event_times,
+            train_event_indicators,
+            ties,
+            tau,
         )
-        censoring_survival = censoring_model.predict(event_times)
-        observed_anchors = event_indicators & _is_before_tau(event_times, tau)
-
-        # IPCW only needs positive censoring survival for event anchors whose
-        # weights can affect the selected concordance result. Every non-final
-        # event-time block has later samples as candidates. In the final block,
-        # event anchors still contribute through same-time censored candidates;
-        # event-event time ties contribute only when the requested tie policy
-        # keeps time ties. Otherwise final events have no effect on the returned
-        # index, so exclude them from the zero-survival check and weight
-        # assignment.
-        final_time = np.max(event_times)
-        final_block = event_times == final_time
-        final_events = final_block & event_indicators
-        final_event_count = np.count_nonzero(final_events)
-        final_has_censored_candidate = np.any(final_block & ~event_indicators)
-        final_time_ties_counted = ties in {"time", "all"}
-        final_events_contribute = final_has_censored_candidate or (
-            final_time_ties_counted and final_event_count > 1
-        )
-        if not final_events_contribute:
-            observed_anchors[final_events] = False
-
-        if np.any(censoring_survival[observed_anchors] <= 0):
-            raise ValueError(
-                "Censoring survival probability is zero for at least one observed event; "
-                "choose a smaller tau."
-            )
-
-        sample_weights = np.zeros_like(event_times, dtype=float)
-        sample_weights[observed_anchors] = 1 / censoring_survival[observed_anchors]
-
-        anchor_pair_weights = np.zeros_like(event_times, dtype=float)
-        anchor_pair_weights[observed_anchors] = 1 / np.square(
-            censoring_survival[observed_anchors]
-        )
+        anchor_pair_weights = np.square(sample_weights)
     count_risks = (
         _time_dependent_risk_counts_from_predictions
         if callable(risk_scores)
