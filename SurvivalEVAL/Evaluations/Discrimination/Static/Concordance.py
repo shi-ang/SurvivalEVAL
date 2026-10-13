@@ -10,7 +10,7 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeierArea,
 )
 
-from ._concordance_utils import (
+from .._concordance_utils import (
     _check_has_any_pairs,
     _check_survival_event_data,
     _ConcordanceCounts,

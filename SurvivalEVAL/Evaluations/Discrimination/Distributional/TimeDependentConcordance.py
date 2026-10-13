@@ -6,7 +6,7 @@ import numpy as np
 
 from SurvivalEVAL.Evaluations.util import check_and_convert
 
-from ._concordance_utils import (
+from .._concordance_utils import (
     _check_has_any_pairs,
     _check_survival_event_data,
     _ConcordanceCounts,

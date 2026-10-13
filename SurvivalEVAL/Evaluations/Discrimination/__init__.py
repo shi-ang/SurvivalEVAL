@@ -1,13 +1,13 @@
-"""AUC and concordance metrics for survival and competing-risk predictions."""
+"""Distributional, single-time, and static discrimination metrics."""
 
-from .AreaUnderROCurve import auc
-from .Concordance import (
+from .Distributional import concordance_time_dependent
+from .SingleTime import auc
+from .Static import (
     concordance,
     concordance_cr,
     concordance_cr_per_event,
+    concordance_ic,
 )
-from .IntervalConcordance import concordance_ic
-from .TimeDependentConcordance import concordance_time_dependent
 
 __all__ = [
     "auc",

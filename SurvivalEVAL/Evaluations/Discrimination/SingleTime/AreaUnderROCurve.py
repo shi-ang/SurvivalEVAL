@@ -5,7 +5,7 @@ from sklearn.metrics import roc_auc_score
 
 from SurvivalEVAL.Evaluations.util import check_and_convert, validate_time_point
 
-from ._concordance_utils import _check_survival_event_data
+from .._concordance_utils import _check_survival_event_data
 
 
 def auc(

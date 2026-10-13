@@ -30,7 +30,7 @@ from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.Discrimination import auc, concordance
 from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import _normalize_ties
-from SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance import (
     _concordance_time_dependent,
     _normalize_time_dependent_method,
 )

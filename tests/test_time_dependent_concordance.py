@@ -3,13 +3,13 @@ import tracemalloc
 import numpy as np
 import pytest
 
-import SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance as td_concordance
+import SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance as td_concordance
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )
-from SurvivalEVAL.Evaluations.Discrimination.TimeDependentConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance import (
     _select_risk_anchors,
     _time_dependent_risk_counts,
     _time_dependent_risk_counts_from_predictions,

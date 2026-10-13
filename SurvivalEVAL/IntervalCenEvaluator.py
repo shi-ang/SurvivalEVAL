@@ -24,7 +24,7 @@ from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
 )
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.Discrimination import concordance, concordance_ic
-from SurvivalEVAL.Evaluations.Discrimination.IntervalConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination.Static.IntervalConcordance import (
     impute_times_midpoint,
 )
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic

@@ -5,13 +5,13 @@ from SurvivalEVAL import PointEvaluator
 from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
     _ConcordanceCounts,
 )
-from SurvivalEVAL.Evaluations.Discrimination.Concordance import (
+from SurvivalEVAL.Evaluations.Discrimination.Static.Concordance import (
     _finalize_counts,
     _margin_counts,
     _right_censored_risk_counts,
     concordance,
 )
-from SurvivalEVAL.Evaluations.Discrimination.IntervalConcordance import (
+from SurvivalEVAL.Evaluations.Discrimination.Static.IntervalConcordance import (
     _get_comparable_ic,
     concordance_ic,
 )
