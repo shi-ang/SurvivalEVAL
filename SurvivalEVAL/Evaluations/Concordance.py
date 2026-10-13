@@ -12,8 +12,10 @@ from SurvivalEVAL.Evaluations._concordance_utils import (
     _finalize_counts,
     _is_before_tau,
     _iter_time_blocks,
+    _normalize_ties,
     _same_time_pair_weight,
 )
+from SurvivalEVAL.Evaluations.util import check_and_convert, validate_time_point
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     KaplanMeierArea,
@@ -194,6 +196,366 @@ def concordance(
 
     _check_has_any_pairs(counts)
     return _finalize_counts(counts, ties)
+
+
+def concordance_cr_per_event(
+    predicted_risks: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
+    method: str = "Naive",
+    ties: str = "Risk",
+    tau: float | None = None,
+    event_of_interest: int = 1,
+) -> tuple[float, float, float]:
+    """Calculate concordance for one cause in the presence of competing risks.
+
+    Parameters
+    ----------
+    predicted_risks : array-like, shape (n_samples,)
+        Finite risk scores for the selected cause; higher means greater risk.
+        For horizon-specific concordance, supply the selected cause's CIF at
+        the same horizon for every subject. Scores need not be probabilities.
+    event_times : array-like, shape (n_samples,)
+        Finite, non-negative observed event or censoring times.
+    event_indicators : array-like, shape (n_samples,)
+        Non-negative integer labels: 0 for censoring, ``event_of_interest``
+        for the selected cause, and other positive labels for competing events.
+    train_event_times, train_event_indicators : array-like, optional
+        Training outcomes with the same label convention. Both are required
+        for IPCW. All positive labels denote observed events when fitting
+        the censoring distribution; competing events are not censorings.
+    method : {"Naive", "IPCW"}, default="Naive"
+        Naive uses unit pair weights. IPCW uses reverse Kaplan-Meier
+        censoring survival G from the training data: weight 1/G(T_i)^2 for
+        type A pairs and 1/(G(T_i) G(T_j)) for type B pairs.
+    ties : {"None", "Time", "Risk", "All"}, default="Risk"
+        Same policy as ``concordance``. Risk ties (absolute tolerance 1e-8)
+        receive half credit for Risk/All and are excluded otherwise. Same-time
+        events of the selected cause receive half credit for Time/All and are
+        excluded otherwise. Same-time competing events remain comparable.
+    tau : float, optional
+        Finite, non-negative truncation time. Only selected-cause anchors with
+        event time strictly less than tau contribute, matching ``concordance``.
+        None applies no truncation. This does not change the supplied risks.
+    event_of_interest : int, default=1
+        Positive integer cause label to evaluate.
+
+    Returns
+    -------
+    c_index : float
+        Weighted fraction of comparable pairs ranked correctly.
+    num_concordant_pairs : float
+        Concordant pair count, including half credit for retained ties.
+    num_total_pairs : float
+        Total pair count after the tie policy. Counts are weighted for IPCW.
+
+    Notes
+    -----
+    An anchor i must have an observed event of the selected cause. Type A
+    comparators have T_j > T_i, or T_j = T_i with j censored. Type B comparators
+    have a competing event at T_j <= T_i. Unlike ordinary cause-specific
+    concordance obtained by recoding competing events as censorings, this also
+    includes earlier competing events.
+
+    Uses the Wolbers pair definition implemented in hazardous, with Risk ties
+    as its default. The array API accepts precomputed scores rather than
+    interpolating CIF curves. Truncation is strict (< tau), whereas hazardous
+    includes anchors at tau. Time/All additionally support selected-cause time
+    ties according to SurvivalEVAL's existing convention.
+
+    IPCW assumes independent censoring for the marginal censoring estimator.
+    As in ``concordance``, evaluate right-continuous G(t) with the events-first
+    convention for training ties. Non-positive G at a contributing observation
+    raises ValueError; excluded anchors and unused comparators do not require G.
+    Counting takes O(n log n) time and O(n) memory without constructing pairs.
+
+    References
+    ----------
+    Wolbers et al. (2014), "Concordance for prognostic models with competing
+    risks", https://doi.org/10.1093/biostatistics/kxt059
+    """
+    risks = check_and_convert(predicted_risks)
+    times, events = _check_cr_concordance_event_data(event_times, event_indicators)
+    if risks.ndim != 1 or risks.shape != times.shape:
+        raise ValueError("predicted_risks must have one entry per observed subject.")
+    if not np.all(np.isfinite(risks)):
+        raise ValueError("predicted_risks must contain finite scores.")
+    if (
+        isinstance(event_of_interest, (bool, np.bool_))
+        or not isinstance(event_of_interest, (int, np.integer))
+        or event_of_interest < 1
+    ):
+        raise ValueError("event_of_interest must be a positive integer cause label.")
+    ties = _normalize_ties(ties)
+    if tau is not None:
+        tau = validate_time_point(tau, "tau")
+        if not np.isfinite(tau):
+            raise ValueError("tau must be finite.")
+    censoring_survival = _cr_censoring_survival(
+        times, train_event_times, train_event_indicators, method
+    )
+
+    counts = _competing_risk_counts(
+        risks, times, events, event_of_interest, censoring_survival, ties, tau
+    )
+    _check_has_any_pairs(counts)
+    return _finalize_counts(counts, ties)
+
+
+def concordance_cr(
+    predicted_risks: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None = None,
+    train_event_indicators: np.ndarray | None = None,
+    method: str = "Naive",
+    ties: str = "Risk",
+    tau: float | None = None,
+    reduction: str = "mean",
+    return_details: bool = False,
+) -> float | tuple[float, dict]:
+    """Summarize competing-risks concordance across all predicted causes.
+
+    Parameters
+    ----------
+    predicted_risks : array-like, shape (n_samples, n_causes)
+        Finite risk scores, with column k - 1 representing cause k. Higher
+        scores indicate greater cause-specific risk. For horizon-specific
+        concordance, supply each cause's CIF at the same prediction horizon.
+    event_times : array-like, shape (n_samples,)
+        Finite, non-negative event or censoring times.
+    event_indicators : array-like, shape (n_samples,)
+        Integer labels from 0 through n_causes; 0 denotes censoring.
+    train_event_times, train_event_indicators : array-like, optional
+        Training outcomes, required for IPCW. All positive training labels
+        denote observed events when fitting censoring survival.
+    method : {"Naive", "IPCW"}, default="Naive"
+        Unit pair weights or censoring weights. See ``concordance_cr_per_event``.
+    ties : {"None", "Time", "Risk", "All"}, default="Risk"
+        Tie policy applied separately to each cause.
+    tau : float, optional
+        Strict truncation of selected-cause anchors (< tau), without changing
+        the supplied risks. See ``concordance_cr_per_event``.
+    reduction : {"mean", "pooled"}, default="mean"
+        Mean weights every cause equally. Pooled divides the sum of concordant
+        pair counts by the sum of total pair counts, weighting each cause by
+        its available pair count (or pair weight for IPCW).
+    return_details : bool, default=False
+        Also return dictionaries ``per_event_scores``,
+        ``per_event_concordant_pairs`` and ``per_event_total_pairs``, keyed
+        by cause label.
+
+    Returns
+    -------
+    c_index : float
+        Aggregate of per-cause concordance scores, in [0, 1] when defined.
+    details : dict, optional
+        Per-cause scores and counts after applying the tie policy.
+
+    Notes
+    -----
+    This is a summary of the event-specific Wolbers C-indexes. The mean is NaN
+    if any cause is undefined; undefined causes are not silently omitted or
+    assigned a chance score. Causes with no retained pairs have zero weight
+    under pooled reduction, which is NaN if all causes have zero pair counts.
+    Every predicted cause is included in the details, even if unobserved or
+    excluded by tau. The IPCW censoring model is fitted once for all causes.
+
+    See Also
+    --------
+    concordance_cr_per_event : Pair definition, weighting and assumptions.
+    """
+    risks = check_and_convert(predicted_risks)
+    times, events = _check_cr_concordance_event_data(event_times, event_indicators)
+    if risks.ndim != 2 or risks.shape[0] != times.size:
+        raise ValueError("predicted_risks must have shape (n_samples, n_causes).")
+    if not np.all(np.isfinite(risks)):
+        raise ValueError("predicted_risks must contain finite scores.")
+    if np.any(events > risks.shape[1]):
+        raise ValueError("Event labels must not exceed the number of predicted causes.")
+    reduction = reduction.lower()
+    if reduction not in {"mean", "pooled"}:
+        raise ValueError("reduction must be 'mean' or 'pooled'.")
+    ties = _normalize_ties(ties)
+    if tau is not None:
+        tau = validate_time_point(tau, "tau")
+        if not np.isfinite(tau):
+            raise ValueError("tau must be finite.")
+    censoring_survival = _cr_censoring_survival(
+        times, train_event_times, train_event_indicators, method
+    )
+
+    per_event_results = np.empty((risks.shape[1], 3), dtype=float)
+    for k in range(risks.shape[1]):
+        counts = _competing_risk_counts(
+            risks[:, k],
+            times,
+            events,
+            k + 1,
+            censoring_survival,
+            ties,
+            tau,
+        )
+        per_event_results[k] = _finalize_counts(counts, ties)
+    scores, concordant, total = per_event_results.T
+    if reduction == "mean":
+        score = float(scores.mean())
+    else:
+        total_pairs = total.sum()
+        score = float(concordant.sum() / total_pairs) if total_pairs else float("nan")
+    if not return_details:
+        return score
+    return score, {
+        "per_event_scores": {k + 1: float(value) for k, value in enumerate(scores)},
+        "per_event_concordant_pairs": {
+            k + 1: float(value) for k, value in enumerate(concordant)
+        },
+        "per_event_total_pairs": {k + 1: float(value) for k, value in enumerate(total)},
+    }
+
+
+def _cr_censoring_survival(
+    event_times: np.ndarray,
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
+    method: str,
+) -> np.ndarray | None:
+    """Validate the method and return G(t) for IPCW, or None for Naive.
+
+    Fit reverse Kaplan-Meier on validated training outcomes, treating all
+    positive cause labels as observed events. Return censoring survival at
+    each test event time; the counter checks positivity only where needed.
+    """
+    method = method.lower()
+    if method not in {"naive", "ipcw"}:
+        raise ValueError("method must be 'Naive' or 'IPCW'.")
+    if method == "naive":
+        return None
+    if train_event_times is None or train_event_indicators is None:
+        raise ValueError("Training event times and indicators are required for IPCW.")
+    train_times, train_events = _check_cr_concordance_event_data(
+        train_event_times, train_event_indicators
+    )
+    return KaplanMeier(train_times, train_events > 0, reverse=True).predict(event_times)
+
+
+def _check_cr_concordance_event_data(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert matching 1D outcomes and validate competing-risk times and labels.
+
+    Times must be finite and non-negative. Labels must be finite non-negative
+    integers, with 0 for censoring. Return NumPy arrays without modifying inputs.
+    """
+    times, events = check_and_convert(event_times, event_indicators)
+    if times.ndim != 1:
+        raise ValueError("Event times and indicators must be 1D arrays.")
+    if not np.all(np.isfinite(times)) or np.any(times < 0):
+        raise ValueError("Event times must be finite and non-negative.")
+    if (
+        not np.all(np.isfinite(events))
+        or np.any(events < 0)
+        or np.any(events != np.floor(events))
+    ):
+        raise ValueError("Event indicators must be non-negative integer labels.")
+    return times, events
+
+
+def _competing_risk_counts(
+    predicted_risks: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    event_of_interest: int,
+    censoring_survival: np.ndarray | None = None,
+    ties: str = "risk",
+    tau: float | None = None,
+) -> _ConcordanceCounts:
+    """Count validated competing-risk pairs in O(n log n) time and O(n) memory.
+
+    Parameters
+    ----------
+    predicted_risks, event_times, event_indicators : ndarray, shape (n_samples,)
+        Finite risks, observed times, and integer cause labels.
+    event_of_interest : int
+        Selected positive cause label.
+    censoring_survival : ndarray, shape (n_samples,), optional
+        Marginal censoring survival G(t) at observed times. None uses unit weights.
+    ties : str, default="risk"
+        Normalized tie policy; controls which observations need positive G(t).
+    tau : float, optional
+        Strict truncation of selected-cause anchor times.
+
+    Returns
+    -------
+    _ConcordanceCounts
+        Weighted directed pair counts and selected-cause time ties.
+    """
+    # Evaluate tolerance bounds in float64; float32 rounding can otherwise
+    # treat distinct risks more than 1e-8 apart as ties.
+    predicted_risks = predicted_risks.astype(float, copy=False)
+    selected = event_indicators == event_of_interest
+    competing = (event_indicators > 0) & ~selected
+    sample_weights = np.ones(event_times.shape, dtype=float)
+    if censoring_survival is not None:
+        anchors = selected & _is_before_tau(event_times, tau)
+        # Every non-final anchor has type A comparators. Final anchors can
+        # still contribute through tied non-selected subjects or earlier competitors.
+        final_time = event_times.max()
+        final_block = event_times == final_time
+        final_has_comparators = np.any(final_block & ~selected) or (
+            ties in {"time", "all"} and np.count_nonzero(final_block & selected) > 1
+        )
+        first_competing_time = (
+            event_times[competing].min() if np.any(competing) else np.inf
+        )
+        contributing = anchors & (
+            (event_times < final_time)
+            | (event_times > first_competing_time)
+            | final_has_comparators
+        )
+        needed = contributing.copy()
+        if np.any(contributing):
+            needed |= competing & (event_times < event_times[contributing].max())
+        if np.any(censoring_survival[needed] <= 0):
+            raise ValueError(
+                "Censoring survival is zero at a contributing observation; choose a smaller tau."
+            )
+        sample_weights[needed] = 1 / censoring_survival[needed]
+
+    counts = _right_censored_risk_counts(
+        selected,
+        event_times,
+        predicted_risks,
+        sample_weights=sample_weights,
+        anchor_pair_weights=np.square(sample_weights),
+        tau=tau,
+    )
+    # The ordinary counter also includes tied competing events as comparators.
+    # Their type A and B weights coincide under marginal KM, so add only
+    # strictly earlier competing events here to avoid counting ties twice.
+    if not np.any(competing):
+        return counts
+    risk_values, risk_ranks = np.unique(predicted_risks, return_inverse=True)
+    tie_starts = np.searchsorted(risk_values, predicted_risks - 1e-8, side="left")
+    tie_stops = np.searchsorted(risk_values, predicted_risks + 1e-8, side="right")
+    tree = _FenwickTree(risk_values.size)
+    candidate_total = 0.0
+    for block, _ in _iter_time_blocks(event_times):
+        if tau is not None and event_times[block[0]] >= tau:
+            break
+        for i in block[selected[block]]:
+            lower = tree.prefix_sum(int(tie_starts[i]))
+            through_ties = tree.prefix_sum(int(tie_stops[i]))
+            counts.concordant += sample_weights[i] * lower
+            counts.risk_tie_pairs += sample_weights[i] * (through_ties - lower)
+            counts.discordant += sample_weights[i] * (candidate_total - through_ties)
+        for j in block[competing[block]]:
+            tree.add(int(risk_ranks[j]), sample_weights[j])
+            candidate_total += sample_weights[j]
+    return counts
 
 
 def _right_censored_risk_counts(

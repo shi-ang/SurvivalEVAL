@@ -23,7 +23,12 @@ from SurvivalEVAL.Evaluations.Calibration import (
     one_calibration,
     residuals,
 )
-from SurvivalEVAL.Evaluations.Concordance import concordance, concordance_ic
+from SurvivalEVAL.Evaluations.Concordance import (
+    concordance,
+    concordance_cr,
+    concordance_cr_per_event,
+    concordance_ic,
+)
 from SurvivalEVAL.Evaluations.MeanError import mean_error, mean_error_ic
 from SurvivalEVAL.Evaluations.TimeDependentConcordance import concordance_time_dependent
 from SurvivalEVAL.Evaluator import (
@@ -63,6 +68,8 @@ __all__ = [
     "brier_multiple_points",
     "brier_multiple_points_ic",
     "concordance",
+    "concordance_cr",
+    "concordance_cr_per_event",
     "concordance_ic",
     "concordance_time_dependent",
     "coverage_ic",
