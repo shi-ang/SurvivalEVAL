@@ -488,7 +488,7 @@ def test_survival_evaluator_concordance_train_required_methods_need_training_dat
         evaluator.concordance(method=method)
 
 
-@pytest.mark.parametrize("method", ["Naive", "IPCW"])
+@pytest.mark.parametrize("method", ["Naive", "IPCW", "Uno"])
 def test_auc_alias(evaluator_data, method: str):
     evaluator = evaluator_data["evaluator"]
     auc = evaluator.auc(target_time=9.0, method=method)

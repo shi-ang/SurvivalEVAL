@@ -35,8 +35,8 @@ def auc(
             observed time of the test set.
         train_event_times: Training outcomes for the IPCW censoring model.
         train_event_indicators: Binary training event indicators, required along
-            with training times when method is "IPCW".
-        method: "Naive" (default) or "IPCW", case-insensitive. IPCW assumes
+            with training times when method is "IPCW" or "Uno".
+        method: "Naive" (default), "IPCW", or "Uno", case-insensitive. IPCW assumes
             independent censoring and fits reverse Kaplan-Meier on the training
             outcomes. Cases receive weights 1/G(event_time-), using the left
             limit to respect events-first ordering.
@@ -45,8 +45,8 @@ def auc(
         AUROC at the target time, with half credit for exactly tied predictions.
     """
     method = method.lower()
-    if method not in {"naive", "ipcw"}:
-        raise ValueError("method must be 'Naive' or 'IPCW'.")
+    if method not in {"naive", "ipcw", "uno"}:
+        raise ValueError("method must be 'Naive', 'IPCW', or 'Uno'.")
 
     predict_probs = check_and_convert(predict_probs)
     event_times, event_indicators = check_and_convert_event_data(
@@ -75,7 +75,7 @@ def auc(
             f"Survival status is all zeros or all ones at time: {target_time}, AUC cannot be computed."
         )
     sample_weight = None
-    if method == "ipcw":
+    if method in {"ipcw", "uno"}:
         if train_event_times is None or train_event_indicators is None:
             raise ValueError(
                 "Training event times and indicators are required for IPCW AUROC."

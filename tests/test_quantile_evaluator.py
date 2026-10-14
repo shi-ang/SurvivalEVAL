@@ -89,7 +89,7 @@ def test_quantile_evaluator_accepts_list_quantile_levels():
     np.testing.assert_allclose(evaluator.pred_survs, [0.75, 0.5])
 
 
-@pytest.mark.parametrize("auc_method", ["Naive", "IPCW"])
+@pytest.mark.parametrize("auc_method", ["Naive", "IPCW", "Uno"])
 def test_quantile_concordance_and_auc(quantile_evaluator, auc_method: str):
     evaluator = quantile_evaluator["evaluator"]
 

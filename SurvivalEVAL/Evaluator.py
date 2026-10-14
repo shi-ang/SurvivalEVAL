@@ -818,10 +818,9 @@ class SurvivalEvaluator:
             target_time: Evaluation time. If None, use the median observed time
                 of the combined training and test sets, or just the test set
                 when training outcomes are unavailable.
-            method: "Naive" (default) or "IPCW", case-insensitive. IPCW requires
+            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
                 training outcomes, assumes independent censoring, and weights
-                cases by 1/G(event_time-) from reverse Kaplan-Meier. The target
-                must not exceed the maximum training follow-up time.
+                cases by 1/G(event_time-) from reverse Kaplan-Meier.
 
         Returns:
             AUROC at the target time.
@@ -831,7 +830,7 @@ class SurvivalEvaluator:
             ValueError: If inputs or the method are invalid, either class is
                 absent, or IPCW cannot be estimated at the target.
         """
-        if method.lower() == "ipcw":
+        if method.lower() in {"ipcw", "uno"}:
             self._error_trainset("IPCW AUROC")
 
         event_times = (
@@ -861,7 +860,7 @@ class SurvivalEvaluator:
         Args:
             target_time: Evaluation time, defaulting to the median observed
                 time of the available training and test outcomes.
-            method: "Naive" (default) or "IPCW", case-insensitive.
+            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive.
 
         Returns:
             AUROC at the target time.
@@ -2327,10 +2326,9 @@ class SingleTimeEvaluator:
         Earlier censorings are excluded.
 
         Args:
-            method: "Naive" (default) or "IPCW", case-insensitive. IPCW requires
+            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
                 training outcomes, assumes independent censoring, and weights
-                cases by 1/G(event_time-) from reverse Kaplan-Meier. The target
-                must not exceed the maximum training follow-up time.
+                cases by 1/G(event_time-) from reverse Kaplan-Meier.
 
         Returns:
             AUROC at the target time.
@@ -2340,7 +2338,7 @@ class SingleTimeEvaluator:
             ValueError: If inputs or the method are invalid, either class is
                 absent, or IPCW cannot be estimated at the target.
         """
-        if method.lower() == "ipcw":
+        if method.lower() in {"ipcw", "uno"}:
             self._error_trainset("IPCW AUROC")
 
         return auc(
