@@ -51,7 +51,11 @@ from SurvivalEVAL.Evaluations.util import (
     validate_time_points,
     zero_padding,
 )
-from SurvivalEVAL.Evaluations.util_plots import pp_plot
+from SurvivalEVAL.Evaluations.util_plots import (
+    _plot_curves,
+    _validate_plot_indices,
+    pp_plot,
+)
 
 
 class SurvivalEvaluator:
@@ -616,6 +620,26 @@ class SurvivalEvaluator:
         )
         return interval_pred
 
+    def _select_plot_inputs(
+        self,
+        curve_indices: int | list[int],
+    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
+        """Select requested samples, keeping shared 1D inputs without broadcasting.
+
+        Return survival curves, their time coordinates and sample labels in
+        selection order. Copy only selected rows of sample-specific inputs.
+        """
+        indices = _validate_plot_indices(curve_indices, self._testing_sample_count())
+        return (
+            self._pred_survs[indices] if self.ndim_surv == 2 else self._pred_survs,
+            (
+                self._time_coordinates[indices]
+                if self.ndim_time == 2
+                else self._time_coordinates
+            ),
+            [f"Sample {i}" for i in indices],
+        )
+
     def plot_survival_curves(
         self,
         curve_indices: int | list[int],
@@ -624,71 +648,49 @@ class SurvivalEvaluator:
         y_lim: float | tuple[float, float] | None = None,
         x_label: str = "Time",
         y_label: str = "Survival probability",
+        *,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> tuple[plt.Figure, plt.Axes]:
-        """
-        Plot survival curves from the predicted survival curves.
+        """Plot selected survival curves on the stored prediction grids.
 
         Parameters
         ----------
-        curve_indices: int | list[int]
-            Index(ces) of the curves to be plotted.
-        color: str | list[str] | None
-            Color(s) of the curves to be plotted. If None, default color will be used.
-        x_lim: float | tuple[float, float] | None
-            Limits for the x-axis. If None, default limits will be used.
-        y_lim: float | tuple[float, float] | None
-            Limits for the y-axis. If None, default limits will be used.
-        x_label: str
-            Label for the x-axis. Default is 'Time'.
-        y_label: str
-            Label for the y-axis. Default is 'Survival probability'.
-        kwargs: dict
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        color : str or list of str, optional
+            One shared color or one color per selected curve. Defaults to the
+            Matplotlib color cycle.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Survival probabilities default to the range [0, 1.02].
+        x_label, y_label : str
+            Axis labels, defaulting to Time and Survival probability.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs
+            Matplotlib line options, including linewidth, linestyle, alpha and
+            label. A label sequence overrides the generated sample labels.
 
         Returns
         -------
-        fig, ax: tuple
-            Figure and axis objects of the plot.
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Stored values are
+            connected directly; no interpolation or extrapolation is performed.
         """
-        fig, ax = plt.subplots()
-        if self.ndim_surv == 2 and self.ndim_time == 1:
-            ax.plot(
-                self._time_coordinates,
-                self._pred_survs[curve_indices, :].T,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        elif self.ndim_surv == 1 and self.ndim_time == 2:
-            ax.plot(
-                self._time_coordinates[curve_indices, :].T,
-                self._pred_survs,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        elif self.ndim_surv == 2 and self.ndim_time == 2:
-            ax.plot(
-                self._time_coordinates[curve_indices, :].T,
-                self._pred_survs[curve_indices, :].T,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        else:
-            raise TypeError("Dimensional error")
-
-        if y_lim is None:
-            ax.set_ylim(0, 1.02)
-        else:
-            ax.set_ylim(y_lim)
-
-        if x_lim is not None:
-            ax.set_xlim(x_lim)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.legend()
-        return fig, ax
+        curves, times, labels = self._select_plot_inputs(curve_indices)
+        return _plot_curves(
+            times,
+            curves,
+            labels,
+            title="Predicted survival",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, float(np.max(times))) if x_lim is None else x_lim,
+            y_lim=(0, 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            **kwargs,
+        )
 
     def plot_quantile_curves(
         self,
@@ -698,72 +700,49 @@ class SurvivalEvaluator:
         y_lim: float | tuple[float, float] | None = None,
         x_label: str = "Quantile",
         y_label: str = "Time",
+        *,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> tuple[plt.Figure, plt.Axes]:
-        """
-        Plot quantile curves from the predicted survival curves.
+        """Plot event-time quantiles for selected samples on the stored grid.
 
         Parameters
         ----------
-        curve_indices: int | list[int]
-            Index(ces) of the curves to be plotted.
-        color: str | list[str] | None
-            Color(s) of the curves to be plotted. If None, default color will be used.
-        x_lim: float | tuple[float, float] | None
-            Limits for the x-axis. If None, default limits will be used.
-        y_lim: float | tuple[float, float] | None
-            Limits for the y-axis. If None, default limits will be used.
-        x_label: str
-            Label for the x-axis. Default is 'Quantile'.
-        y_label: str
-            Label for the y-axis. Default is 'Time'.
-        kwargs: dict
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        color : str or list of str, optional
+            One shared color or one color per selected curve.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Quantiles default to [0, 1].
+        x_label, y_label : str
+            Axis labels, defaulting to Quantile and Time.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs
+            Matplotlib line options; see plot_survival_curves.
 
         Returns
         -------
-        fig, ax: tuple
-            Figure and axis objects of the plot.
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Plot time against
+            quantile 1 - S(t) at the stored coordinates. Unreached quantiles are
+            not extrapolated, and probabilities are computed only for the
+            selected curves.
         """
-        pred_quan = 1 - self._pred_survs
-        fig, ax = plt.subplots()
-        if self.ndim_surv == 2 and self.ndim_time == 1:
-            ax.plot(
-                pred_quan[curve_indices, :].T,
-                self._time_coordinates,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        elif self.ndim_surv == 1 and self.ndim_time == 2:
-            ax.plot(
-                pred_quan,
-                self._time_coordinates[curve_indices, :].T,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        elif self.ndim_surv == 2 and self.ndim_time == 2:
-            ax.plot(
-                pred_quan[curve_indices, :].T,
-                self._time_coordinates[curve_indices, :].T,
-                color=color,
-                label=curve_indices,
-                **kwargs,
-            )
-        else:
-            raise TypeError("Dimensional error")
-
-        if x_lim is None:
-            ax.set_xlim(0, 1)
-        else:
-            ax.set_xlim(x_lim)
-
-        if y_lim is not None:
-            ax.set_ylim(y_lim)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.legend()
-        return fig, ax
+        curves, times, labels = self._select_plot_inputs(curve_indices)
+        return _plot_curves(
+            1 - curves,
+            times,
+            labels,
+            title="Predicted event-time quantiles",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, 1) if x_lim is None else x_lim,
+            y_lim=(0, float(np.max(times)) * 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            **kwargs,
+        )
 
     def concordance(
         self,

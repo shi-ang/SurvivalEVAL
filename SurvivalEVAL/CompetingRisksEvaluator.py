@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
@@ -18,6 +19,7 @@ from SurvivalEVAL.Evaluations.util import (
     validate_time_point,
     zero_padding,
 )
+from SurvivalEVAL.Evaluations.util_plots import _plot_curves, _validate_plot_indices
 
 
 class CompetingRisksEvaluator:
@@ -203,6 +205,136 @@ class CompetingRisksEvaluator:
         if not isinstance(value, str) or value.lower() not in {"linear", "pchip"}:
             raise ValueError("interpolation must be 'Linear' or 'Pchip'.")
         self._interpolation = value.lower()
+
+    def plot_cif_curves(
+        self,
+        curve_indices: int | list[int],
+        event_of_interest: int | list[int] | None = None,
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
+        x_label: str = "Time",
+        y_label: str = "Cumulative incidence",
+        *,
+        ax: plt.Axes | None = None,
+        **kwargs,
+    ) -> tuple[plt.Figure, plt.Axes]:
+        """Plot selected samples' cause-specific cumulative incidence curves.
+
+        Parameters
+        ----------
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        event_of_interest : int or list of int, optional
+            One-based cause labels. None includes all predicted causes.
+        color : str or list of str, optional
+            One shared color or one color per plotted sample/cause combination,
+            ordered by sample, then cause. By default, colors identify causes
+            and line styles identify samples, cycling through four styles.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Probabilities default to [0, 1.02].
+        x_label, y_label : str
+            Axis labels, defaulting to Time and Cumulative incidence.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs
+            Matplotlib line options. An explicit linestyle overrides the
+            sample styles; label overrides the generated sample/cause labels.
+
+        Returns
+        -------
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Stored CIF values
+            are connected directly, without interpolation or extrapolation.
+        """
+        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
+        if event_of_interest is None:
+            causes = np.arange(self.pred_cifs.shape[1])
+        else:
+            causes = (
+                _validate_plot_indices(
+                    event_of_interest,
+                    self.pred_cifs.shape[1],
+                    "event_of_interest",
+                    one_based=True,
+                )
+                - 1
+            )
+        curves = self.pred_cifs[indices[:, None], causes[None, :], :].reshape(
+            -1, self.time_coordinates.size
+        )
+        labels = [f"Sample {i} · Cause {k + 1}" for i in indices for k in causes]
+        if color is None:
+            color = [f"C{k % 10}" for k in causes] * indices.size
+        styles = ("-", "--", ":", "-.")
+        line_styles = [
+            styles[i % len(styles)] for i in range(indices.size) for _ in causes
+        ]
+        return _plot_curves(
+            self.time_coordinates,
+            curves,
+            labels,
+            title="Predicted cumulative incidence",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
+            y_lim=(0, 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            line_styles=line_styles,
+            **kwargs,
+        )
+
+    def plot_survival_curves(
+        self,
+        curve_indices: int | list[int],
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
+        x_label: str = "Time",
+        y_label: str = "Survival probability",
+        *,
+        ax: plt.Axes | None = None,
+        **kwargs,
+    ) -> tuple[plt.Figure, plt.Axes]:
+        """Plot overall event-free survival, 1 minus the sum of cause-specific CIFs.
+
+        Parameters
+        ----------
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        color : str or list of str, optional
+            One shared color or one color per selected curve.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Survival probabilities default to [0, 1.02].
+        x_label, y_label : str
+            Axis labels, defaulting to Time and Survival probability.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs
+            Matplotlib line options, including label overrides.
+
+        Returns
+        -------
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Predictions are
+            connected on their stored grid without extrapolation.
+        """
+        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
+        survs = np.clip(1 - self.pred_cifs[indices].sum(axis=1, dtype=float), 0, 1)
+        return _plot_curves(
+            self.time_coordinates,
+            survs,
+            [f"Sample {i}" for i in indices],
+            title="Predicted event-free survival",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
+            y_lim=(0, 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            **kwargs,
+        )
 
     def predict_rmtl(self, tau: float | None = None) -> np.ndarray:
         """Return cause-specific restricted mean time lost, integral_0^tau F_k(t).
