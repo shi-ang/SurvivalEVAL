@@ -811,22 +811,33 @@ class SurvivalEvaluator:
             tau=tau,
         )
 
-    def auc(self, target_time: Numeric | None = None) -> float:
-        """
-        Calculate the area under the ROC curve (AUC/AUROC) score at a given
-        time point from the predicted survival curve.
+    def auc(self, target_time: Numeric | None = None, method: str = "Naive") -> float:
+        """Calculate cumulative/dynamic AUROC from predicted survival curves.
 
-        Parameters
-        ----------
-        target_time: float, int, or None, default = None
-            Time point at which the AUC score is to be calculated. If None, the AUC score is calculated at the
-            median time of all the event/censor times from the training and test sets.
+        Cases are observed events at or before the target. Controls are
+        observations after the target and censorings exactly at the target.
+        Earlier censorings are excluded.
 
-        Returns
-        -------
-        AUC: float
-            The AUC score at the target time point.
+        Args:
+            target_time: Evaluation time. If None, use the median observed time
+                of the combined training and test sets, or just the test set
+                when training outcomes are unavailable.
+            method: "Naive" (default) or "IPCW", case-insensitive. IPCW requires
+                training outcomes, assumes independent censoring, and weights
+                cases by 1/G(event_time-) from reverse Kaplan-Meier. The target
+                must not exceed the maximum training follow-up time.
+
+        Returns:
+            AUROC at the target time.
+
+        Raises:
+            TypeError: If IPCW is requested without training outcomes.
+            ValueError: If inputs or the method are invalid, either class is
+                absent, or IPCW cannot be estimated at the target.
         """
+        if method.lower() == "ipcw":
+            self._error_trainset("IPCW AUROC")
+
         event_times = (
             np.concatenate((self.event_times, self.train_event_times))
             if self.train_event_times is not None
@@ -843,26 +854,23 @@ class SurvivalEvaluator:
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             target_time=target_time,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
         )
 
-    def auroc(self, target_time: Numeric | None = None):
-        """
-        Calculate the area under the ROC curve (AUC/AUROC) score at a given
-        time point from the predicted survival curve.
+    def auroc(self, target_time: Numeric | None = None, method: str = "Naive") -> float:
+        """Alias for :meth:`auc`, including its boundary and IPCW conventions.
 
-        Alias for the '.auc()' method.
-        Parameters
-        ----------
-        target_time: float, int, or None, default = None
-            Time point at which the AUC score is to be calculated. If None, the AUC score is calculated at the
-            median time of all the event/censor times from the training and test sets.
+        Args:
+            target_time: Evaluation time, defaulting to the median observed
+                time of the available training and test outcomes.
+            method: "Naive" (default) or "IPCW", case-insensitive.
 
-        Returns
-        -------
-        AUC: float
-            The AUC score at the target time point.
+        Returns:
+            AUROC at the target time.
         """
-        return self.auc(target_time)
+        return self.auc(target_time, method=method)
 
     def concordance_time_dependent(
         self,
@@ -2329,22 +2337,38 @@ class SingleTimeEvaluator:
             raise ValueError("pred_probs and event_times must have the same shape.")
         self._pred_probs = pred_probs
 
-    def auc(
-        self,
-    ) -> float:
-        """
-        Calculate the area under the ROC curve (AUC) score at a given time point from the predicted survival curve.
+    def auc(self, method: str = "Naive") -> float:
+        """Calculate cumulative/dynamic AUROC at this evaluator's target time.
 
-        Returns
-        -------
-        auc_score: float
-            The AUC score at the target time point.
+        Cases are observed events at or before the target. Controls are
+        observations after the target and censorings exactly at the target.
+        Earlier censorings are excluded.
+
+        Args:
+            method: "Naive" (default) or "IPCW", case-insensitive. IPCW requires
+                training outcomes, assumes independent censoring, and weights
+                cases by 1/G(event_time-) from reverse Kaplan-Meier. The target
+                must not exceed the maximum training follow-up time.
+
+        Returns:
+            AUROC at the target time.
+
+        Raises:
+            TypeError: If IPCW is requested without training outcomes.
+            ValueError: If inputs or the method are invalid, either class is
+                absent, or IPCW cannot be estimated at the target.
         """
+        if method.lower() == "ipcw":
+            self._error_trainset("IPCW AUROC")
+
         return auc(
             predict_probs=self._pred_probs,
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             target_time=self.target_time,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
         )
 
     def brier_score(self, IPCW_weighted: bool = True) -> float:

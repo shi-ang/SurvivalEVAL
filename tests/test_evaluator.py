@@ -488,10 +488,11 @@ def test_survival_evaluator_concordance_train_required_methods_need_training_dat
         evaluator.concordance(method=method)
 
 
-def test_auc_alias(evaluator_data):
+@pytest.mark.parametrize("method", ["Naive", "IPCW"])
+def test_auc_alias(evaluator_data, method: str):
     evaluator = evaluator_data["evaluator"]
-    auc = evaluator.auc(target_time=9.0)
-    auroc = evaluator.auroc(target_time=9.0)
+    auc = evaluator.auc(target_time=9.0, method=method)
+    auroc = evaluator.auroc(target_time=9.0, method=method)
     assert np.isclose(auc, auroc)
     assert 0.0 <= auc <= 1.0
 

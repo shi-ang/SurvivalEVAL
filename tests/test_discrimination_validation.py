@@ -57,7 +57,7 @@ def test_discrimination_rejects_invalid_evaluation_times(metric, time):
         _evaluate(metric, **{parameter: time})
 
 
-@pytest.mark.parametrize("metric", ["concordance", "time_dependent"])
+@pytest.mark.parametrize("metric", ["auc", "concordance", "time_dependent"])
 @pytest.mark.parametrize(
     "changes",
     [

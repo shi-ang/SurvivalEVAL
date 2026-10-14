@@ -89,7 +89,8 @@ def test_quantile_evaluator_accepts_list_quantile_levels():
     np.testing.assert_allclose(evaluator.pred_survs, [0.75, 0.5])
 
 
-def test_quantile_concordance_and_auc(quantile_evaluator):
+@pytest.mark.parametrize("auc_method", ["Naive", "IPCW"])
+def test_quantile_concordance_and_auc(quantile_evaluator, auc_method: str):
     evaluator = quantile_evaluator["evaluator"]
 
     c_harrell, concordant_h, total_h = evaluator.concordance(method="Harrell")
@@ -100,9 +101,9 @@ def test_quantile_concordance_and_auc(quantile_evaluator):
     assert 0.0 <= c_margin <= 1.0
     assert concordant_m <= total_m
 
-    auc = evaluator.auc(target_time=7.0)
+    auc = evaluator.auc(target_time=7.0, method=auc_method)
     assert 0.0 <= auc <= 1.0
-    assert np.isclose(auc, evaluator.auroc(target_time=7.0))
+    assert np.isclose(auc, evaluator.auroc(target_time=7.0, method=auc_method))
 
 
 def test_quantile_brier_metrics(quantile_evaluator):

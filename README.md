@@ -250,7 +250,8 @@ patient at one target time.
 
 | Metric Name | Description | Code | Paper Link |
 | --- | --- | --- | --- |
-| AUC/AUROC | Calculates ROC AUC after excluding samples censored before the target time. | `evl.auc(target_time=...)` or `evl.auroc(target_time=...)` | N/A |
+| Plain AUC/AUROC | Calculates ROC AUC after excluding samples censored before the target time. | `evl.auc(target_time=..., method="Naive")` or `evl.auroc(target_time=..., method="Naive")` | N/A |
+| IPCW AUC/AUROC | Weights observed cases by inverse censoring survival from the training outcomes. | `evl.auroc(target_time=..., method="IPCW")` | [Uno et al.](https://doi.org/10.1198/016214507000000149) |
 | Plain Brier score | Mean squared error between survival status and predicted survival probability without IPCW. | `evl.brier_score(target_time=..., IPCW_weighted=False)` | [Brier](https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOEPIT%3E2.0.CO;2) |
 | IPCW Brier score | Brier score with inverse-probability-of-censoring weights. | `evl.brier_score(target_time=..., IPCW_weighted=True)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
 | Uncensored HL calibration | Hosmer-Lemeshow calibration test on uncensored samples. | `evl.one_calibration(target_time=..., method="Uncensored")` | [Hosmer and Lemeshow](https://www.tandfonline.com/doi/abs/10.1080/03610928008827941) |
@@ -368,8 +369,10 @@ The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 
 For censoring survival, use `SingleEvent.KaplanMeier(times, event_indicators, reverse=True)`
 with the original event indicators (`1` = observed event, `0` = censored). Original events
-leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate and
-evaluate right-continuous `G(t)`, including the censoring update at time `t`.
+leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate.
+AUROC evaluates the left limit `G(t-)` to weight cases before the censoring update
+at their event time; other IPCW metrics evaluate right-continuous `G(t)`, including
+the censoring update at time `t`.
 
 ### Competing risks and multi-state models
 
