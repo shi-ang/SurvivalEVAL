@@ -4,11 +4,13 @@ from collections.abc import Callable
 
 import numpy as np
 
-from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert_event_data,
+    check_and_convert,
+)
 
 from .._concordance_utils import (
     _check_has_any_pairs,
-    _check_survival_event_data,
     _ConcordanceCounts,
     _count_directed_risk_pairs,
     _finalize_counts,
@@ -148,7 +150,7 @@ def _concordance_time_dependent(
     and returns a 1-D array of that sample's risks at those times. This lets
     the evaluator count pairs without allocating the dense risk matrix.
     """
-    event_times, event_indicators = _check_survival_event_data(
+    event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators
     )
     if not np.any(event_indicators):

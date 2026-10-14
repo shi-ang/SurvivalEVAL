@@ -240,7 +240,7 @@ def test_time_dependent_ipcw_uses_squared_anchor_weights():
     censoring_model = KaplanMeier(
         train_event_times, train_event_indicators, reverse=True
     )
-    censoring_survival = censoring_model.predict(event_times)
+    censoring_survival = censoring_model.predict(event_times, side="left")
     anchor_weights = 1 / np.square(censoring_survival)
     expected_total = 3 * anchor_weights[0] + 2 * anchor_weights[1] + anchor_weights[2]
 
@@ -309,7 +309,7 @@ def test_time_dependent_ipcw_tau_excludes_boundary_anchor_and_allows_later_candi
 def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final_time_ties(
     tied_training_event,
 ):
-    event_times = np.array([1.0, 2.0, 2.0])
+    event_times = np.array([1.0, 3.0, 3.0])
     event_indicators = np.array([1, 1, 1])
     risk_scores = np.array(
         [
@@ -336,9 +336,9 @@ def test_time_dependent_ipcw_ignores_zero_censoring_survival_for_discarded_final
 
     np.testing.assert_allclose(default_ties, (1.0, 2.0, 2.0))
     np.testing.assert_allclose(no_ties, (1.0, 2.0, 2.0))
-    with pytest.raises(ValueError, match="Censoring survival is zero"):
+    with pytest.raises(ValueError, match="Censoring survival"):
         concordance_time_dependent(**kwargs, ties="Time")
-    with pytest.raises(ValueError, match="Censoring survival is zero"):
+    with pytest.raises(ValueError, match="Censoring survival"):
         concordance_time_dependent(**kwargs, ties="All")
 
 

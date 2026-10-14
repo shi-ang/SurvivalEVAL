@@ -34,7 +34,7 @@ def test_ipcw_d_handles_degenerate_training_without_area_calculations(
             train_event_indicators=np.full(2, observed_training_events),
             method="IPCW-D",
         )
-    assert value == pytest.approx(1.5 if observed_training_events else 0.5)
+    assert value == pytest.approx(1.5)
 
 
 def test_ipcw_d_requires_training_data():
@@ -147,3 +147,49 @@ def test_ipcw_t_without_censored_test_samples():
         method="IPCW-T",
     )
     assert value == 2.0
+
+
+def test_ipcw_d_uses_original_event_times_before_loss_truncation() -> None:
+    times = np.array([2.0, 4.0, 6.0, 20.0])
+    events = np.array([1, 1, 1, 0])
+    predictions = np.array([1.0, 2.0, 4.0, 19.0])
+    train_times, train_events = np.array([2.0, 2.0, 4.0, 6.0]), np.array([1, 0, 0, 1])
+    for array in (times, events, predictions, train_times, train_events):
+        array.flags.writeable = False
+    # After loss truncation at 5, event errors are 1, 2, 1; weights remain 1, 3/2, 3.
+    assert mean_error(
+        predictions,
+        times,
+        events,
+        train_times,
+        train_events,
+        method="IPCW-D",
+        truncation_time=5.0,
+    ) == pytest.approx(7 / 3)
+
+
+def test_ipcw_d_rejects_no_observed_events() -> None:
+    with pytest.raises(ValueError, match="at least one observed event"):
+        mean_error(
+            np.array([1.0]),
+            np.array([2.0]),
+            np.array([0]),
+            np.array([2.0]),
+            np.array([1]),
+            method="IPCW-D",
+        )
+
+
+@pytest.mark.parametrize("invalid_training", [False, True])
+def test_ipcw_d_rejects_nonbinary_event_indicators(invalid_training: bool) -> None:
+    events = np.array([2 if not invalid_training else 1])
+    train_events = np.array([2 if invalid_training else 1])
+    with pytest.raises(ValueError, match="only 0 and 1"):
+        mean_error(
+            np.array([1.0]),
+            np.array([2.0]),
+            events,
+            np.array([2.0]),
+            train_events,
+            method="IPCW-D",
+        )

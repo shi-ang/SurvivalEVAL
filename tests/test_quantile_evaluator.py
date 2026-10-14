@@ -119,7 +119,13 @@ def test_quantile_brier_metrics(quantile_evaluator):
     assert brier_multi.shape == target_grid.shape
     assert np.all(np.isfinite(brier_multi))
 
-    ibs_ipcw = evaluator.integrated_brier_score(num_points=9, IPCW_weighted=True)
+    # The automatically generated grid exceeds the usable censoring tail.
+    with pytest.raises(ValueError, match="Censoring survival"):
+        evaluator.integrated_brier_score(num_points=9, IPCW_weighted=True)
+    ipcw_grid = np.linspace(0.0, np.quantile(evaluator.train_event_times, 0.9), 9)
+    ibs_ipcw = evaluator.integrated_brier_score(
+        target_times=ipcw_grid, IPCW_weighted=True
+    )
     ibs_naive = evaluator.integrated_brier_score(
         target_times=np.linspace(2.0, 14.0, 7), IPCW_weighted=False
     )

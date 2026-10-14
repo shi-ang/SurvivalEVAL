@@ -1,5 +1,7 @@
 """Counting, integration, and prediction helpers for nonparametric estimators."""
 
+from typing import Literal
+
 import numpy as np
 
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
@@ -80,14 +82,22 @@ def km_mean(times: np.ndarray, survival_probabilities: np.ndarray) -> float:
 
 
 def infer_survival_probabilities(
-    prediction_times, survival_times, survival_probabilities
-):
+    prediction_times: np.ndarray,
+    survival_times: np.ndarray,
+    survival_probabilities: np.ndarray,
+    *,
+    side: Literal["left", "right"] = "right",
+) -> np.ndarray:
     """Evaluate a step survival curve with a linear tail at finite times.
 
+    Left queries exclude an update exactly at the query time; right queries
+    include it. Both sides use the same linear tail after the final fitted time.
     Times before the first observation have survival 1. Positive infinity
     has survival 0, including when the fitted tail is flat.
     """
-    indices = np.searchsorted(survival_times, prediction_times, side="right") - 1
+    if side not in {"left", "right"}:
+        raise ValueError("side must be 'left' or 'right'.")
+    indices = np.searchsorted(survival_times, prediction_times, side=side) - 1
     # Index -1 denotes the pre-observation baseline, where survival is still 1.
     before_first = indices < 0
     indices = np.clip(indices, 0, survival_times.size - 1)

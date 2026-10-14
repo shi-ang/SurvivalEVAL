@@ -11,6 +11,15 @@ from sklearn.isotonic import isotonic_regression
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
+def _inverse_censoring_weights(probabilities: np.ndarray) -> np.ndarray:
+    """Invert finite positive censoring probabilities for contributing observations."""
+    if not np.all(np.isfinite(probabilities)) or np.any(probabilities <= 0):
+        raise ValueError(
+            "Censoring survival must be finite and positive at every contributing observation or horizon."
+        )
+    return np.reciprocal(np.asarray(probabilities, dtype=float))
+
+
 def _as_numpy_array(values: NumericArrayLike, input_name: str) -> np.ndarray:
     """Return a NumPy view of a supported array-like input when possible."""
     if isinstance(values, np.ndarray):
@@ -125,7 +134,21 @@ def check_and_convert_event_data(
     *,
     copy: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Convert event times and return validated binary indicators as booleans."""
+    """Validate and convert right-censored survival outcomes.
+
+    Args:
+        event_times: A 1D array of finite, non-negative observed times.
+        event_indicators: Matching binary indicators: 1 for events, 0 for censoring.
+        copy: Return independent arrays instead of reusing compatible inputs.
+
+    Returns:
+        Observed times and boolean event indicators. Compatible input arrays
+        are reused when copy is False; inputs are never modified.
+
+    Raises:
+        ValueError: If shapes differ, outcomes are not 1D, times are nonfinite
+            or negative, or indicators contain values other than 0 and 1.
+    """
     times = _as_continuous_array(event_times, copy=copy, input_name="event_times")
     indicators = _as_numpy_array(event_indicators, "event_indicators")
     _validate_numeric_array(indicators, "event_indicators")
@@ -138,6 +161,10 @@ def check_and_convert_event_data(
         indicators = indicators.copy()
 
     _check_matching_shapes((times, indicators), ("event_times", "event_indicators"))
+    if times.ndim != 1:
+        raise ValueError("Event times and indicators must be 1D arrays.")
+    if not np.all(np.isfinite(times)) or np.any(times < 0):
+        raise ValueError("Event times must be finite and non-negative.")
     return times, indicators
 
 

@@ -310,3 +310,39 @@ def test_nelson_aalen_rejects_negative_prediction_times():
 
     with pytest.raises(ValueError, match="non-negative"):
         estimator.predict(np.array([0.0, -1.0]))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_kaplan_meier_left_queries_preserve_shapes_and_linear_tail(
+    reverse: bool,
+) -> None:
+    model = KaplanMeier(
+        np.array([2.0, 2.0, 4.0, 6.0]), np.array([1, 0, 0, 1]), reverse=reverse
+    )
+    queries = np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 6.0], [7.0, 10.0, np.inf]])
+    queries.flags.writeable = False
+    left = model.predict(queries, side="left")
+    right = model.predict(queries)
+    expected = (
+        [[1.0, 1.0, 1.0], [2 / 3, 2 / 3, 1 / 3], [2 / 9, 0.0, 0.0]]
+        if reverse
+        else [[1.0, 1.0, 1.0], [3 / 4, 3 / 4, 3 / 4], [0.0, 0.0, 0.0]]
+    )
+    np.testing.assert_allclose(left, expected)
+    np.testing.assert_array_equal(left[2], right[2])
+    assert model.predict(2.0, side="left") == 1.0
+    assert isinstance(model.predict(2.0, side="left"), float)
+    assert model.predict(np.empty((0, 2)), side="left").shape == (0, 2)
+
+
+def test_reverse_kaplan_meier_left_limit_precedes_time_zero_update() -> None:
+    model = KaplanMeier(np.array([0.0, 0.0, 2.0]), np.array([1, 0, 1]), reverse=True)
+    assert model.predict(0.0, side="left") == 1.0
+    assert model.predict(0.0) == 0.5
+    assert model.predict(1.0, side="left") == 0.5
+
+
+def test_kaplan_meier_rejects_invalid_prediction_side() -> None:
+    model = KaplanMeier(np.array([1.0, 2.0]), np.array([1, 0]))
+    with pytest.raises(ValueError, match="side"):
+        model.predict(1.0, side="invalid")

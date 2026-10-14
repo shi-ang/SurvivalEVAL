@@ -210,8 +210,8 @@ def test_auc_rejects_absent_cases_or_controls(method: str, target: float) -> Non
         auc([0.8, 0.2], [1, 4], [1, 1], target, [1, 6], [1, 1], method)
 
 
-def test_ipcw_auc_rejects_target_beyond_training_follow_up() -> None:
-    with pytest.raises(ValueError, match="maximum training follow-up"):
+def test_ipcw_auc_rejects_nonpositive_extrapolated_censoring_survival() -> None:
+    with pytest.raises(ValueError, match="Censoring survival"):
         auc([0.8, 0.2], [1, 5], [1, 0], 3, [1, 2], [1, 0], "IPCW")
 
 

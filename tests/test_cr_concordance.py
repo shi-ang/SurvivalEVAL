@@ -6,7 +6,6 @@ from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def _direct_counts(risks, times, events, cause, weights, tau):
@@ -47,8 +46,16 @@ def test_matches_direct_pair_definitions(dtype, method, ties, tau):
     train_events = np.array([0, 1, 0, 7, 0, 2])
     weights = np.ones(times.shape)
     if method == "IPCW":
-        km = KaplanMeier(train_times, train_events > 0, reverse=True)
-        weights = 1 / km.predict(times)
+        # Independent reverse risk-set product, excluding each query's update.
+        for i, query in enumerate(times):
+            for time in np.unique(
+                train_times[(train_events == 0) & (train_times < query)]
+            ):
+                censorings = np.count_nonzero(
+                    (train_times == time) & (train_events == 0)
+                )
+                risk_set = np.count_nonzero(train_times > time) + censorings
+                weights[i] /= 1 - censorings / risk_set
     expected = _finalize_counts(
         _direct_counts(risks, times, events, 2, weights, tau), ties
     )
@@ -209,7 +216,7 @@ def test_unused_zero_censoring_survival_is_ignored():
 def test_final_anchor_with_earlier_competitor_requires_positive_censoring_survival():
     with pytest.raises(ValueError, match="Censoring survival"):
         concordance_cr_per_event(
-            [0.2, 0.8], [1, 3], [2, 1], [1, 3], [1, 0], method="IPCW"
+            [0.2, 0.8], [1, 4], [2, 1], [1, 3], [1, 0], method="IPCW"
         )
 
 
@@ -217,7 +224,7 @@ def test_final_anchor_with_earlier_competitor_requires_positive_censoring_surviv
 def test_zero_survival_for_ignored_final_selected_cause_time_ties(ties):
     kwargs = dict(
         predicted_risks=[3, 2, 1],
-        event_times=[1, 2, 2],
+        event_times=[1, 3, 3],
         event_indicators=[1, 1, 1],
         train_event_times=[1, 2],
         train_event_indicators=[1, 0],
@@ -486,5 +493,5 @@ def test_invalid_aggregate_inputs(name, value, message):
 def test_aggregate_does_not_hide_invalid_ipcw_probabilities():
     with pytest.raises(ValueError, match="Censoring survival"):
         concordance_cr(
-            [[0.2, 0.8], [0.8, 0.2]], [1, 3], [2, 1], [1, 3], [1, 0], method="IPCW"
+            [[0.2, 0.8], [0.8, 0.2]], [1, 4], [2, 1], [1, 3], [1, 0], method="IPCW"
         )

@@ -203,7 +203,11 @@ def test_pycox_concordance_and_brier(trained_pycox_evaluator):
 def test_pycox_integrated_scores(trained_pycox_evaluator):
     evaluator = trained_pycox_evaluator["evaluator"]
 
-    ibs = evaluator.integrated_brier_score(num_points=15, IPCW_weighted=True)
+    # The automatically generated grid exceeds the usable censoring tail.
+    with pytest.raises(ValueError, match="Censoring survival"):
+        evaluator.integrated_brier_score(num_points=15, IPCW_weighted=True)
+    ipcw_grid = np.linspace(0.0, np.quantile(evaluator.train_event_times, 0.9), 15)
+    ibs = evaluator.integrated_brier_score(target_times=ipcw_grid, IPCW_weighted=True)
     assert np.isfinite(ibs)
 
     mae_margin = evaluator.mae(method="Margin")

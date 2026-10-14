@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import InitVar, dataclass, field
+from typing import Literal
 
 import numpy as np
 from scipy.integrate import trapezoid
@@ -69,32 +70,43 @@ class KaplanMeier:
         self.cumulative_dens = 1 - self.survival_probabilities
         self.probability_dens = np.diff(np.append(self.cumulative_dens, 1))
 
-    def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
-        """
-        Predict right-continuous survival probabilities at the given times.
+    def predict(
+        self,
+        prediction_times: float | np.ndarray,
+        *,
+        side: Literal["left", "right"] = "right",
+    ) -> float | np.ndarray:
+        """Predict survival probabilities, optionally before each time's update.
 
-        At an observed time, include that time's update: reverse mode returns
-        ``G(t)``, not its left limit ``G(t-)``. Beyond the last observation,
-        retain the linear extrapolation used by ordinary mode.
-        Parameters
-        ----------
-        prediction_times: float | np.ndarray
-            Time(s) at which to predict the survival probabilities.
-        Returns
-        -------
-        probabilities: float | np.ndarray
-            Predicted survival probabilities at the given time(s).
+        Args:
+            prediction_times: Non-negative time(s) at which to predict survival.
+            side: "right" includes the update at an observed time; "left"
+                excludes it. In reverse mode these return G(t) and G(t-),
+                respectively. Both use the existing linear extrapolation beyond
+                the final fitted time, bounded below by zero.
+
+        Returns:
+            Survival probabilities with the same shape as prediction_times,
+            or a float for a scalar query. Before the first update, survival is 1.
+
+        Raises:
+            ValueError: If times are negative or NaN, or side is invalid.
         """
         prediction_times = np.asarray(prediction_times, dtype=float)
         original_shape = prediction_times.shape
         prediction_times = prediction_times.reshape(-1)
 
         # ensure the prediction times are all non-negative
-        if np.any(prediction_times < 0):
-            raise ValueError("Prediction times must be non-negative.")
+        if np.any(prediction_times < 0) or np.any(np.isnan(prediction_times)):
+            raise ValueError(
+                "Prediction times must be non-negative and must not contain NaN."
+            )
 
         probs = infer_survival_probabilities(
-            prediction_times, self.survival_times, self.survival_probabilities
+            prediction_times,
+            self.survival_times,
+            self.survival_probabilities,
+            side=side,
         )
 
         probabilities = probs.reshape(original_shape)

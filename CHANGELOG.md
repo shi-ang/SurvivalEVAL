@@ -39,6 +39,25 @@
    shared curve diagnostics in `SingleTime/util.py`. Export
    public metrics from the packages. Replace the previous
    `DistributionCalibration` and `SingleTimeCalibration` module paths.
+9. Remove the standalone `single_brier_score` function and package export. Use
+   `brier_multiple_points` with a one-column prediction matrix and a one-element
+   target-time array. Evaluator `brier_score` methods still return a float and
+   preserve their default target times and uncensored-test shortcuts.
+10. Consolidate right-censored outcome validation in `check_and_convert_event_data`.
+    Require matching 1D outcomes, finite non-negative observed times, and binary
+    event indicators across evaluators and metrics; remove the redundant wrapper.
+11. Use explicit left-limit censoring survival across AUROC, Brier/IBS,
+    static and time-dependent IPCW concordance, competing-risk concordance, and
+    IPCW-D errors. Add `KaplanMeier.predict(..., side="left")`; default prediction
+    stays right-continuous and both modes retain the existing linear tail.
+12. Keep IPCW as the default for right-censored Brier scores and IBS, retaining
+    automatic plain scoring for fully observed test sets in evaluator methods.
+    Preserve uncensored MAE/MSE/RMSE scoring for fully observed test sets across all
+    evaluator error methods. Preserve Harrell and Antolini concordance shortcuts
+    for fully observed test sets. IPCW AUROC requires training outcomes even for
+    uncensored test sets. Reject nonpositive or nonfinite contributing censoring
+    probabilities instead of dropping their contributions. Allow AUROC beyond
+    training follow-up when its extrapolated censoring probabilities are positive.
 
 ## 2026-10-08: Version 0.8.7
 

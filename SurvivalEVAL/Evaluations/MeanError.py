@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 from tqdm import trange
 
-from SurvivalEVAL.Evaluations.util import predict_rmst
+from SurvivalEVAL.Evaluations.util import (
+    _inverse_censoring_weights,
+    check_and_convert_event_data,
+    predict_rmst,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     KaplanMeierArea,
@@ -46,6 +50,9 @@ def mean_error(
     method: string, default: "Hinge"
         Method of handling censorship.
         Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
+        IPCW-D weights observed-event errors by 1/G(event_time-) from reverse KM
+        fitted on training outcomes, with linear extrapolation beyond follow-up.
+        Nonpositive or nonfinite contributing probabilities raise ValueError.
     weighted: boolean, default: True
         Whether to use weighting scheme for MAE.
         If true, each censored sample has confidence weight
@@ -61,13 +68,17 @@ def mean_error(
     -------
     Value for the calculated mean error.
     """
-    event_indicators = event_indicators.astype(bool, copy=False)
-    n_test = event_times.size
-    if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool, copy=False)
-
     error_type = error_type.lower()
     method = method.lower()
+    if method == "ipcw-d":
+        event_times, event_indicators = check_and_convert_event_data(
+            event_times, event_indicators
+        )
+    else:
+        event_indicators = event_indicators.astype(bool, copy=False)
+        if train_event_indicators is not None:
+            train_event_indicators = train_event_indicators.astype(bool, copy=False)
+    n_test = event_times.size
 
     if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
         if train_event_times is None or train_event_indicators is None:
@@ -197,10 +208,15 @@ def mean_error(
     elif method == "ipcw-d":
         # This is the IPCW-D method from https://arxiv.org/pdf/2306.01196.pdf
         # Using IPCW weights to transfer the censored subjects to uncensored subjects
-        ipc_model = KaplanMeier(train_event_times, train_event_indicators, reverse=True)
-        ipc_pred = ipc_model.predict(event_times)
-        # Catch if denominator is 0. This happens when the time is later than the last event time in trainset.
-        ipc_pred[ipc_pred == 0] = np.inf
+        train_times, train_events = check_and_convert_event_data(
+            train_event_times, train_event_indicators
+        )
+        if not np.any(event_indicators):
+            raise ValueError("IPCW-D requires at least one observed event.")
+        ipc_model = KaplanMeier(train_times, train_events, reverse=True)
+        event_weights = _inverse_censoring_weights(
+            ipc_model.predict(event_times[event_indicators], side="left")
+        )
 
         if truncation_time:
             event_times = np.clip(event_times, a_max=truncation_time, a_min=None)
@@ -212,9 +228,7 @@ def mean_error(
             errors = np.log(event_times) - np.log(predicted_times)
         else:
             errors = event_times - predicted_times
-        return (
-            error_func(errors)[event_indicators] / ipc_pred[event_indicators]
-        ).mean()
+        return (error_func(errors)[event_indicators] * event_weights).mean()
     elif method == "pseudo_obs":
         # Calculate the best guess time (surrogate time) by the contribution of the censored subjects to KM curve
         n_train = train_event_times.size

@@ -4,7 +4,6 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points,
     brier_multiple_points_ic,
     brier_score_ic,
-    single_brier_score,
 )
 from SurvivalEVAL.Evaluations.Calibration import (
     aj_calibration,
@@ -63,7 +62,6 @@ __all__ = [
     "auc",
     "auprc_right_censor",
     "auprc_ic",
-    "single_brier_score",
     "brier_score_ic",
     "brier_multiple_points",
     "brier_multiple_points_ic",

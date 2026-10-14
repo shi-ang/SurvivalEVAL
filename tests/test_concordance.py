@@ -462,7 +462,8 @@ def test_uno_concordance_uses_censoring_distribution_ipcw():
         method="IPCW",
     )
 
-    expected = (43.0 / 75.0, 43.0 / 9.0, 25.0 / 3.0)
+    # G(1-)=G(2-)=1 and G(3-)=3/4. The anchor at 4 is unused.
+    expected = (43.0 / 61.0, 43.0 / 9.0, 61.0 / 9.0)
     np.testing.assert_allclose(actual, expected)
     np.testing.assert_allclose(alias, expected)
 
@@ -527,7 +528,7 @@ def test_uno_tau_ignores_zero_censoring_survival_for_excluded_anchors(
     tied_training_event,
 ):
     predicted_times = np.array([1.0, 3.0, 4.0])
-    event_times = np.array([1.0, 3.0, 4.0])
+    event_times = np.array([1.0, 4.0, 5.0])
     event_indicators = np.array([1, 1, 1])
     train_event_times = np.array([1.0, 3.0, 3.0] if tied_training_event else [1, 3])
     train_event_indicators = np.array([1, 1, 0] if tied_training_event else [1, 0])
@@ -578,7 +579,7 @@ def test_uno_ignores_zero_censoring_survival_for_non_contributing_final_anchor()
 @pytest.mark.parametrize("method", ["Uno", "IPCW"])
 def test_uno_ignores_zero_censoring_survival_for_discarded_final_time_ties(method):
     predicted_times = np.array([1.0, 2.0, 3.0])
-    event_times = np.array([1.0, 2.0, 2.0])
+    event_times = np.array([1.0, 3.0, 3.0])
     event_indicators = np.array([1, 1, 1])
     train_event_times = np.array([1.0, 2.0])
     train_event_indicators = np.array([1, 0])

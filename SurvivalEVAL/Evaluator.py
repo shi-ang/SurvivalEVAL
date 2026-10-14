@@ -12,10 +12,7 @@ from lifelines.statistics import logrank_test
 from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
-from SurvivalEVAL.Evaluations.BrierScore import (
-    brier_multiple_points,
-    single_brier_score,
-)
+from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points
 from SurvivalEVAL.Evaluations.Calibration import (
     d_calibration,
     integrated_calibration_index,
@@ -792,7 +789,6 @@ class SurvivalEvaluator:
         num_total_pairs: float
             The number of total pairs.
         """
-        # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
         method = method.lower()
         if self._NO_CENSOR:
             method = "harrell"
@@ -939,7 +935,6 @@ class SurvivalEvaluator:
         risk matrix is constructed. If all event times are distinct, counting
         still has quadratic worst-case complexity.
         """
-        # With fully observed outcomes, Antolini's comparable-pair method is sufficient.
         risks = risks.lower()
 
         if self._NO_CENSOR:
@@ -982,28 +977,16 @@ class SurvivalEvaluator:
         :return: float
             The Brier score at the target time point.
         """
-        if self._NO_CENSOR:
-            IPCW_weighted = False
-
-        if IPCW_weighted:
-            self._error_trainset("IPCW-weighted Brier score (BS)")
-
         if target_time is None:
             time_arrays = [self.event_times]
             if self.train_event_times is not None:
                 time_arrays.append(self.train_event_times)
             target_time = np.quantile(np.concatenate(time_arrays), 0.5)
 
-        predict_probs = self.predict_probability_from_curve(target_time)
-
-        return single_brier_score(
-            preds=predict_probs,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            target_time=target_time,
-            ipcw=IPCW_weighted,
+        return float(
+            self.brier_score_multiple_points(np.asarray([target_time]), IPCW_weighted)[
+                0
+            ]
         )
 
     def brier_score_multiple_points(
@@ -1026,7 +1009,7 @@ class SurvivalEvaluator:
         brier_scores: np.ndarray
             Values of multiple Brier scores, in the same order as `target_times`.
         """
-        # Check if there is no censored instance, if so, naive Brier score is applied
+        # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
             IPCW_weighted = False
 
@@ -1078,7 +1061,7 @@ class SurvivalEvaluator:
             responsible for making sure they lie within the support of the model.
 
         IPCW_weighted: bool, default = True
-            Whether to use IPCW weighting for the Brier score.
+            Whether to use IPCW weighting.
 
         integration_method: str, default: "trapz"
             Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
@@ -1093,7 +1076,7 @@ class SurvivalEvaluator:
         result: tuple[float, tuple[plt.Figure, plt.Axes]]
             When `draw_figure` is True, returns `(ibs, (fig, ax))`.
         """
-        # Check if there is no censored instance, if so, naive Brier score is applied
+        # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
             IPCW_weighted = False
 
@@ -2060,7 +2043,6 @@ class PointEvaluator:
         total_pairs: float
             The total number of comparable pairs considered in the concordance calculation.
         """
-        # With fully observed outcomes, Harrell's comparable-pair method is sufficient.
         method = method.lower()
         if self._NO_CENSOR:
             method = "harrell"
@@ -2385,20 +2367,22 @@ class SingleTimeEvaluator:
         brier_score: float
             The Brier score at the target time point.
         """
-        # Check if there is no censored instance, if so, naive Brier score is applied
+        # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
             IPCW_weighted = False
 
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Brier score (BS)")
-        return single_brier_score(
-            preds=self._pred_probs,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            target_time=self.target_time,
-            ipcw=IPCW_weighted,
+        return float(
+            brier_multiple_points(
+                pred_mat=self._pred_probs[:, None],
+                event_times=self.event_times,
+                event_indicators=self.event_indicators,
+                train_event_times=self.train_event_times,
+                train_event_indicators=self.train_event_indicators,
+                target_times=np.asarray([self.target_time]),
+                ipcw=IPCW_weighted,
+            )[0]
         )
 
     def one_calibration(

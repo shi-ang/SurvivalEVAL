@@ -534,12 +534,17 @@ def test_default_brier_score_without_training_data():
         event_indicators=np.ones(event_times.shape[0]),
     )
 
-    assert np.isfinite(
-        censored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
-    )
-    assert np.isfinite(uncensored_evaluator.brier_score(target_time=None))
+    for evaluator in (censored_evaluator, uncensored_evaluator):
+        assert np.isfinite(evaluator.brier_score(target_time=None, IPCW_weighted=False))
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        censored_evaluator.brier_score(target_time=None)
     with pytest.raises(TypeError, match="Train set information is missing"):
         censored_evaluator.brier_score(target_time=None, IPCW_weighted=True)
+    plain = uncensored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
+    assert uncensored_evaluator.brier_score(target_time=None) == pytest.approx(plain)
+    assert uncensored_evaluator.brier_score(
+        target_time=None, IPCW_weighted=True
+    ) == pytest.approx(plain)
 
 
 def test_integrated_brier_score(evaluator_data):

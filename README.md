@@ -370,9 +370,9 @@ The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
 For censoring survival, use `SingleEvent.KaplanMeier(times, event_indicators, reverse=True)`
 with the original event indicators (`1` = observed event, `0` = censored). Original events
 leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate.
-AUROC evaluates the left limit `G(t-)` to weight cases before the censoring update
-at their event time; other IPCW metrics evaluate right-continuous `G(t)`, including
-the censoring update at time `t`.
+`predict(times)` returns right-continuous `G(t)`; `predict(times, side="left")`
+returns `G(t-)`, before that time's censoring update. Fitting the corrected risk
+sets and choosing a left limit are separate operations.
 
 ### Competing risks and multi-state models
 

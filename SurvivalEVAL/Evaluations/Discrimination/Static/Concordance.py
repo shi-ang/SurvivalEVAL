@@ -4,7 +4,11 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import (
+    _inverse_censoring_weights,
+    check_and_convert,
+    check_and_convert_event_data,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     KaplanMeierArea,
@@ -12,7 +16,6 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
 
 from .._concordance_utils import (
     _check_has_any_pairs,
-    _check_survival_event_data,
     _ConcordanceCounts,
     _count_directed_risk_pairs,
     _FenwickTree,
@@ -64,7 +67,9 @@ def concordance(
         with samples whose observed event/censoring time is greater than t_i.
         "Naive": alias of "Harrell".
         "Uno": Harrell-style comparable pairs weighted by inverse probability
-        of censoring weights from the training data.
+        of censoring weights from the training data, using 1/G(anchor_time-)^2.
+        Reverse KM retains its linear tail beyond training follow-up; required
+        censoring probabilities must be finite and positive.
         "IPCW": alias of "Uno".
         "Margin": the pairs are constructed between all samples. A best-guess
         time for the censored samples will be calculated and used to construct
@@ -93,7 +98,7 @@ def concordance(
         The number of total pairs.
     """
     predicted_times = check_and_convert(predicted_times)
-    event_times, event_indicators = _check_survival_event_data(
+    event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators
     )
     if predicted_times.ndim != 1 or predicted_times.shape != event_times.shape:
@@ -133,7 +138,7 @@ def concordance(
             error = "If 'Margin' is chosen, training set information must be provided."
             raise ValueError(error)
 
-        train_event_times, train_event_indicators = _check_survival_event_data(
+        train_event_times, train_event_indicators = check_and_convert_event_data(
             train_event_times, train_event_indicators
         )
 
@@ -201,8 +206,8 @@ def concordance_cr_per_event(
         the censoring distribution; competing events are not censorings.
     method : {"Naive", "IPCW"}, default="Naive"
         Naive uses unit pair weights. IPCW uses reverse Kaplan-Meier
-        censoring survival G from the training data: weight 1/G(T_i)^2 for
-        type A pairs and 1/(G(T_i) G(T_j)) for type B pairs.
+        censoring survival G from the training data: weight 1/G(T_i-)^2 for
+        type A pairs and 1/(G(T_i-) G(T_j-)) for type B pairs.
     ties : {"None", "Time", "Risk", "All"}, default="Risk"
         Same policy as ``concordance``. Risk ties (absolute tolerance 1e-8)
         receive half credit for Risk/All and are excluded otherwise. Same-time
@@ -239,9 +244,9 @@ def concordance_cr_per_event(
     ties according to SurvivalEVAL's existing convention.
 
     IPCW assumes independent censoring for the marginal censoring estimator.
-    As in ``concordance``, evaluate right-continuous G(t) with the events-first
-    convention for training ties. Non-positive G at a contributing observation
-    raises ValueError; excluded anchors and unused comparators do not require G.
+    As in ``concordance``, evaluate left-limit G(t-) with the events-first
+    convention for training ties, retaining linear tail extrapolation beyond follow-up.
+    Nonpositive or nonfinite G at a contributing observation raises ValueError; excluded anchors and unused comparators do not require G.
     Counting takes O(n log n) time and O(n) memory without constructing pairs.
 
     References
@@ -389,7 +394,7 @@ def _cr_censoring_survival(
     train_event_indicators: np.ndarray | None,
     method: str,
 ) -> np.ndarray | None:
-    """Validate the method and return G(t) for IPCW, or None for Naive.
+    """Validate the method and return G(t-) for IPCW, or None for Naive.
 
     Fit reverse Kaplan-Meier on validated training outcomes, treating all
     positive cause labels as observed events. Return censoring survival at
@@ -405,7 +410,9 @@ def _cr_censoring_survival(
     train_times, train_events = _check_cr_concordance_event_data(
         train_event_times, train_event_indicators
     )
-    return KaplanMeier(train_times, train_events > 0, reverse=True).predict(event_times)
+    return KaplanMeier(train_times, train_events > 0, reverse=True).predict(
+        event_times, side="left"
+    )
 
 
 def _check_cr_concordance_event_data(
@@ -449,9 +456,9 @@ def _competing_risk_counts(
     event_of_interest : int
         Selected positive cause label.
     censoring_survival : ndarray, shape (n_samples,), optional
-        Marginal censoring survival G(t) at observed times. None uses unit weights.
+        Marginal censoring survival G(t-) at observed times. None uses unit weights.
     ties : str, default="risk"
-        Normalized tie policy; controls which observations need positive G(t).
+        Normalized tie policy; controls which observations need positive G(t-).
     tau : float, optional
         Strict truncation of selected-cause anchor times.
 
@@ -486,11 +493,7 @@ def _competing_risk_counts(
         needed = contributing.copy()
         if np.any(contributing):
             needed |= competing & (event_times < event_times[contributing].max())
-        if np.any(censoring_survival[needed] <= 0):
-            raise ValueError(
-                "Censoring survival is zero at a contributing observation; choose a smaller tau."
-            )
-        sample_weights[needed] = 1 / censoring_survival[needed]
+        sample_weights[needed] = _inverse_censoring_weights(censoring_survival[needed])
 
     counts = _right_censored_risk_counts(
         selected,

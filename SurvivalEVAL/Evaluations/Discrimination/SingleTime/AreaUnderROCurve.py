@@ -3,10 +3,13 @@ from __future__ import annotations
 import numpy as np
 from sklearn.metrics import roc_auc_score
 
-from SurvivalEVAL.Evaluations.util import check_and_convert, validate_time_point
+from SurvivalEVAL.Evaluations.util import (
+    _inverse_censoring_weights,
+    check_and_convert,
+    check_and_convert_event_data,
+    validate_time_point,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
-
-from .._concordance_utils import _check_survival_event_data
 
 
 def auc(
@@ -36,23 +39,17 @@ def auc(
         method: "Naive" (default) or "IPCW", case-insensitive. IPCW assumes
             independent censoring and fits reverse Kaplan-Meier on the training
             outcomes. Cases receive weights 1/G(event_time-), using the left
-            limit to respect events-first ordering. The common control weight
-            1/G(target_time-) cancels, so controls receive unit weights.
+            limit to respect events-first ordering.
 
     Returns:
         AUROC at the target time, with half credit for exactly tied predictions.
-
-    Raises:
-        ValueError: If inputs or the method are invalid, either class is absent,
-            IPCW training outcomes are missing, the target exceeds training
-            follow-up, or censoring survival is nonpositive.
     """
     method = method.lower()
     if method not in {"naive", "ipcw"}:
         raise ValueError("method must be 'Naive' or 'IPCW'.")
 
     predict_probs = check_and_convert(predict_probs)
-    event_times, event_indicators = _check_survival_event_data(
+    event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators
     )
     if predict_probs.ndim != 1 or predict_probs.shape != event_times.shape:
@@ -83,29 +80,15 @@ def auc(
             raise ValueError(
                 "Training event times and indicators are required for IPCW AUROC."
             )
-        train_times, train_events = _check_survival_event_data(
+        train_times, train_events = check_and_convert_event_data(
             train_event_times, train_event_indicators
         )
-        if target_time > train_times.max():
-            raise ValueError(
-                "target_time must not exceed the maximum training follow-up time for IPCW AUROC."
-            )
-
         censoring_model = KaplanMeier(train_times, train_events, reverse=True)
-        # Query only case times and the target, before each time's censoring update.
-        # The prepended baseline handles queries before the first update, including zero.
-        indices = np.searchsorted(
-            censoring_model.survival_times,
-            np.r_[event_times[cases], target_time],
-            side="left",
+        censoring_weights = _inverse_censoring_weights(
+            censoring_model.predict(np.r_[event_times[cases], target_time], side="left")
         )
-        censoring_survival = np.r_[1.0, censoring_model.survival_probabilities][indices]
-        if not np.all(censoring_survival > 0):
-            raise ValueError(
-                "Censoring survival is nonpositive; choose a smaller target_time for IPCW AUROC."
-            )
         sample_weight = np.ones(binary_status.shape, dtype=float)
-        sample_weight[binary_status] = 1 / censoring_survival[:-1]
+        sample_weight[binary_status] = censoring_weights[:-1]
 
     return float(
         roc_auc_score(

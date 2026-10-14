@@ -190,6 +190,39 @@ def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
     np.testing.assert_allclose(aligned_times, expected_times)
 
 
+@pytest.mark.parametrize(
+    "times, indicators, message",
+    [
+        ([[1.0, 2.0]], [[1, 0]], "1D"),
+        ([-1.0, 2.0], [1, 0], "non-negative"),
+        ([1.0, np.inf], [1, 0], "finite"),
+        ([1.0, -np.inf], [1, 0], "finite"),
+        ([1.0, np.nan], [1, 0], "null values"),
+    ],
+)
+def test_check_and_convert_event_data_validates_observed_times(
+    times, indicators, message
+):
+    with pytest.raises(ValueError, match=message):
+        check_and_convert_event_data(times, indicators)
+
+
+def test_check_and_convert_event_data_copies_readonly_outcomes():
+    times = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    indicators = np.array([True, False, True])
+    times.flags.writeable = False
+    indicators.flags.writeable = False
+    converted_times, converted_indicators = check_and_convert_event_data(
+        times, indicators, copy=True
+    )
+    np.testing.assert_array_equal(converted_times, times)
+    np.testing.assert_array_equal(converted_indicators, indicators)
+    assert not np.shares_memory(converted_times, times)
+    assert not np.shares_memory(converted_indicators, indicators)
+    assert not times.flags.writeable
+    assert not indicators.flags.writeable
+
+
 def test_align_curve_and_time_coordinates_accepts_external_sample_count():
     curves, times = align_curve_and_time_coordinates(
         curves=np.array([1.0, 0.5, 0.0]),

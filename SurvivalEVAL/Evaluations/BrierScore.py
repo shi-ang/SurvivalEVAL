@@ -5,6 +5,12 @@ import pandas as pd
 from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric
+from SurvivalEVAL.Evaluations.util import (
+    _inverse_censoring_weights,
+    check_and_convert,
+    check_and_convert_event_data,
+    validate_time_points,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
@@ -35,103 +41,6 @@ def _predict_survival_at_observed_times(
             .diagonal()
         )
     return probabilities
-
-
-def single_brier_score(
-    preds: np.ndarray,
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-    train_event_times: np.ndarray,
-    train_event_indicators: np.ndarray,
-    target_time: float | None = None,
-    ipcw: bool = True,
-) -> float:
-    """
-    Calculate the Brier score at a specific time.
-
-    Parameters
-    ----------
-    preds: np.ndarray, shape = (n_samples, )
-        Estimated survival probabilities at the specific time for the testing samples.
-    event_times: np.ndarray, shape = (n_samples, )
-        Actual event/censor time for the testing samples.
-    event_indicators: np.ndarray, shape = (n_samples, )
-        Binary event indicators for the testing samples: 1 denotes an observed
-        event and 0 denotes a censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples, )
-        Actual event/censor time for the training samples.
-    train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary event indicators for the training samples: 1 denotes an observed
-        event and 0 denotes a censored observation.
-    target_time: float, default: None
-        The specific time point for which to estimate the Brier score.
-    ipcw: bool, default: True
-        Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
-
-    Returns
-    -------
-    brier_score: float
-        Value of the brier score.
-    """
-    if target_time is None:
-        target_time = np.median(event_times)
-
-    event_indicators = event_indicators.astype(bool, copy=False)
-    event_before_or_at_target = (event_times <= target_time) & event_indicators
-    event_free_at_target = (event_times > target_time) | (
-        (event_times == target_time) & ~event_indicators
-    )
-
-    if ipcw:
-        train_event_indicators = train_event_indicators.astype(bool, copy=False)
-        ipc_model = KaplanMeier(train_event_times, train_event_indicators, reverse=True)
-
-        ipc_pred = ipc_model.predict(event_times)
-        # Catch if denominator is 0.
-        ipc_pred[ipc_pred == 0] = np.inf
-        # Category one calculates IPCW weight at observed time point.
-        # Category one is individuals with event time lower than the time of interest and were NOT censored.
-        weight_cat1 = event_before_or_at_target / ipc_pred
-        # Defensively discard any undefined IPCW weights.
-        weight_cat1[np.isnan(weight_cat1)] = 0
-        # Category 2 is individuals whose time was greater than the time of interest (singleBrierTime)
-        # contain both censored and uncensored individuals.
-        ipc_target_pred = ipc_model.predict(target_time)
-        if ipc_target_pred == 0:
-            ipc_target_pred = np.inf
-        weight_cat2 = event_free_at_target / ipc_target_pred
-        # Defensively discard any undefined IPCW weights.
-        weight_cat2[np.isnan(weight_cat2)] = 0
-    else:
-        weight_cat1 = event_before_or_at_target
-        weight_cat2 = event_free_at_target
-
-    sample_errors = np.square(preds) * weight_cat1 + np.square(1 - preds) * weight_cat2
-    b_score = float(np.mean(sample_errors, dtype=float))
-    ###########################
-    # Here we are ordering event times and then using predict with level.chaos = 1 which returns
-    # predictions ordered by time.
-    # This is from Haider's code in R, but I feel it doesn't need to be ordered by time.
-    # Refer above few lines for the justified code
-    ###########################
-    # order_of_times = np.argsort(event_times)
-    # # Defensively discard any undefined IPCW weights.
-    # weight_cat1 = ((event_times[order_of_times] <= target_time) & event_indicators[order_of_times]) /\
-    #               ipc_model.predict(event_times[order_of_times])
-    # weight_cat1[np.isnan(weight_cat1)] = 0
-    # weight_cat2 = (event_times[order_of_times] > target_time) / ipc_model.predict(target_time)
-    # weight_cat2[np.isnan(weight_cat2)] = 0
-    #
-    # survival_curves_ordered = survival_curves[order_of_times, :]
-    # predict_probs = []
-    # for i in range(survival_curves_ordered.shape[0]):
-    #     predict_prob = predict_prob_from_curve(survival_curves_ordered[i, :], time_coordinates,
-    #                                            event_times[order_of_times][i])
-    #     predict_probs.append(predict_prob)
-    # predict_probs = np.array(predict_probs)
-    #
-    # b_score = np.mean(np.square(predict_probs) * weight_cat1 + np.square(1 - predict_probs) * weight_cat2)
-    return b_score
 
 
 def brier_score_ic(
@@ -327,8 +236,7 @@ def brier_multiple_points(
     target_times: np.ndarray,
     ipcw: bool = True,
 ) -> np.ndarray:
-    """
-    Calculate multiple Brier scores at multiple specific times.
+    """Calculate plain or IPCW Brier scores at multiple evaluation times.
 
     Parameters
     ----------
@@ -352,24 +260,24 @@ def brier_multiple_points(
     Returns
     -------
     brier_scores: np.ndarray, shape = (n_time_points, )
-        Values of multiple Brier scores.
+        Values of multiple Brier scores in target_times order.
     """
-    if target_times.ndim != 1:
-        error = "'time_grids' is not a one-dimensional array."
-        raise TypeError(error)
-
-    if event_times.ndim != 1:
-        raise ValueError("event_times must be one-dimensional.")
-
-    n_samples = event_times.shape[0]
-    n_times = target_times.shape[0]
+    pred_mat = check_and_convert(pred_mat)
+    event_times, event_indicators = check_and_convert_event_data(
+        event_times, event_indicators
+    )
+    target_times = validate_time_points(target_times, input_name="target_times")
+    if not np.all(np.isfinite(target_times)):
+        raise ValueError("target_times must be finite.")
+    n_samples = event_times.size
+    n_times = target_times.size
     if pred_mat.shape != (n_samples, n_times):
         raise ValueError(
             "pred_mat must have shape (n_samples, n_time_points) = "
             f"({n_samples}, {n_times}), got {pred_mat.shape}"
         )
-    if event_indicators.shape != (n_samples,):
-        raise ValueError("event_times and event_indicators must have the same length.")
+    if not np.all(np.isfinite(pred_mat)) or np.any((pred_mat < 0) | (pred_mat > 1)):
+        raise ValueError("pred_mat must contain finite probabilities in [0, 1].")
     if ipcw and (train_event_times is None or train_event_indicators is None):
         raise ValueError(
             "Training event times and indicators must be provided for IPCW weighting."
@@ -377,29 +285,13 @@ def brier_multiple_points(
 
     target_times_row = target_times[None, :]
     event_times_column = event_times[:, None]
-    event_indicators_column = event_indicators.astype(bool, copy=False)[:, None]
+    event_indicators_column = event_indicators[:, None]
 
     if ipcw:
-        ipc_model = KaplanMeier(
-            train_event_times,
-            train_event_indicators.astype(bool, copy=False),
-            reverse=True,
+        train_times, train_events = check_and_convert_event_data(
+            train_event_times, train_event_indicators
         )
-
-        # G(T_i) is constant across target times, while G(t) is constant across
-        # samples. Keep both as vectors and rely on broadcasting.
-        event_censoring_survival = np.asarray(
-            ipc_model.predict(event_times), dtype=float
-        )
-        target_censoring_survival = np.asarray(
-            ipc_model.predict(target_times), dtype=float
-        )
-        event_censoring_survival[
-            (event_censoring_survival == 0) | np.isnan(event_censoring_survival)
-        ] = np.inf
-        target_censoring_survival[
-            (target_censoring_survival == 0) | np.isnan(target_censoring_survival)
-        ] = np.inf
+        ipc_model = KaplanMeier(train_times, train_events, reverse=True)
 
     # Accumulate the two mutually exclusive Brier components sequentially so
     # only one dense floating-point error matrix is live at a time.
@@ -408,7 +300,12 @@ def brier_multiple_points(
     component_error = np.square(pred_mat, dtype=float)
     component_error *= event_before_or_at_target
     if ipcw:
-        component_error /= event_censoring_survival[:, None]
+        contributing_events = event_before_or_at_target.any(axis=1)
+        event_weights = np.ones(n_samples, dtype=float)
+        event_weights[contributing_events] = _inverse_censoring_weights(
+            ipc_model.predict(event_times[contributing_events], side="left")
+        )
+        component_error *= event_weights[:, None]
     brier_sums = component_error.sum(axis=0)
     del component_error, event_before_or_at_target
 
@@ -421,7 +318,12 @@ def brier_multiple_points(
     np.square(component_error, out=component_error)
     component_error *= event_free_at_target
     if ipcw:
-        component_error /= target_censoring_survival[None, :]
+        contributing_targets = event_free_at_target.any(axis=0)
+        target_weights = np.ones(n_times, dtype=float)
+        target_weights[contributing_targets] = _inverse_censoring_weights(
+            ipc_model.predict(target_times[contributing_targets], side="left")
+        )
+        component_error *= target_weights[None, :]
     brier_sums += component_error.sum(axis=0)
 
     return brier_sums / n_samples
