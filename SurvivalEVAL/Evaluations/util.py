@@ -979,159 +979,97 @@ def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> f
     return probability
 
 
-def _prepend_origin(
-    pred_survs: np.ndarray, time_coordinates: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Prepend survival probability 1 and time 0 while preserving input ranks.
-
-    Supports the shape combinations accepted by `zero_padding`: a shared 1-D
-    curve or 2-D sample-by-time curves, paired with a 1-D shared time grid or
-    2-D sample-specific time grids.
-    """
-    # Preserve whether the survival input represents one curve or many rows.
-    if pred_survs.ndim == 1:
-        padded_survs = np.concatenate((np.ones(1, dtype=pred_survs.dtype), pred_survs))
-    elif pred_survs.ndim == 2:
-        padded_survs = np.concatenate(
-            (np.ones((pred_survs.shape[0], 1), dtype=pred_survs.dtype), pred_survs),
-            axis=1,
-        )
-    else:
-        error = (
-            "Predicted survival curves must be a 1D or 2D array, "
-            f"got {pred_survs.ndim} instead"
-        )
-        raise TypeError(error)
-
-    # Preserve whether time coordinates are shared or sample-specific.
-    if time_coordinates.ndim == 1:
-        padded_times = np.concatenate(
-            (np.zeros(1, dtype=time_coordinates.dtype), time_coordinates)
-        )
-    elif time_coordinates.ndim == 2:
-        padded_times = np.concatenate(
-            (
-                np.zeros((time_coordinates.shape[0], 1), dtype=time_coordinates.dtype),
-                time_coordinates,
-            ),
-            axis=1,
-        )
-    else:
-        error = (
-            "Time coordinates must be a 1D or 2D array, "
-            f"got {time_coordinates.ndim} instead"
-        )
-        raise TypeError(error)
-
-    return padded_survs, padded_times
-
-
 def zero_padding(
-    pred_survs: np.ndarray, time_coordinates: np.ndarray
+    pred_curves: np.ndarray,
+    time_coordinates: np.ndarray,
+    *,
+    initial_value: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Prepend a time-zero survival anchor when a curve grid does not start at 0.
-
-    This helper normalizes survival curve grids to include the conventional
-    origin point ``(time=0, survival=1)``. When the first time coordinate is
-    already 0, the original arrays are returned unchanged. When the grid starts
-    elsewhere, the function prepends 0 to ``time_coordinates`` and 1 to
-    ``pred_survs`` while preserving each input's dimensionality. For 2-D time
-    grids, all rows must either already start at 0 or all require padding.
+    """Prepend time zero and an initial probability along the last axis.
 
     Parameters
     ----------
-    pred_survs: np.ndarray, shape = (n_time_points,) or (n_samples, n_time_points)
-        Predicted survival probabilities. A 1-D array represents a single
-        curve or a shared curve, while a 2-D array represents one curve per
-        sample.
-    time_coordinates: np.ndarray, shape = (n_time_points,) or (n_samples, n_time_points)
-        Time coordinates corresponding to ``pred_survs``. A 1-D array is a
-        shared time grid, while a 2-D array contains sample-specific time
-        grids. Values must be non-negative, and the last dimension must have
-        the same length as
-        ``pred_survs``.
+    pred_curves : np.ndarray
+        Real numeric predictions of shape (n_time_points,),
+        (n_samples, n_time_points), or (n_samples, n_causes, n_time_points).
+    time_coordinates : np.ndarray
+        Real numeric shared 1D or sample-specific 2D time grids. Times must be
+        finite and non-negative, with the same last-axis length as pred_curves.
+        All rows must either start at exactly zero or all require padding.
+    initial_value : float, default=1.0
+        Initial probability in [0, 1]. Use 1 for survival curves and 0 for CIFs.
+        Must be integral when pred_curves has an integer dtype.
 
     Returns
     -------
-    padded_survs: np.ndarray
-        Survival probabilities with an origin point prepended when needed. The
-        dimensionality of ``pred_survs`` is preserved.
-    padded_times: np.ndarray
-        Time coordinates with 0 prepended when needed. The dimensionality of
-        ``time_coordinates`` is preserved.
+    padded_curves, padded_times : tuple of np.ndarray
+        Arrays with their ranks and dtypes preserved. If every grid starts at
+        zero, return the original arrays unchanged. Inputs are never modified.
 
     Raises
     ------
     TypeError
-        If either input is not a numeric numpy array, or if either input is
-        not a 1-D or 2-D array.
+        If an array is not real numeric, its rank is unsupported, or
+        initial_value is not a real numeric scalar.
     ValueError
-        If the inputs are empty, have different numbers of time points, contain
-        negative time coordinates, or if a 2-D time grid mixes rows that start
-        at 0 with rows that require padding.
+        If arrays are empty, time-axis lengths differ, times are non-finite or
+        negative, grid starts are mixed, or initial_value is invalid.
 
-    Warns
+    Notes
     -----
-    UserWarning
-        If an origin point is prepended.
+    Probability bounds, monotonicity, and sample/cause alignment are validated
+    by callers according to their prediction model.
     """
-    if not isinstance(pred_survs, np.ndarray):
-        raise TypeError("pred_survs must be a numpy array.")
-    if not isinstance(time_coordinates, np.ndarray):
-        raise TypeError("time_coordinates must be a numpy array.")
-    if not np.issubdtype(pred_survs.dtype, np.number):
-        raise TypeError("pred_survs must contain numeric values.")
-    if not np.issubdtype(time_coordinates.dtype, np.number):
-        raise TypeError("time_coordinates must contain numeric values.")
-
-    ndim_time = time_coordinates.ndim
-    ndim_surv = pred_survs.ndim
-    zero_pad_msg = (
-        "The first time coordinate is not 0. An authentic survival curve should start from 0 "
-        "with 100% survival probability. Adding 0 to the beginning of the time coordinates "
-        "and 1 to the beginning of the predicted curves."
-    )
-
-    if ndim_surv not in (1, 2):
-        error = (
-            "Predicted survival curves must be a 1D or 2D array, "
-            f"got {ndim_surv} instead"
-        )
-        raise TypeError(error)
-    if ndim_time not in (1, 2):
-        error = "Time coordinates must be a 1D or 2D array, " f"got {ndim_time} instead"
-        raise TypeError(error)
-    if pred_survs.shape[-1] == 0 or time_coordinates.shape[-1] == 0:
-        raise ValueError("pred_survs and time_coordinates must be non-empty.")
-    if pred_survs.shape[-1] != time_coordinates.shape[-1]:
+    for name, values in (
+        ("pred_curves", pred_curves),
+        ("time_coordinates", time_coordinates),
+    ):
+        if not isinstance(values, np.ndarray):
+            raise TypeError(f"{name} must be a numpy array.")
+        if not (
+            np.issubdtype(values.dtype, np.integer)
+            or np.issubdtype(values.dtype, np.floating)
+        ):
+            raise TypeError(f"{name} must contain real numeric values.")
+    if pred_curves.ndim not in (1, 2, 3):
+        raise TypeError("pred_curves must be a 1D, 2D or 3D array.")
+    if time_coordinates.ndim not in (1, 2):
+        raise TypeError("time_coordinates must be a 1D or 2D array.")
+    if pred_curves.size == 0 or time_coordinates.size == 0:
+        raise ValueError("pred_curves and time_coordinates must be non-empty.")
+    if pred_curves.shape[-1] != time_coordinates.shape[-1]:
         raise ValueError(
-            "Predicted survival curves and time coordinates must have "
-            "the same number of time points."
+            "pred_curves and time_coordinates must have the same number of time points."
         )
-    if np.any(time_coordinates < 0):
-        raise ValueError("time_coordinates must be non-negative.")
+    if not np.all(np.isfinite(time_coordinates)) or np.any(time_coordinates < 0):
+        raise ValueError("time_coordinates must be finite and non-negative.")
+    if not isinstance(initial_value, (int, float, np.integer, np.floating)):
+        raise TypeError("initial_value must be a real numeric scalar.")
+    if not np.isfinite(initial_value) or not 0 <= initial_value <= 1:
+        raise ValueError("initial_value must be finite and in [0, 1].")
+    if np.issubdtype(pred_curves.dtype, np.integer) and initial_value != int(
+        initial_value
+    ):
+        raise ValueError("initial_value must be integral for integer pred_curves.")
 
-    if ndim_time == 1:
-        needs_padding = not np.isclose(time_coordinates[0], 0.0)
-    else:
-        starts_at_zero = np.isclose(time_coordinates[:, 0], 0.0)
-        if np.any(starts_at_zero) and not np.all(starts_at_zero):
-            raise ValueError(
-                "All rows of 2D time_coordinates must either start at 0 or "
-                "all require zero-padding."
-            )
-        needs_padding = not np.all(starts_at_zero)
+    starts_at_zero = time_coordinates[..., 0] == 0
+    if np.any(starts_at_zero) and not np.all(starts_at_zero):
+        raise ValueError(
+            "All rows of 2D time_coordinates must either start at 0 or all require zero-padding."
+        )
+    if np.all(starts_at_zero):
+        return pred_curves, time_coordinates
 
-    if needs_padding:
-        warnings.warn(zero_pad_msg)
-        _pred_survs, _time_coordinates = _prepend_origin(pred_survs, time_coordinates)
-    else:
-        _pred_survs = pred_survs
-        _time_coordinates = time_coordinates
-
-    return _pred_survs, _time_coordinates
+    origin = np.full(
+        (*pred_curves.shape[:-1], 1), initial_value, dtype=pred_curves.dtype
+    )
+    zero_times = np.zeros(
+        (*time_coordinates.shape[:-1], 1), dtype=time_coordinates.dtype
+    )
+    return (
+        np.concatenate((origin, pred_curves), axis=-1),
+        np.concatenate((zero_times, time_coordinates), axis=-1),
+    )
 
 
 def fit_least_squares(x, y, left_anchor=True, right_anchor=True) -> tuple[float, float]:

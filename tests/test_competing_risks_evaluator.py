@@ -1,8 +1,14 @@
 import numpy as np
 import pytest
+from scipy.integrate import quad
 from scipy.interpolate import PchipInterpolator
 
-from SurvivalEVAL import CompetingRisksEvaluator, cr_d_calibration
+from SurvivalEVAL import (
+    CompetingRisksEvaluator,
+    concordance_cr,
+    concordance_cr_per_event,
+    cr_d_calibration,
+)
 
 
 @pytest.fixture
@@ -184,3 +190,359 @@ def test_censoring_at_zero_survival_is_rejected(predictions):
     evaluator = CompetingRisksEvaluator(cifs, times, observed, events)
     with pytest.raises(ValueError, match="positive predicted survival"):
         evaluator.cr_d_calibration()
+
+
+@pytest.mark.parametrize(
+    "tau, expected",
+    [
+        (None, [[1.25, 0.5], [0.5, 1.25], [1.0, 0.75]]),
+        (4, [[1.25, 0.5], [0.5, 1.25], [1.0, 0.75]]),
+        (3, [[0.625, 0.28125], [0.28125, 0.625], [0.5625, 0.34375]]),
+        (2, [[0.25, 0.125], [0.125, 0.25], [0.25, 0.125]]),
+        (1, [[0.0625, 0.03125], [0.03125, 0.0625], [0.0625, 0.03125]]),
+        (0, np.zeros((3, 2))),
+    ],
+)
+def test_linear_rmtl_areas(predictions, tau, expected):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    np.testing.assert_allclose(evaluator.predict_rmtl(tau), expected)
+
+
+@pytest.mark.parametrize("tau", [0, 1, 2, 3, 4, None])
+def test_pchip_rmtl_matches_numerical_quadrature(predictions, tau):
+    evaluator = CompetingRisksEvaluator(*predictions, interpolation="Pchip")
+    cifs, times, _, _ = predictions
+    horizon = times[-1] if tau is None else tau
+    expected = [
+        [
+            quad(PchipInterpolator(times, curve), 0, horizon, points=times[1:-1])[0]
+            for curve in curves
+        ]
+        for curves in cifs
+    ]
+    np.testing.assert_allclose(evaluator.predict_rmtl(tau), expected, atol=1e-14)
+
+
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+def test_rmtl_preserves_readonly_noncontiguous_inputs(predictions, interpolation):
+    inputs = [np.repeat(a.astype(np.float32), 2, axis=0)[::2] for a in predictions]
+    for values in inputs:
+        values.flags.writeable = False
+    evaluator = CompetingRisksEvaluator(*inputs, interpolation=interpolation)
+    expected = CompetingRisksEvaluator(*predictions, interpolation=interpolation)
+    np.testing.assert_allclose(evaluator.predict_rmtl(3), expected.predict_rmtl(3))
+    for actual, original in zip(inputs, predictions):
+        np.testing.assert_array_equal(actual, original)
+
+
+def test_default_concordance_uses_positive_rmtl(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    assert evaluator.concordance() == 1
+    assert evaluator.concordance_per_event(1) == (1, 2, 2)
+    assert evaluator.concordance_per_event(2) == (1, 1, 1)
+
+
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize("method", ["Naive", "IPCW"])
+@pytest.mark.parametrize("predict_risk_method", ["RMTL", "CIF"])
+@pytest.mark.parametrize("ties", ["None", "Time", "Risk", "All"])
+@pytest.mark.parametrize("reduction", ["mean", "pooled"])
+def test_concordance_matches_standalone(
+    predictions, interpolation, method, predict_risk_method, ties, reduction
+):
+    train_times = np.array([0.5, 1.5, 2.5, 5, 7])
+    train_events = np.array([0, 1, 0, 2, 0])
+    evaluator = CompetingRisksEvaluator(
+        *predictions,
+        interpolation=interpolation,
+        train_event_times=train_times,
+        train_event_indicators=train_events,
+    )
+    risks = (
+        evaluator.predict_rmtl()
+        if predict_risk_method == "RMTL"
+        else predictions[0][..., 1]
+    )
+    risk_options = dict(
+        predict_risk_method=predict_risk_method,
+        target_time=2 if predict_risk_method == "CIF" else None,
+    )
+    options = dict(
+        method=method,
+        ties=ties,
+        train_event_times=train_times,
+        train_event_indicators=train_events,
+    )
+    expected = concordance_cr(
+        risks,
+        predictions[2],
+        predictions[3],
+        reduction=reduction,
+        return_details=True,
+        **options,
+    )
+    np.testing.assert_equal(
+        evaluator.concordance(
+            method=method,
+            ties=ties,
+            reduction=reduction,
+            return_details=True,
+            **risk_options,
+        ),
+        expected,
+    )
+    for cause in (1, 2):
+        expected = concordance_cr_per_event(
+            risks[:, cause - 1],
+            predictions[2],
+            predictions[3],
+            event_of_interest=cause,
+            **options,
+        )
+        np.testing.assert_allclose(
+            evaluator.concordance_per_event(
+                cause, method=method, ties=ties, **risk_options
+            ),
+            expected,
+        )
+
+
+def test_tau_sets_rmtl_horizon_and_cif_uses_target_time():
+    # The first subject has greater total loss, but less loss before year 2.
+    cifs = np.array([[[0, 0.1, 1]], [[0, 0.3, 0.4]]])
+    evaluator = CompetingRisksEvaluator(cifs, [0, 2, 4], [1, 2], [1, 1])
+    assert evaluator.concordance() == 1
+    assert evaluator.concordance(tau=2) == 0
+    assert evaluator.concordance_per_event(tau=2) == (0, 0, 1)
+    assert evaluator.concordance(predict_risk_method="CIF", target_time=2, tau=2) == 0
+    assert evaluator.concordance(predict_risk_method="CIF", target_time=3, tau=2) == 1
+    assert evaluator.concordance_per_event(
+        predict_risk_method="CIF", target_time=3, tau=2
+    ) == (1, 1, 1)
+
+    assert np.isnan(evaluator.concordance(tau=1))  # Strict cutoff excludes time 1.
+
+
+def test_missing_cause_remains_in_concordance_details(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    score, details = evaluator.concordance(tau=3, return_details=True)
+    assert np.isnan(score)
+    assert details["per_event_scores"][1] == 1
+    assert np.isnan(details["per_event_scores"][2])
+    assert details["per_event_total_pairs"] == {1: 2, 2: 0}
+    assert evaluator.concordance(tau=3, reduction="pooled") == 1
+
+
+@pytest.mark.parametrize("tau", [-1, np.nan, np.inf, 5])
+def test_invalid_rmtl_horizons(predictions, tau):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    with pytest.raises(ValueError, match="tau"):
+        evaluator.predict_rmtl(tau)
+    with pytest.raises(ValueError, match="tau"):
+        evaluator.concordance(tau=tau)
+    with pytest.raises(ValueError, match="tau"):
+        evaluator.concordance_per_event(tau=tau)
+
+
+@pytest.mark.parametrize("cause", [0, 3, 1.5, True])
+def test_invalid_concordance_cause(predictions, cause):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    with pytest.raises(ValueError, match="event_of_interest"):
+        evaluator.concordance_per_event(cause)
+
+
+def test_ipcw_concordance_requires_training_data(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    with pytest.raises(ValueError, match="required for IPCW"):
+        evaluator.concordance(method="IPCW")
+    with pytest.raises(ValueError, match="required for IPCW"):
+        evaluator.concordance_per_event(method="IPCW")
+
+
+@pytest.mark.parametrize(
+    "times, events, match",
+    [
+        ([1], None, "Supply both"),
+        (None, [1], "Supply both"),
+        ([[1]], [[1]], "must be 1D"),
+        ([1, 2], [1], "same shape"),
+        ([-1], [1], "finite and non-negative"),
+        ([np.inf], [1], "finite and non-negative"),
+        ([1], [-1], "integer labels"),
+        ([1], [0.5], "integer labels"),
+        ([1], [np.inf], "integer labels"),
+    ],
+)
+def test_invalid_training_outcomes(predictions, times, events, match):
+    with pytest.raises(ValueError, match=match):
+        CompetingRisksEvaluator(
+            *predictions, train_event_times=times, train_event_indicators=events
+        )
+
+
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize(
+    "risk_method, time",
+    [
+        ("RMTL", None),
+        ("RMTL", 0),
+        ("RMTL", 1),
+        ("RMTL", 2),
+        ("RMTL", 3),
+        ("RMTL", 4),
+        ("CIF", 0),
+        ("CIF", 1),
+        ("CIF", 2),
+        ("CIF", 3),
+        ("CIF", 4),
+    ],
+)
+def test_per_call_risk_choices_match_standalone(
+    predictions, interpolation, risk_method, time
+):
+    evaluator = CompetingRisksEvaluator(*predictions, interpolation=interpolation)
+    if risk_method == "RMTL":
+        risks = evaluator.predict_rmtl(time)
+        options = dict(predict_risk_method=risk_method, tau=time)
+    else:
+        risks = np.array(
+            [
+                [
+                    (
+                        np.interp(time, predictions[1], curve)
+                        if interpolation == "Linear"
+                        else PchipInterpolator(predictions[1], curve)(time)
+                    )
+                    for curve in curves
+                ]
+                for curves in predictions[0]
+            ]
+        )
+        options = dict(predict_risk_method=risk_method, target_time=time)
+    tau = options.get("tau")
+    np.testing.assert_equal(
+        evaluator.concordance(return_details=True, **options),
+        concordance_cr(
+            risks, predictions[2], predictions[3], tau=tau, return_details=True
+        ),
+    )
+    for cause in (1, 2):
+        anchor_times = predictions[2][predictions[3] == cause]
+        if tau is not None and not np.any(anchor_times < tau):
+            with pytest.raises(ValueError, match="comparable pairs"):
+                evaluator.concordance_per_event(cause, **options)
+        else:
+            expected = concordance_cr_per_event(
+                risks[:, cause - 1],
+                predictions[2],
+                predictions[3],
+                tau=tau,
+                event_of_interest=cause,
+            )
+            np.testing.assert_allclose(
+                evaluator.concordance_per_event(cause, **options), expected
+            )
+
+
+def test_risk_choice_and_horizon_do_not_persist_between_calls():
+    cifs = np.array([[[0, 0.1, 1]], [[0, 0.3, 0.4]]])
+    evaluator = CompetingRisksEvaluator(cifs, [0, 2, 4], [1, 2], [1, 1])
+    assert evaluator.concordance() == 1
+    assert evaluator.concordance(predict_risk_method="CIF", target_time=2) == 0
+    assert evaluator.concordance(tau=2) == 0
+    assert evaluator.concordance() == 1
+    evaluator.pred_cifs = cifs[::-1]
+    assert evaluator.concordance() == 0
+    assert evaluator.concordance(predict_risk_method="CIF", target_time=2) == 1
+
+
+@pytest.mark.parametrize("method_name", ["concordance", "concordance_per_event"])
+@pytest.mark.parametrize(
+    "options, error, match",
+    [
+        (dict(predict_risk_method="Median"), ValueError, "predict_risk_method"),
+        (dict(predict_risk_method=None), ValueError, "predict_risk_method"),
+        (dict(predict_risk_method="CIF"), ValueError, "target_time is required"),
+        (dict(target_time=2), ValueError, "target_time is only used"),
+        (dict(predict_risk_method="CIF", target_time=-1), ValueError, "target_time"),
+        (dict(predict_risk_method="CIF", target_time=5), ValueError, "target_time"),
+        (
+            dict(predict_risk_method="CIF", target_time=np.nan),
+            ValueError,
+            "target_time",
+        ),
+        (
+            dict(predict_risk_method="CIF", target_time=np.inf),
+            ValueError,
+            "target_time",
+        ),
+        (dict(predict_risk_method="CIF", target_time=[2]), TypeError, "numeric scalar"),
+    ],
+)
+def test_invalid_risk_choices_and_target_times(
+    predictions, method_name, options, error, match
+):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    with pytest.raises(error, match=match):
+        getattr(evaluator, method_name)(**options)
+
+
+def test_cif_target_time_is_independent_of_pair_cutoff(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    options = dict(predict_risk_method="cIf", target_time=3)
+    assert evaluator.concordance(**options, tau=5) == evaluator.concordance(**options)
+    assert evaluator.concordance_per_event(
+        1, **options, tau=5
+    ) == evaluator.concordance_per_event(1, **options)
+    assert np.isnan(evaluator.concordance(**options, tau=1))
+
+
+def test_prediction_pair_update_pads_zero(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    cifs = np.array([[[0.2, 0.6], [0.1, 0.4]]] * 3)
+    evaluator.set_prediction_inputs(cifs, [2, 6])
+    np.testing.assert_equal(evaluator.time_coordinates, [0, 2, 6])
+    np.testing.assert_equal(evaluator.pred_cifs[..., 0], np.zeros((3, 2)))
+    np.testing.assert_allclose(evaluator.predict_rmtl(), [[1.8, 1.1]] * 3)
+
+
+def test_prediction_inputs_cannot_be_edited_in_place(predictions):
+    cifs, times, observed, events = (a.copy() for a in predictions)
+    evaluator = CompetingRisksEvaluator(cifs, times, observed, events)
+    cifs *= 0.5
+    times *= 2
+    np.testing.assert_equal(evaluator.pred_cifs, predictions[0])
+    np.testing.assert_equal(evaluator.time_coordinates, predictions[1])
+    for values in (evaluator.pred_cifs, evaluator.time_coordinates):
+        with pytest.raises(ValueError, match="read-only"):
+            values.flat[0] = 0.5
+
+
+@pytest.mark.parametrize(
+    "setting, value",
+    [
+        ("pred_cifs", np.zeros((2, 2, 3))),
+        ("pred_cifs", np.zeros((3, 1, 3))),
+        ("pred_cifs", np.full((3, 2, 3), 0.75)),
+        ("pred_cifs", np.full((3, 2, 3), np.inf)),
+        ("time_coordinates", [0, 0, 4]),
+        ("time_coordinates", [0, 1, 3]),
+        ("time_coordinates", [0, 2, np.inf]),
+        ("interpolation", "cubic"),
+    ],
+)
+def test_invalid_setting_updates_preserve_inputs(predictions, setting, value):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    curves, times = evaluator.pred_cifs, evaluator.time_coordinates
+    with pytest.raises(ValueError):
+        setattr(evaluator, setting, value)
+    assert evaluator.pred_cifs is curves
+    assert evaluator.time_coordinates is times
+    assert evaluator.interpolation == "linear"
+
+
+def test_rmtl_default_horizon_follows_updated_grid(predictions):
+    evaluator = CompetingRisksEvaluator(*predictions)
+    original = evaluator.predict_rmtl()
+    evaluator.time_coordinates = evaluator.time_coordinates * 2
+    np.testing.assert_allclose(evaluator.predict_rmtl(), original * 2)

@@ -344,7 +344,7 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 | `PointEvaluator` | Evaluates already-computed point survival-time predictions with concordance, MAE, MSE, RMSE, and log-rank tests. | `PointEvaluator(predicted_times, event_times, event_indicators, ...)` |
 | `SingleTimeEvaluator` | Evaluates already-computed survival probabilities at one target time with AUC, Brier score, one-calibration, and ICI. | `SingleTimeEvaluator(predicted_probs, event_times, event_indicators, ...)` |
 | `QuantileRegEvaluator` | Converts event-time quantile predictions into survival curves and reuses right-censored survival-curve metrics. | `QuantileRegEvaluator(predicted_quantiles, quantile_levels, ...)` |
-| `CompetingRisksEvaluator` | Evaluates competing-risks CIF curves with CR-D-calibration. | `CompetingRisksEvaluator(pred_cifs, time_coordinates, event_times, event_indicators)` |
+| `CompetingRisksEvaluator` | Evaluates competing-risks CIF curves with CR-D-calibration and per-cause or aggregated concordance. | `CompetingRisksEvaluator(pred_cifs, time_coordinates, event_times, event_indicators)` |
 | Lower-level functions | Most evaluator methods are also available under `SurvivalEVAL.Evaluations` for advanced use cases. | `SurvivalEVAL.Evaluations.concordance(...)` |
 
 `SurvivalEVAL.Evaluations.OtherMetrics` includes research helpers such as

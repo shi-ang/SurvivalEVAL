@@ -204,8 +204,7 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     curve = np.array([0.8, 0.5, 0.1], dtype=np.float32)
     time_coordinates = np.array([1.0, 2.0, 3.0], dtype=np.float32)
 
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        padded_curve, padded_times = zero_padding(curve, time_coordinates)
+    padded_curve, padded_times = zero_padding(curve, time_coordinates)
 
     np.testing.assert_allclose(padded_curve, [1.0, 0.8, 0.5, 0.1])
     np.testing.assert_allclose(padded_times, [0.0, 1.0, 2.0, 3.0])
@@ -217,14 +216,14 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
 
 
 @pytest.mark.parametrize(
-    ("pred_survs", "time_coordinates", "message"),
+    ("pred_curves", "time_coordinates", "message"),
     [
-        ([0.8, 0.5, 0.1], np.array([1.0, 2.0, 3.0]), "pred_survs"),
+        ([0.8, 0.5, 0.1], np.array([1.0, 2.0, 3.0]), "pred_curves"),
         (np.array([0.8, 0.5, 0.1]), [1.0, 2.0, 3.0], "time_coordinates"),
         (
             np.array(["0.8", "0.5", "0.1"]),
             np.array([1.0, 2.0, 3.0]),
-            "pred_survs",
+            "pred_curves",
         ),
         (
             np.array([0.8, 0.5, 0.1]),
@@ -234,10 +233,10 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     ],
 )
 def test_zero_padding_rejects_invalid_input_datatypes(
-    pred_survs, time_coordinates, message
+    pred_curves, time_coordinates, message
 ):
     with pytest.raises(TypeError, match=message):
-        zero_padding(pred_survs, time_coordinates)
+        zero_padding(pred_curves, time_coordinates)
 
 
 def test_zero_padding_rejects_empty_inputs():
@@ -256,8 +255,8 @@ def test_zero_padding_preserves_1d_curve_that_already_starts_at_zero():
 
     padded_curve, padded_times = zero_padding(curve, time_coordinates)
 
-    np.testing.assert_allclose(padded_curve, curve)
-    np.testing.assert_allclose(padded_times, time_coordinates)
+    assert padded_curve is curve
+    assert padded_times is time_coordinates
 
 
 @pytest.mark.parametrize(
@@ -270,8 +269,7 @@ def test_zero_padding_preserves_1d_curve_that_already_starts_at_zero():
 def test_zero_padding_uses_2d_time_coordinates(curves):
     time_coordinates = np.array([[1.0, 2.0, 3.0], [1.5, 2.5, 3.5]])
 
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        padded_curves, padded_times = zero_padding(curves, time_coordinates)
+    padded_curves, padded_times = zero_padding(curves, time_coordinates)
 
     np.testing.assert_allclose(padded_times[:, 0], 0.0)
     np.testing.assert_allclose(padded_times[:, 1:], time_coordinates)
@@ -300,6 +298,115 @@ def test_zero_padding_rejects_mixed_2d_grid_starts():
             np.array([[1.0, 0.5, 0.1], [1.0, 0.4, 0.1]]),
             np.array([[0.0, 1.0, 2.0], [1.0, 2.0, 3.0]]),
         )
+
+
+@pytest.mark.parametrize("shape", [(3,), (2, 3), (2, 2, 3)])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64])
+@pytest.mark.parametrize("shared_grid", [True, False])
+@pytest.mark.parametrize("initial_value", [0.0, 1.0])
+def test_zero_padding_preserves_ranks_dtypes_and_readonly_inputs(
+    shape, dtype, shared_grid, initial_value
+):
+    # Noncontiguous inputs must also remain unchanged.
+    curves = np.arange(np.prod(shape) * 2, dtype=dtype).reshape(*shape[:-1], 6)[
+        ..., ::2
+    ]
+    times = np.array([1, 2, 3], dtype=dtype)
+    if not shared_grid:
+        times = np.stack((times, times * 2))
+    original_curves, original_times = curves.copy(), times.copy()
+    curves.flags.writeable = False
+    times.flags.writeable = False
+
+    padded_curves, padded_times = zero_padding(
+        pred_curves=curves, time_coordinates=times, initial_value=initial_value
+    )
+
+    assert padded_curves.shape == (*shape[:-1], 4)
+    assert padded_times.shape == (*times.shape[:-1], 4)
+    assert padded_curves.dtype == curves.dtype
+    assert padded_times.dtype == times.dtype
+    np.testing.assert_array_equal(padded_curves[..., 0], initial_value)
+    np.testing.assert_array_equal(padded_times[..., 0], 0)
+    np.testing.assert_array_equal(padded_curves[..., 1:], original_curves)
+    np.testing.assert_array_equal(padded_times[..., 1:], original_times)
+    np.testing.assert_array_equal(curves, original_curves)
+    np.testing.assert_array_equal(times, original_times)
+
+
+def test_zero_padding_returns_original_cifs_on_existing_zero_grid():
+    cifs = np.zeros((2, 3, 4), dtype=np.float32)
+    times = np.array([0, 1, 2, 3], dtype=np.float32)
+    padded_cifs, padded_times = zero_padding(cifs, times, initial_value=0.0)
+    assert padded_cifs is cifs
+    assert padded_times is times
+
+
+def test_zero_padding_supports_fractional_initial_probability():
+    curves, times = zero_padding(
+        np.array([0.2, 0.1]), np.array([1, 2]), initial_value=0.5
+    )
+    np.testing.assert_equal(curves, [0.5, 0.2, 0.1])
+    np.testing.assert_equal(times, [0, 1, 2])
+
+
+@pytest.mark.parametrize("first_time", [1e-12, np.nextafter(0.0, 1.0)])
+def test_zero_padding_includes_exact_zero_for_tiny_positive_starts(first_time):
+    curves, times = zero_padding(
+        np.array([0.1, 0.2]), np.array([first_time, 1.0]), initial_value=0.0
+    )
+    np.testing.assert_equal(times, [0.0, first_time, 1.0])
+    np.testing.assert_equal(curves, [0.0, 0.1, 0.2])
+
+
+@pytest.mark.parametrize("time", [np.nan, np.inf, -np.inf])
+def test_zero_padding_rejects_nonfinite_times(time):
+    with pytest.raises(ValueError, match="finite"):
+        zero_padding(np.array([0.8, 0.5]), np.array([0, time]))
+
+
+@pytest.mark.parametrize("initial_value", [-1, 2, np.nan, np.inf])
+def test_zero_padding_rejects_invalid_initial_probabilities(initial_value):
+    with pytest.raises(ValueError, match="initial_value"):
+        zero_padding(
+            np.array([0.8, 0.5]), np.array([1, 2]), initial_value=initial_value
+        )
+
+
+@pytest.mark.parametrize("initial_value", ["0", [0], 1j])
+def test_zero_padding_rejects_nonnumeric_initial_probabilities(initial_value):
+    with pytest.raises(TypeError, match="initial_value"):
+        zero_padding(
+            np.array([0.8, 0.5]), np.array([1, 2]), initial_value=initial_value
+        )
+
+
+def test_zero_padding_rejects_fractional_initial_value_for_integer_curves():
+    with pytest.raises(ValueError, match="integral"):
+        zero_padding(np.array([1, 0]), np.array([1, 2]), initial_value=0.5)
+
+
+@pytest.mark.parametrize(
+    "curves, times, error, match",
+    [
+        (np.array(1), np.array([1]), TypeError, "1D, 2D or 3D"),
+        (np.zeros((1, 1, 1, 2)), np.array([1, 2]), TypeError, "1D, 2D or 3D"),
+        (np.zeros(2), np.array(1), TypeError, "1D or 2D"),
+        (np.zeros(2), np.ones((1, 1, 2)), TypeError, "1D or 2D"),
+        (np.ones(3), np.array([1, 2]), ValueError, "same number of time points"),
+        (np.ones((0, 2)), np.array([1, 2]), ValueError, "non-empty"),
+        (np.ones((2, 0, 2)), np.array([1, 2]), ValueError, "non-empty"),
+        (np.ones(2), np.zeros((0, 2)), ValueError, "non-empty"),
+        (np.array([1j, 0j]), np.array([1, 2]), TypeError, "real numeric"),
+        (np.ones(2), np.array([1j, 2j]), TypeError, "real numeric"),
+        (np.ones((2, 2)), np.array([[0, 1], [1e-12, 1]]), ValueError, "All rows"),
+    ],
+)
+def test_zero_padding_rejects_invalid_shapes_and_complex_arrays(
+    curves, times, error, match
+):
+    with pytest.raises(error, match=match):
+        zero_padding(curves, times)
 
 
 @pytest.mark.parametrize(
@@ -470,12 +577,11 @@ def test_make_monotonic_rejects_invalid_inputs(curves, times, kwargs, message):
 
 
 def test_predict_prob_from_curve_pads_time_grid_starting_after_zero():
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        prob = predict_prob_from_curve(
-            survival_curve=np.array([0.8, 0.5, 0.2]),
-            times_coordinate=np.array([1.0, 2.0, 3.0]),
-            target_time=0.5,
-        )
+    prob = predict_prob_from_curve(
+        survival_curve=np.array([0.8, 0.5, 0.2]),
+        times_coordinate=np.array([1.0, 2.0, 3.0]),
+        target_time=0.5,
+    )
 
     assert prob == pytest.approx(0.9)
 
@@ -548,12 +654,11 @@ def test_validate_time_points_reuses_compatible_numpy_array():
 
 
 def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        probs = predict_multi_probs_from_curve(
-            survival_curve=np.array([0.8, 0.5, 0.2]),
-            times_coordinate=np.array([1.0, 2.0, 3.0]),
-            target_times=np.array([0.0, 0.5, 1.0]),
-        )
+    probs = predict_multi_probs_from_curve(
+        survival_curve=np.array([0.8, 0.5, 0.2]),
+        times_coordinate=np.array([1.0, 2.0, 3.0]),
+        target_times=np.array([0.0, 0.5, 1.0]),
+    )
 
     np.testing.assert_allclose(probs, [1.0, 0.9, 0.8])
 

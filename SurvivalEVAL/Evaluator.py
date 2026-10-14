@@ -234,10 +234,9 @@ class SurvivalEvaluator:
         self._validate_prediction_sample_count(
             pred_survs, time_coordinates, self._testing_sample_count()
         )
-        self._pred_survs, self._time_coordinates = zero_padding(
-            pred_survs, time_coordinates
-        )
-        self._validate_prediction_curve_inputs(self._pred_survs, self._time_coordinates)
+        pred_survs, time_coordinates = zero_padding(pred_survs, time_coordinates)
+        self._validate_prediction_curve_inputs(pred_survs, time_coordinates)
+        self._pred_survs, self._time_coordinates = pred_survs, time_coordinates
         self.ndim_surv = self._pred_survs.ndim
         self.ndim_time = self._time_coordinates.ndim
         self._clear_cache()
@@ -254,7 +253,7 @@ class SurvivalEvaluator:
         # zero_padding. Accept raw replacement curves by adding the matching
         # survival-at-zero column before validating curve/grid lengths.
         if self._time_coordinates.shape[-1] == pred_survs.shape[-1] + 1 and np.all(
-            np.isclose(self._time_coordinates[..., 0], 0.0)
+            self._time_coordinates[..., 0] == 0
         ):
             pred_survs = np.concatenate(
                 (
@@ -277,7 +276,7 @@ class SurvivalEvaluator:
         # the replacement grid is raw, prepend time zero so the pair remains
         # aligned before the shared validation path runs.
         if self._pred_survs.shape[-1] == time_coordinates.shape[-1] + 1 and not np.all(
-            np.isclose(time_coordinates[..., 0], 0.0)
+            time_coordinates[..., 0] == 0
         ):
             time_coordinates = np.concatenate(
                 (
@@ -290,6 +289,18 @@ class SurvivalEvaluator:
                 axis=-1,
             )
         self.set_prediction_inputs(self._pred_survs, time_coordinates)
+
+    @property
+    def interpolation(self) -> str:
+        """Curve interpolation method; changing it invalidates cached event times."""
+        return self._interpolation
+
+    @interpolation.setter
+    def interpolation(self, value: str) -> None:
+        if not isinstance(value, str) or value.lower() not in {"linear", "pchip"}:
+            raise ValueError("interpolation must be 'Linear' or 'Pchip'.")
+        self._interpolation = value.capitalize()
+        self._clear_cache()
 
     @cached_property
     def predicted_event_times(self):

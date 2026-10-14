@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-from functools import cached_property
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -123,16 +122,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.interpolation = interpolation
         self._NO_CENSOR = np.all(left_limits == right_limits)
 
-    @cached_property
-    def predicted_event_times(self):
-        return self.predict_time_from_curve(self.predict_time_method)
-
-    def _clear_cache(self):
-        # See how to clear cache in functools:
-        # https://docs.python.org/3/library/functools.html#functools.cached_property
-        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
-        self.__dict__.pop("predicted_event_times", None)
-
     def _error_trainset(self, method_name: str):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
             raise TypeError(
@@ -165,9 +154,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         total_pairs: float
             The total comparable weight in the denominator.
         """
-        pred_times = self.predict_time_method(
-            self._pred_survs, self._time_coordinates, interpolation=self.interpolation
-        )
+        pred_times = self.predicted_event_times
         method = method.lower()
         ties = ties.lower()
 

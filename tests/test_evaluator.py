@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from SurvivalEVAL import (
+    IntervalCenEvaluator,
     PointEvaluator,
     PycoxEvaluator,
     ScikitSurvivalEvaluator,
@@ -773,6 +774,18 @@ def test_time_coordinates_setter_accepts_raw_grid_after_zero_padding():
     np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
 
 
+def test_time_coordinates_setter_pads_tiny_positive_start():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+    evaluator.time_coordinates = np.array([1e-12, 2.0, 3.0])
+    np.testing.assert_array_equal(evaluator.time_coordinates, [0.0, 1e-12, 2.0, 3.0])
+    assert evaluator.pred_survs.shape[-1] == evaluator.time_coordinates.size
+
+
 def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data):
     evaluator = evaluator_data["evaluator"]
     original_times = evaluator.predicted_event_times.copy()
@@ -790,3 +803,67 @@ def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data)
     np.testing.assert_allclose(evaluator.time_coordinates, new_time_grid)
     assert evaluator.pred_survs.shape == (evaluator_data["n_test"], new_time_grid.size)
     assert not np.allclose(evaluator.predicted_event_times, original_times)
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+def test_interpolation_updates_invalidate_cached_event_times(evaluator_class):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+    else:
+        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    evaluator.interpolation = "pChIp"
+    assert "predicted_event_times" not in evaluator.__dict__
+    expected = evaluator_class(predictions, times, interpolation="Pchip", **outcomes)
+    np.testing.assert_allclose(
+        evaluator.predicted_event_times, expected.predicted_event_times
+    )
+    assert not np.allclose(evaluator.predicted_event_times, previous)
+
+    refreshed = evaluator.predicted_event_times
+    with pytest.raises(ValueError, match="interpolation"):
+        evaluator.interpolation = "cubic"
+    assert evaluator.predicted_event_times is refreshed
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+def test_invalid_curve_updates_preserve_cached_event_times(evaluator_class):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+    else:
+        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    with pytest.raises(ValueError, match="nonincreasing"):
+        evaluator.pred_survs = [[1, 0.9, 0.95], [1, 0.6, 0.1]]
+    np.testing.assert_equal(evaluator.pred_survs, predictions)
+    assert evaluator.predicted_event_times is previous
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+@pytest.mark.parametrize("setting", ["pred_survs", "time_coordinates"])
+def test_prediction_updates_refresh_cached_event_times(evaluator_class, setting):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+    else:
+        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    if setting == "pred_survs":
+        evaluator.pred_survs = predictions**2
+        expected = evaluator_class(predictions**2, times, **outcomes)
+    else:
+        evaluator.time_coordinates = times * 2
+        expected = evaluator_class(predictions, times * 2, **outcomes)
+    assert "predicted_event_times" not in evaluator.__dict__
+    np.testing.assert_allclose(
+        evaluator.predicted_event_times, expected.predicted_event_times
+    )
+    assert not np.allclose(evaluator.predicted_event_times, previous)
