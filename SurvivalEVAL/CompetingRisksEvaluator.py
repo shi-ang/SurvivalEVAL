@@ -524,6 +524,7 @@ class CompetingRisksEvaluator:
         self,
         ties: str = "Risk",
         method: str = "Naive",
+        control_definition: str = "NotCase",
         tau: float | None = None,
         reduction: str = "mean",
         return_details: bool = False,
@@ -541,6 +542,10 @@ class CompetingRisksEvaluator:
         method : {"Naive", "IPCW"}, default="Naive"
             Unit pair weights or inverse censoring weights estimated from
             the training outcomes supplied at initialization.
+        control_definition : {"NotCase", "EventFree"}, default="NotCase"
+            NotCase includes competing events before or at each anchor time
+            as controls; EventFree excludes them. Both include later subjects
+            and censorings exactly at the anchor. Case-insensitive.
         tau : float, optional
             Only selected-cause anchors with event time strictly below tau
             contribute. Also sets the RMTL integration horizon, which must lie
@@ -575,6 +580,7 @@ class CompetingRisksEvaluator:
             train_event_times=self.train_event_times,
             train_event_indicators=self.train_event_indicators,
             method=method,
+            control_definition=control_definition,
             ties=ties,
             tau=tau,
             reduction=reduction,
@@ -586,6 +592,7 @@ class CompetingRisksEvaluator:
         event_of_interest: int = 1,
         ties: str = "Risk",
         method: str = "Naive",
+        control_definition: str = "NotCase",
         tau: float | None = None,
         *,
         predict_risk_method: str = "RMTL",
@@ -601,6 +608,9 @@ class CompetingRisksEvaluator:
             Tie policy; see ``concordance``.
         method : {"Naive", "IPCW"}, default="Naive"
             Unit pair weights or training-based inverse censoring weights.
+        control_definition : {"NotCase", "EventFree"}, default="NotCase"
+            Control definition at each selected-cause anchor time; see
+            ``concordance``. Independent of the prediction target_time.
         tau : float, optional
             Strict anchor cutoff and RMTL integration horizon. None uses the
             final prediction time for RMTL and applies no pair truncation.
@@ -637,6 +647,7 @@ class CompetingRisksEvaluator:
             train_event_times=self.train_event_times,
             train_event_indicators=self.train_event_indicators,
             method=method,
+            control_definition=control_definition,
             ties=ties,
             tau=tau,
             event_of_interest=event_of_interest,

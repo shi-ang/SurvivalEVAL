@@ -1,3 +1,6 @@
+import importlib
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -8,8 +11,8 @@ from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
 )
 
 
-def _direct_counts(risks, times, events, cause, weights, tau):
-    """Evaluate the Wolbers pair definitions directly, without sorted counting."""
+def _direct_counts(risks, times, events, cause, weights, tau, control_definition):
+    """Enumerate comparable pairs directly, without sorted counting."""
     counts = _ConcordanceCounts()
     for i in range(times.size):
         if events[i] != cause or (tau is not None and times[i] >= tau):
@@ -21,7 +24,7 @@ def _direct_counts(risks, times, events, cause, weights, tau):
                 counts.time_tie_pairs += weights[i] * weights[j]
             type_a = times[i] < times[j] or (times[i] == times[j] and events[j] == 0)
             type_b = events[j] not in (0, cause) and times[j] <= times[i]
-            if not (type_a or type_b):
+            if not (type_a or (type_b and control_definition == "NotCase")):
                 continue
             weight = weights[i] ** 2 if type_a else weights[i] * weights[j]
             if abs(risks[i] - risks[j]) <= 1e-8:
@@ -37,7 +40,8 @@ def _direct_counts(risks, times, events, cause, weights, tau):
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
 @pytest.mark.parametrize("tau", [None, 4.0])
-def test_matches_direct_pair_definitions(dtype, method, ties, tau):
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_matches_direct_pair_definitions(dtype, method, ties, tau, control_definition):
     rng = np.random.default_rng(73)
     risks = rng.integers(-3, 4, 60).astype(dtype)
     times = rng.integers(0, 8, 60).astype(dtype)
@@ -57,7 +61,7 @@ def test_matches_direct_pair_definitions(dtype, method, ties, tau):
                 risk_set = np.count_nonzero(train_times > time) + censorings
                 weights[i] /= 1 - censorings / risk_set
     expected = _finalize_counts(
-        _direct_counts(risks, times, events, 2, weights, tau), ties
+        _direct_counts(risks, times, events, 2, weights, tau, control_definition), ties
     )
     for values in (risks, times, events, train_times, train_events):
         values.flags.writeable = False
@@ -68,6 +72,7 @@ def test_matches_direct_pair_definitions(dtype, method, ties, tau):
         train_times,
         train_events,
         method=method,
+        control_definition=control_definition,
         ties=ties,
         tau=tau,
         event_of_interest=2,
@@ -95,6 +100,46 @@ def test_hand_computed_ipcw_distinguishes_type_a_and_b_weights():
     np.testing.assert_allclose(truncated, (3 / 8, 9 / 4, 6))
 
 
+def test_eventfree_ipcw_uses_only_squared_anchor_weights() -> None:
+    # Only the anchor at 4 contributes: one concordant and one discordant
+    # comparison, both weighted by 1/G(4-)^2 = 9/4.
+    result = concordance_cr_per_event(
+        [0.7, 0.8, 0.9, 0.2],
+        [4, 2, 8, 6],
+        [1, 2, 1, 0],
+        [1, 3, 5, 10],
+        [2, 0, 0, 1],
+        method="IPCW",
+        control_definition="EventFree",
+    )
+    np.testing.assert_allclose(result, (0.5, 9 / 4, 9 / 2))
+
+
+@pytest.mark.parametrize("method", ["Naive", "IPCW"])
+@pytest.mark.parametrize("competing_time", [1, 2, 3])
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_competing_controls_are_defined_at_each_anchor_time(
+    method: str, competing_time: int, control_definition: str
+) -> None:
+    result = concordance_cr_per_event(
+        [0.8, 0.9, 0.1],
+        [2, competing_time, 4],
+        [1, 2, 0],
+        [1, 5],
+        [2, 1],
+        method=method,
+        control_definition=control_definition,
+    )
+    # The censored subject is always a concordant control. The competitor
+    # is discordant and eligible for EventFree only when its event is later.
+    expected = (
+        (1, 1, 1)
+        if control_definition == "EventFree" and competing_time <= 2
+        else (0.5, 1, 2)
+    )
+    np.testing.assert_allclose(result, expected)
+
+
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 def test_tau_only_truncates_anchors_and_keeps_later_comparators(method):
     actual = concordance_cr_per_event(
@@ -120,16 +165,28 @@ def test_tau_only_truncates_anchors_and_keeps_later_comparators(method):
 
 
 @pytest.mark.parametrize(
-    "ties, expected",
+    "ties, notcase_expected, eventfree_expected",
     [
-        ("Risk", (1, 4, 4)),
-        ("None", (1, 4, 4)),
-        ("Time", (0.9, 4.5, 5)),
-        ("All", (0.9, 4.5, 5)),
+        ("Risk", (1, 4, 4), (1, 2, 2)),
+        ("None", (1, 4, 4), (1, 2, 2)),
+        ("Time", (0.9, 4.5, 5), (5 / 6, 2.5, 3)),
+        ("All", (0.9, 4.5, 5), (5 / 6, 2.5, 3)),
     ],
 )
-def test_competing_event_time_ties_are_counted_once(ties, expected):
-    actual = concordance_cr_per_event([4, 3, 2, 1], [1] * 4, [1, 1, 2, 0], ties=ties)
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_same_time_controls_and_selected_cause_ties(
+    ties, notcase_expected, eventfree_expected, control_definition
+):
+    actual = concordance_cr_per_event(
+        [4, 3, 2, 1],
+        [1] * 4,
+        [1, 1, 2, 0],
+        ties=ties,
+        control_definition=control_definition,
+    )
+    expected = (
+        notcase_expected if control_definition == "NotCase" else eventfree_expected
+    )
     np.testing.assert_allclose(actual, expected)
 
 
@@ -166,7 +223,10 @@ def test_float32_risk_rounding_does_not_widen_tie_tolerance(events):
 
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
-def test_no_competing_events_reduces_to_existing_concordance(method, ties):
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_no_competing_events_reduces_to_existing_concordance(
+    method, ties, control_definition
+):
     risks = np.array([2, 1, 3, 0, 4], dtype=float)
     times = np.array([1, 2, 2, 3, 4], dtype=float)
     events = np.array([1, 1, 1, 0, 1])
@@ -183,7 +243,15 @@ def test_no_competing_events_reduces_to_existing_concordance(method, ties):
         tau=3,
     )
     actual = concordance_cr_per_event(
-        risks, times, events, train_times, train_events, method=method, ties=ties, tau=3
+        risks,
+        times,
+        events,
+        train_times,
+        train_events,
+        method=method,
+        control_definition=control_definition,
+        ties=ties,
+        tau=3,
     )
     np.testing.assert_allclose(actual, expected)
 
@@ -217,6 +285,38 @@ def test_final_anchor_with_earlier_competitor_requires_positive_censoring_surviv
     with pytest.raises(ValueError, match="Censoring survival"):
         concordance_cr_per_event(
             [0.2, 0.8], [1, 4], [2, 1], [1, 3], [1, 0], method="IPCW"
+        )
+
+
+@pytest.mark.parametrize("anchor_time", [3, 4])
+def test_eventfree_ignores_zero_survival_for_excluded_controls_and_final_anchors(
+    anchor_time: int,
+) -> None:
+    kwargs = dict(
+        predicted_risks=[3, 2, 1],
+        event_times=[1, anchor_time, 3],
+        event_indicators=[1, 1, 2],
+        train_event_times=[1, 2],
+        train_event_indicators=[1, 0],
+        method="IPCW",
+    )
+    np.testing.assert_allclose(
+        concordance_cr_per_event(**kwargs, control_definition="EventFree"), (1, 2, 2)
+    )
+    with pytest.raises(ValueError, match="Censoring survival"):
+        concordance_cr_per_event(**kwargs, control_definition="NotCase")
+
+
+def test_eventfree_requires_positive_survival_for_same_time_censoring() -> None:
+    with pytest.raises(ValueError, match="Censoring survival"):
+        concordance_cr_per_event(
+            [0.8, 0.2],
+            [3, 3],
+            [1, 0],
+            [1, 2],
+            [1, 0],
+            method="IPCW",
+            control_definition="EventFree",
         )
 
 
@@ -269,6 +369,7 @@ def test_training_outcomes_are_required():
         ("method", "Margin", "method"),
         ("method", "Harrell", "method"),
         ("method", "Uno", "method"),
+        ("control_definition", "unknown", "control_definition"),
         ("ties", "skip", "handling ties"),
         ("tau", -1, "non-negative"),
         ("tau", np.nan, "finite"),
@@ -319,15 +420,21 @@ def test_noncontiguous_readonly_scores_and_monotone_transformations():
 
 
 @pytest.mark.parametrize(
-    "method, reduction, expected",
+    "method, control_definition, reduction, expected, concordant, total",
     [
-        ("Naive", "mean", 1 / 4),
-        ("Naive", "pooled", 2 / 7),
-        ("IPCW", "mean", 7 / 24),
-        ("IPCW", "pooled", 7 / 16),
+        ("Naive", "NotCase", "mean", 1 / 4, 2, 4),
+        ("Naive", "NotCase", "pooled", 2 / 7, 2, 4),
+        ("IPCW", "NotCase", "mean", 7 / 24, 21 / 4, 9),
+        ("IPCW", "NotCase", "pooled", 7 / 16, 21 / 4, 9),
+        ("Naive", "EventFree", "mean", 1 / 4, 1, 2),
+        ("Naive", "EventFree", "pooled", 1 / 5, 1, 2),
+        ("IPCW", "EventFree", "mean", 1 / 4, 9 / 4, 9 / 2),
+        ("IPCW", "EventFree", "pooled", 3 / 10, 9 / 4, 9 / 2),
     ],
 )
-def test_hand_computed_aggregate_scores(method, reduction, expected):
+def test_hand_computed_aggregate_scores(
+    method, control_definition, reduction, expected, concordant, total
+):
     risks = [[0.7, 0.3], [0.8, 0.1], [0.9, 0.4], [0.2, 0.2]]
     score, details = concordance_cr(
         risks,
@@ -336,19 +443,14 @@ def test_hand_computed_aggregate_scores(method, reduction, expected):
         [1, 3, 5, 10],
         [2, 0, 0, 1],
         method=method,
+        control_definition=control_definition,
         reduction=reduction,
         return_details=True,
     )
     assert score == pytest.approx(expected)
-    assert details["per_event_scores"] == pytest.approx(
-        {1: 0.5 if method == "Naive" else 7 / 12, 2: 0}
-    )
-    assert details["per_event_concordant_pairs"] == pytest.approx(
-        {1: 2 if method == "Naive" else 21 / 4, 2: 0}
-    )
-    assert details["per_event_total_pairs"] == pytest.approx(
-        {1: 4 if method == "Naive" else 9, 2: 3}
-    )
+    assert details["per_event_scores"] == pytest.approx({1: concordant / total, 2: 0})
+    assert details["per_event_concordant_pairs"] == pytest.approx({1: concordant, 2: 0})
+    assert details["per_event_total_pairs"] == pytest.approx({1: total, 2: 3})
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -356,7 +458,10 @@ def test_hand_computed_aggregate_scores(method, reduction, expected):
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
 @pytest.mark.parametrize("tau", [None, 4])
 @pytest.mark.parametrize("reduction", ["mean", "pooled"])
-def test_aggregate_matches_per_event_results(dtype, method, ties, tau, reduction):
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_aggregate_matches_per_event_results(
+    dtype, method, ties, tau, reduction, control_definition
+):
     rng = np.random.default_rng(73)
     # Use non-contiguous read-only columns to cover NumPy views and float32 risks.
     risks = rng.integers(-3, 4, (60, 6)).astype(dtype)[:, ::2]
@@ -375,6 +480,7 @@ def test_aggregate_matches_per_event_results(dtype, method, ties, tau, reduction
             train_times,
             train_events,
             method=method,
+            control_definition=control_definition,
             ties=ties,
             tau=tau,
             event_of_interest=k + 1,
@@ -393,11 +499,81 @@ def test_aggregate_matches_per_event_results(dtype, method, ties, tau, reduction
         train_times,
         train_events,
         method=method,
+        control_definition=control_definition,
         ties=ties,
         tau=tau,
         reduction=reduction,
     )
     assert actual == pytest.approx(expected)
+
+
+def test_excluding_competing_controls_can_make_a_cause_undefined() -> None:
+    risks = [[0.1, 0.8], [0.9, 0.2]]
+    score, details = concordance_cr(
+        risks, [1, 2], [2, 1], control_definition="EventFree", return_details=True
+    )
+    assert np.isnan(score)
+    assert np.isnan(details["per_event_scores"][1])
+    assert details["per_event_scores"][2] == 1
+    assert details["per_event_concordant_pairs"] == {1: 0, 2: 1}
+    assert details["per_event_total_pairs"] == {1: 0, 2: 1}
+    assert (
+        concordance_cr(
+            risks, [1, 2], [2, 1], control_definition="EventFree", reduction="pooled"
+        )
+        == 1
+    )
+    with pytest.raises(ValueError, match="no comparable pairs"):
+        concordance_cr_per_event(
+            [0.1, 0.9], [1, 2], [2, 1], control_definition="EventFree"
+        )
+
+
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_aggregate_ipcw_fits_one_censoring_model(control_definition: str) -> None:
+    module = importlib.import_module(
+        "SurvivalEVAL.Evaluations.Discrimination.Static.Concordance"
+    )
+    with patch.object(module, "KaplanMeier", wraps=module.KaplanMeier) as estimator:
+        concordance_cr(
+            [[0.7, 0.3], [0.8, 0.1], [0.9, 0.4], [0.2, 0.2]],
+            [4, 2, 8, 6],
+            [1, 2, 1, 0],
+            [1, 3, 5, 10],
+            [2, 0, 0, 1],
+            method="IPCW",
+            control_definition=control_definition,
+        )
+    estimator.assert_called_once()
+    np.testing.assert_array_equal(
+        estimator.call_args.args[1], [True, False, False, True]
+    )
+    assert estimator.call_args.kwargs == {"reverse": True}
+
+
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
+def test_control_definition_is_case_insensitive(control_definition: str) -> None:
+    kwargs = dict(event_times=[1, 2, 3], event_indicators=[2, 1, 0])
+    risks = np.array([[0.1, 0.9], [0.9, 0.2], [0.2, 0.1]])
+    np.testing.assert_equal(
+        concordance_cr(
+            risks,
+            **kwargs,
+            control_definition=control_definition.swapcase(),
+            return_details=True
+        ),
+        concordance_cr(
+            risks, **kwargs, control_definition=control_definition, return_details=True
+        ),
+    )
+    np.testing.assert_allclose(
+        concordance_cr_per_event(
+            risks[:, 0], **kwargs, control_definition=control_definition.swapcase()
+        ),
+        concordance_cr_per_event(
+            risks[:, 0], **kwargs, control_definition=control_definition
+        ),
+    )
 
 
 @pytest.mark.parametrize("events, tau", [([1, 0, 1], None), ([1, 2, 1], 2)])
@@ -473,6 +649,7 @@ def test_aggregate_with_one_cause_matches_per_event(reduction):
         ("method", "Uno", "method"),
         ("method", "Harrell", "method"),
         ("method", "IPCW", "Training"),
+        ("control_definition", "unknown", "control_definition"),
         ("ties", "skip", "handling ties"),
         ("tau", np.nan, "finite"),
         ("tau", -1, "non-negative"),

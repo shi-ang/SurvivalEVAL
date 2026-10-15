@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from SurvivalEVAL.Evaluations.util import (
+    _check_control_definition,
     _inverse_censoring_weights,
     check_and_convert,
     check_and_convert_event_data,
@@ -241,10 +242,7 @@ def _check_auc_options(
         if competing_risks:
             raise ValueError("method must be 'Naive' or 'IPCW'.")
         raise ValueError("method must be 'Naive', 'IPCW', or 'Uno'.")
-    control_definition = control_definition.lower()
-    if control_definition not in {"eventfree", "notcase"}:
-        raise ValueError("control_definition must be 'EventFree' or 'NotCase'.")
-    return method != "naive", control_definition == "notcase"
+    return method != "naive", _check_control_definition(control_definition)
 
 
 def _check_auc_predictions(

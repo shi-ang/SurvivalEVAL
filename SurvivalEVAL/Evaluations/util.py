@@ -11,6 +11,14 @@ from sklearn.isotonic import isotonic_regression
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 
 
+def _check_control_definition(control_definition: str) -> bool:
+    """Validate the control definition and return whether to include competing events."""
+    control_definition = control_definition.lower()
+    if control_definition not in {"eventfree", "notcase"}:
+        raise ValueError("control_definition must be 'EventFree' or 'NotCase'.")
+    return control_definition == "notcase"
+
+
 def _inverse_censoring_weights(probabilities: np.ndarray) -> np.ndarray:
     """Invert finite positive censoring probabilities for contributing observations."""
     if not np.all(np.isfinite(probabilities)) or np.any(probabilities <= 0):

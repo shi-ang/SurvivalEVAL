@@ -266,9 +266,18 @@ def test_default_concordance_uses_positive_rmtl(predictions):
 @pytest.mark.parametrize("predict_risk_method", ["RMTL", "CIF"])
 @pytest.mark.parametrize("ties", ["None", "Time", "Risk", "All"])
 @pytest.mark.parametrize("reduction", ["mean", "pooled"])
+@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_concordance_matches_standalone(
-    predictions, interpolation, method, predict_risk_method, ties, reduction
+    predictions,
+    interpolation,
+    method,
+    predict_risk_method,
+    ties,
+    reduction,
+    control_definition,
 ):
+    # Keep a censored subject through both events so both definitions are estimable.
+    predictions = (predictions[0], predictions[1], np.array([1, 4, 4]), predictions[3])
     train_times = np.array([0.5, 1.5, 2.5, 5, 7])
     train_events = np.array([0, 1, 0, 2, 0])
     evaluator = CompetingRisksEvaluator(
@@ -288,6 +297,7 @@ def test_concordance_matches_standalone(
     )
     options = dict(
         method=method,
+        control_definition=control_definition,
         ties=ties,
         train_event_times=train_times,
         train_event_indicators=train_events,
@@ -303,6 +313,7 @@ def test_concordance_matches_standalone(
     np.testing.assert_equal(
         evaluator.concordance(
             method=method,
+            control_definition=control_definition,
             ties=ties,
             reduction=reduction,
             return_details=True,
@@ -320,7 +331,11 @@ def test_concordance_matches_standalone(
         )
         np.testing.assert_allclose(
             evaluator.concordance_per_event(
-                cause, method=method, ties=ties, **risk_options
+                cause,
+                method=method,
+                control_definition=control_definition,
+                ties=ties,
+                **risk_options,
             ),
             expected,
         )
@@ -501,6 +516,7 @@ def test_risk_choice_and_horizon_do_not_persist_between_calls():
 @pytest.mark.parametrize(
     "options, error, match",
     [
+        (dict(control_definition="unknown"), ValueError, "control_definition"),
         (dict(predict_risk_method="Median"), ValueError, "predict_risk_method"),
         (dict(predict_risk_method=None), ValueError, "predict_risk_method"),
         (dict(predict_risk_method="CIF"), ValueError, "target_time is required"),

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from SurvivalEVAL.Evaluations.util import (
+    _check_control_definition,
     _inverse_censoring_weights,
     check_and_convert,
     check_and_convert_event_data,
@@ -183,6 +184,7 @@ def concordance_cr_per_event(
     train_event_times: np.ndarray | None = None,
     train_event_indicators: np.ndarray | None = None,
     method: str = "Naive",
+    control_definition: str = "NotCase",
     ties: str = "Risk",
     tau: float | None = None,
     event_of_interest: int = 1,
@@ -208,11 +210,16 @@ def concordance_cr_per_event(
         Naive uses unit pair weights. IPCW uses reverse Kaplan-Meier
         censoring survival G from the training data: weight 1/G(T_i-)^2 for
         type A pairs and 1/(G(T_i-) G(T_j-)) for type B pairs.
+    control_definition : {"NotCase", "EventFree"}, default="NotCase"
+        NotCase includes competing events before or at each anchor time as
+        controls. EventFree excludes them. Both include subjects observed
+        after the anchor and censorings exactly at the anchor. Case-insensitive.
     ties : {"None", "Time", "Risk", "All"}, default="Risk"
         Same policy as ``concordance``. Risk ties (absolute tolerance 1e-8)
         receive half credit for Risk/All and are excluded otherwise. Same-time
         events of the selected cause receive half credit for Time/All and are
-        excluded otherwise. Same-time competing events remain comparable.
+        excluded otherwise. Same-time competing events are comparable only
+        under NotCase.
     tau : float, optional
         Finite, non-negative truncation time. Only selected-cause anchors with
         event time strictly less than tau contribute, matching ``concordance``.
@@ -233,15 +240,16 @@ def concordance_cr_per_event(
     -----
     An anchor i must have an observed event of the selected cause. Type A
     comparators have T_j > T_i, or T_j = T_i with j censored. Type B comparators
-    have a competing event at T_j <= T_i. Unlike ordinary cause-specific
-    concordance obtained by recoding competing events as censorings, this also
-    includes earlier competing events.
+    have a competing event at T_j <= T_i. EventFree uses only type A pairs;
+    NotCase uses both types. Controls are defined at the anchor time, independent
+    of the prediction horizon used to compute the supplied risks.
 
-    Uses the Wolbers pair definition implemented in hazardous, with Risk ties
-    as its default. The array API accepts precomputed scores rather than
-    interpolating CIF curves. Truncation is strict (< tau), whereas hazardous
-    includes anchors at tau. Time/All additionally support selected-cause time
-    ties according to SurvivalEVAL's existing convention.
+    NotCase uses the Wolbers pair definition implemented in hazardous. EventFree
+    uses the alternative definition in Section 2.2 of Wolbers et al. (2014).
+    The array API accepts precomputed scores rather than interpolating CIF
+    curves. Truncation is strict (< tau), whereas hazardous includes anchors
+    at tau. Time/All additionally support selected-cause time ties according
+    to SurvivalEVAL's existing convention.
 
     IPCW assumes independent censoring for the marginal censoring estimator.
     As in ``concordance``, evaluate left-limit G(t-) with the events-first
@@ -270,12 +278,20 @@ def concordance_cr_per_event(
         raise ValueError("event_of_interest must be a positive integer cause label.")
     ties = _normalize_ties(ties)
     tau = _validate_tau(tau)
+    include_competing = _check_control_definition(control_definition)
     censoring_survival = _cr_censoring_survival(
         times, train_event_times, train_event_indicators, method
     )
 
     counts = _competing_risk_counts(
-        risks, times, events, event_of_interest, censoring_survival, ties, tau
+        risks,
+        times,
+        events,
+        event_of_interest,
+        include_competing,
+        censoring_survival,
+        ties,
+        tau,
     )
     _check_has_any_pairs(counts)
     return _finalize_counts(counts, ties)
@@ -288,6 +304,7 @@ def concordance_cr(
     train_event_times: np.ndarray | None = None,
     train_event_indicators: np.ndarray | None = None,
     method: str = "Naive",
+    control_definition: str = "NotCase",
     ties: str = "Risk",
     tau: float | None = None,
     reduction: str = "mean",
@@ -310,6 +327,9 @@ def concordance_cr(
         denote observed events when fitting censoring survival.
     method : {"Naive", "IPCW"}, default="Naive"
         Unit pair weights or censoring weights. See ``concordance_cr_per_event``.
+    control_definition : {"NotCase", "EventFree"}, default="NotCase"
+        Control definition applied separately at each cause's anchor times.
+        See ``concordance_cr_per_event``. Names are case-insensitive.
     ties : {"None", "Time", "Risk", "All"}, default="Risk"
         Tie policy applied separately to each cause.
     tau : float, optional
@@ -333,7 +353,7 @@ def concordance_cr(
 
     Notes
     -----
-    This is a summary of the event-specific Wolbers C-indexes. The mean is NaN
+    This is a summary of the event-specific C-indexes. The mean is NaN
     if any cause is undefined; undefined causes are not silently omitted or
     assigned a chance score. Causes with no retained pairs have zero weight
     under pooled reduction, which is NaN if all causes have zero pair counts.
@@ -359,6 +379,7 @@ def concordance_cr(
         raise ValueError("reduction must be 'mean' or 'pooled'.")
     ties = _normalize_ties(ties)
     tau = _validate_tau(tau)
+    include_competing = _check_control_definition(control_definition)
     censoring_survival = _cr_censoring_survival(
         times, train_event_times, train_event_indicators, method
     )
@@ -370,6 +391,7 @@ def concordance_cr(
             times,
             events,
             k + 1,
+            include_competing,
             censoring_survival,
             ties,
             tau,
@@ -424,6 +446,7 @@ def _competing_risk_counts(
     event_times: np.ndarray,
     event_indicators: np.ndarray,
     event_of_interest: int,
+    include_competing: bool,
     censoring_survival: np.ndarray | None = None,
     ties: str = "risk",
     tau: float | None = None,
@@ -436,6 +459,8 @@ def _competing_risk_counts(
         Finite risks, observed times, and integer cause labels.
     event_of_interest : int
         Selected positive cause label.
+    include_competing : bool
+        Include competing events before or at the anchor time as controls.
     censoring_survival : ndarray, shape (n_samples,), optional
         Marginal censoring survival G(t-) at observed times. None uses unit weights.
     ties : str, default="risk"
@@ -452,15 +477,16 @@ def _competing_risk_counts(
     # treat distinct risks more than 1e-8 apart as ties.
     predicted_risks = predicted_risks.astype(float, copy=False)
     selected = event_indicators == event_of_interest
-    competing = (event_indicators > 0) & ~selected
+    competing = include_competing & (event_indicators > 0) & ~selected
+    same_time_comparators = ~selected if include_competing else event_indicators == 0
     sample_weights = np.ones(event_times.shape, dtype=float)
     if censoring_survival is not None:
         anchors = selected & _is_before_tau(event_times, tau)
         # Every non-final anchor has type A comparators. Final anchors can
-        # still contribute through tied non-selected subjects or earlier competitors.
+        # still contribute through same-time controls or earlier competitors.
         final_time = event_times.max()
         final_block = event_times == final_time
-        final_has_comparators = np.any(final_block & ~selected) or (
+        final_has_comparators = np.any(final_block & same_time_comparators) or (
             ties in {"time", "all"} and np.count_nonzero(final_block & selected) > 1
         )
         first_competing_time = (
@@ -483,8 +509,9 @@ def _competing_risk_counts(
         sample_weights=sample_weights,
         anchor_pair_weights=np.square(sample_weights),
         tau=tau,
+        same_time_comparators=same_time_comparators,
     )
-    # The ordinary counter also includes tied competing events as comparators.
+    # Under NotCase, the counter includes tied competing events as comparators.
     # Their type A and B weights coincide under marginal KM, so add only
     # strictly earlier competing events here to avoid counting ties twice.
     if not np.any(competing):
@@ -517,6 +544,7 @@ def _right_censored_risk_counts(
     anchor_pair_weights: np.ndarray | None = None,
     tau: float | None = None,
     tied_tol: float = 1e-8,
+    same_time_comparators: np.ndarray | None = None,
 ) -> _ConcordanceCounts:
     """Count right-censored comparable pairs for a risk score.
 
@@ -526,7 +554,7 @@ def _right_censored_risk_counts(
     Parameters
     ----------
     event_indicator: np.ndarray, shape = (n_samples,)
-        Boolean event indicators, where True denotes an observed event.
+        Boolean indicators of observed events eligible to anchor pairs.
     event_time: np.ndarray, shape = (n_samples,)
         Observed event or censoring times.
     estimate: np.ndarray, shape = (n_samples,)
@@ -542,6 +570,10 @@ def _right_censored_risk_counts(
         strictly before ``tau`` are counted. If None, no truncation is applied.
     tied_tol: float, optional (default=1e-8)
         Absolute tolerance for risk-score ties.
+    same_time_comparators: np.ndarray, shape = (n_samples,), optional
+        Boolean mask of subjects comparable to an anchor at the same time.
+        Defaults to non-anchors, matching ordinary right-censored concordance.
+        Other subjects become comparators only for strictly earlier anchors.
 
     Returns
     -------
@@ -554,6 +586,8 @@ def _right_censored_risk_counts(
         return _ConcordanceCounts()
     if sample_weights is None:
         sample_weights = np.ones(event_time.shape[0], dtype=float)
+    if same_time_comparators is None:
+        same_time_comparators = ~event_indicator
 
     # Candidate masses are indexed by risk rank. For the symmetric weighted
     # case a pair receives w_i * w_j. With anchor_pair_weights, every candidate
@@ -580,12 +614,11 @@ def _right_censored_risk_counts(
         while start > 0 and event_time[order[start - 1]] == block_time:
             start -= 1
         block = order[start:end]
-        censored_candidates = block[~event_indicator[block]]
+        same_time_candidates = block[same_time_comparators[block]]
         event_anchors = block[event_indicator[block]]
 
-        # Censoring at the anchor time is comparable, whereas an event at the
-        # same time is not. Add censored samples before querying event anchors.
-        for index in censored_candidates:
+        # Admit same-time controls before querying this block's anchors.
+        for index in same_time_candidates:
             mass = float(candidate_mass[index])
             risk_tree.add(int(risk_ranks[index]), mass)
             candidate_total += mass
@@ -604,7 +637,7 @@ def _right_censored_risk_counts(
                 counts.discordant += scale * (candidate_total - through_ties_mass)
 
         # This block becomes strictly later than all subsequent blocks.
-        for index in event_anchors:
+        for index in block[~same_time_comparators[block]]:
             mass = float(candidate_mass[index])
             risk_tree.add(int(risk_ranks[index]), mass)
             candidate_total += mass
