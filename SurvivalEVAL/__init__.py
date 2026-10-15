@@ -23,6 +23,8 @@ from SurvivalEVAL.Evaluations.Calibration import (
 )
 from SurvivalEVAL.Evaluations.Discrimination import (
     auc,
+    auc_cr,
+    auc_cr_per_event,
     concordance,
     concordance_cr,
     concordance_cr_per_event,
@@ -60,6 +62,8 @@ __all__ = [
     "CompetingRisksEvaluator",
     "MultiStateEvaluator",
     "auc",
+    "auc_cr",
+    "auc_cr_per_event",
     "auprc_right_censor",
     "auprc_ic",
     "brier_score_ic",

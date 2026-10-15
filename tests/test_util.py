@@ -148,6 +148,28 @@ def test_check_and_convert_event_data_rejects_mismatched_shapes():
         check_and_convert_event_data([1.0, 2.0], [1])
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.float32, np.bool_])
+@pytest.mark.parametrize("copy", [False, True])
+def test_check_and_convert_event_data_preserves_cause_labels(dtype, copy):
+    times = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    labels = np.array([0, 1, 2] if dtype != np.bool_ else [0, 1, 1], dtype=dtype)
+    times.flags.writeable = labels.flags.writeable = False
+    converted_times, converted_labels = check_and_convert_event_data(
+        times, labels, competing_risks=True, copy=copy
+    )
+    np.testing.assert_array_equal(converted_times, times)
+    np.testing.assert_array_equal(converted_labels, labels)
+    assert converted_labels.dtype == labels.dtype
+    assert np.shares_memory(converted_times, times) == (not copy)
+    assert np.shares_memory(converted_labels, labels) == (not copy)
+
+
+@pytest.mark.parametrize("labels", [[0, -1], [0, 1.5], [0, np.inf], [0, np.nan]])
+def test_check_and_convert_event_data_rejects_invalid_causes(labels):
+    with pytest.raises(ValueError):
+        check_and_convert_event_data([0, 1], labels, competing_risks=True)
+
+
 @pytest.mark.parametrize("interpolation", ["None", "Linear"])
 def test_predict_rmst_accumulates_float32_inputs_in_float64(interpolation):
     curves = np.array([[1.0, 0.8, 0.5], [1.0, 0.6, 0.2]], dtype=np.float32)

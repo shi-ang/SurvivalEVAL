@@ -255,7 +255,9 @@ def concordance_cr_per_event(
     risks", https://doi.org/10.1093/biostatistics/kxt059
     """
     risks = check_and_convert(predicted_risks)
-    times, events = _check_cr_concordance_event_data(event_times, event_indicators)
+    times, events = check_and_convert_event_data(
+        event_times, event_indicators, competing_risks=True
+    )
     if risks.ndim != 1 or risks.shape != times.shape:
         raise ValueError("predicted_risks must have one entry per observed subject.")
     if not np.all(np.isfinite(risks)):
@@ -343,7 +345,9 @@ def concordance_cr(
     concordance_cr_per_event : Pair definition, weighting and assumptions.
     """
     risks = check_and_convert(predicted_risks)
-    times, events = _check_cr_concordance_event_data(event_times, event_indicators)
+    times, events = check_and_convert_event_data(
+        event_times, event_indicators, competing_risks=True
+    )
     if risks.ndim != 2 or risks.shape[0] != times.size:
         raise ValueError("predicted_risks must have shape (n_samples, n_causes).")
     if not np.all(np.isfinite(risks)):
@@ -407,35 +411,12 @@ def _cr_censoring_survival(
         return None
     if train_event_times is None or train_event_indicators is None:
         raise ValueError("Training event times and indicators are required for IPCW.")
-    train_times, train_events = _check_cr_concordance_event_data(
-        train_event_times, train_event_indicators
+    train_times, train_events = check_and_convert_event_data(
+        train_event_times, train_event_indicators, competing_risks=True
     )
     return KaplanMeier(train_times, train_events > 0, reverse=True).predict(
         event_times, side="left"
     )
-
-
-def _check_cr_concordance_event_data(
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Convert matching 1D outcomes and validate competing-risk times and labels.
-
-    Times must be finite and non-negative. Labels must be finite non-negative
-    integers, with 0 for censoring. Return NumPy arrays without modifying inputs.
-    """
-    times, events = check_and_convert(event_times, event_indicators)
-    if times.ndim != 1:
-        raise ValueError("Event times and indicators must be 1D arrays.")
-    if not np.all(np.isfinite(times)) or np.any(times < 0):
-        raise ValueError("Event times must be finite and non-negative.")
-    if (
-        not np.all(np.isfinite(events))
-        or np.any(events < 0)
-        or np.any(events != np.floor(events))
-    ):
-        raise ValueError("Event indicators must be non-negative integer labels.")
-    return times, events
 
 
 def _competing_risk_counts(

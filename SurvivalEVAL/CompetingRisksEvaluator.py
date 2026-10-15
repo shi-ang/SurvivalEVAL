@@ -10,11 +10,14 @@ from scipy.interpolate import PchipInterpolator
 from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.Evaluations.Discrimination import (
+    auc_cr,
+    auc_cr_per_event,
     concordance_cr,
     concordance_cr_per_event,
 )
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
+    check_and_convert_event_data,
     interpolated_curve,
     validate_time_point,
     zero_padding,
@@ -56,48 +59,20 @@ class CompetingRisksEvaluator:
         interpolation : {"Linear", "Pchip"}, default="Linear"
             Interpolation method, matching the survival evaluator.
         train_event_times, train_event_indicators : NumericArrayLike, optional
-            Matching 1D training outcomes, required for IPCW concordance.
+            Matching 1D training outcomes, required for IPCW concordance and AUC.
             Times must be finite and non-negative; labels are non-negative
             integers with 0 for censoring. Training times may extend beyond
             the prediction horizon. Supply both arrays together.
         """
-        event_times, event_indicators = check_and_convert(event_times, event_indicators)
-        if event_times.ndim != 1:
-            raise ValueError("Event arrays must have one entry per predicted sample.")
-        if not np.all(np.isfinite(event_times)) or np.any(event_times < 0):
-            raise ValueError(
-                "Event times must be finite, non-negative and within the prediction horizon."
-            )
-        if (
-            not np.all(np.isfinite(event_indicators))
-            or np.any(event_indicators != np.floor(event_indicators))
-            or np.any(event_indicators < 0)
-        ):
-            raise ValueError(
-                "event_indicators must contain integer cause labels from 0 to n_causes."
-            )
+        event_times, event_indicators = check_and_convert_event_data(
+            event_times, event_indicators, competing_risks=True
+        )
         if (train_event_times is None) != (train_event_indicators is None):
             raise ValueError("Supply both training event times and indicators.")
         if train_event_times is not None:
-            train_event_times, train_event_indicators = check_and_convert(
-                train_event_times, train_event_indicators
+            train_event_times, train_event_indicators = check_and_convert_event_data(
+                train_event_times, train_event_indicators, competing_risks=True
             )
-            if train_event_times.ndim != 1:
-                raise ValueError("Training event arrays must be 1D.")
-            if not np.all(np.isfinite(train_event_times)) or np.any(
-                train_event_times < 0
-            ):
-                raise ValueError(
-                    "Training event times must be finite and non-negative."
-                )
-            if (
-                not np.all(np.isfinite(train_event_indicators))
-                or np.any(train_event_indicators < 0)
-                or np.any(train_event_indicators != np.floor(train_event_indicators))
-            ):
-                raise ValueError(
-                    "Training indicators must be non-negative integer labels."
-                )
 
         self.event_times = event_times
         self.event_indicators = event_indicators
@@ -176,6 +151,14 @@ class CompetingRisksEvaluator:
             time_coordinates.flags.writeable = False
         self._pred_cifs = pred_cifs
         self._time_coordinates = time_coordinates
+
+    @property
+    def default_target_time(self) -> float:
+        """Median observed time across the available training and test outcomes."""
+        times = self.event_times
+        if self.train_event_times is not None:
+            times = np.concatenate((times, self.train_event_times))
+        return float(np.median(times))
 
     @property
     def pred_cifs(self) -> np.ndarray:
@@ -387,13 +370,15 @@ class CompetingRisksEvaluator:
         predict_risk_method: str,
         tau: float | None,
         target_time: float | None,
+        event_of_interest: int | None = None,
     ) -> np.ndarray:
         """Compute per-cause risk scores from RMTL or fixed-time CIF probabilities.
 
         RMTL integrates each CIF to tau (or the final prediction time).
         CIF evaluates each curve at an explicit target_time. Prediction horizons
         must be finite and within the grid. Both choices return an array of
-        shape (n_samples, n_causes), with higher scores indicating greater risk.
+        shape (n_samples, n_causes), or (n_samples,) when event_of_interest
+        selects one cause. Higher scores indicate greater risk.
         """
         risk_method = (
             predict_risk_method.lower()
@@ -407,7 +392,10 @@ class CompetingRisksEvaluator:
                 raise ValueError(
                     "target_time is only used with predict_risk_method='CIF'."
                 )
-            return self.predict_rmtl(tau)
+            risks = self.predict_rmtl(tau)
+            return (
+                risks if event_of_interest is None else risks[:, event_of_interest - 1]
+            )
         if target_time is None:
             raise ValueError("target_time is required for predict_risk_method='CIF'.")
         target_time = validate_time_point(target_time, "target_time")
@@ -415,13 +403,122 @@ class CompetingRisksEvaluator:
             raise ValueError(
                 "target_time must be finite and within the prediction horizon."
             )
-        risks = np.empty(self.pred_cifs.shape[:2], dtype=float)
-        for i, curves in enumerate(self.pred_cifs):
-            for k, curve in enumerate(curves):
-                risks[i, k] = interpolated_curve(
-                    self.time_coordinates, curve, self.interpolation
-                )(target_time)
-        return np.clip(risks, 0, self.pred_cifs[..., -1])
+        cifs = self.pred_cifs
+        if event_of_interest is not None:
+            cifs = cifs[:, event_of_interest - 1, :]
+        risks = np.empty(cifs.shape[:-1], dtype=float)
+        for index in np.ndindex(risks.shape):
+            risks[index] = interpolated_curve(
+                self.time_coordinates, cifs[index], self.interpolation
+            )(target_time)
+        return np.clip(risks, 0, cifs[..., -1])
+
+    def auc(
+        self,
+        target_time: float | None = None,
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+        return_details: bool = False,
+    ) -> float | tuple[float, dict]:
+        """Calculate the equal-weight mean of AUCs from cause-specific CIFs.
+
+        Args:
+            target_time: Finite, non-negative horizon within the prediction grid.
+                Defaults to the median of available training and test outcomes.
+            method: "Naive" (default) or "IPCW", case-insensitive. IPCW requires
+                training outcomes and assumes independent censoring.
+            control_definition: "NotCase" (default) includes competing events
+                by the target as controls; "EventFree" excludes them. Both
+                include subjects observed after the target and censorings
+                exactly at the target. Names are case-insensitive.
+            return_details: Also return per_event_scores, keyed by cause label.
+
+        Returns:
+            Mean AUC, optionally with per-cause details. Undefined causes have
+            NaN scores and make the mean NaN; they are not silently omitted.
+        """
+        if target_time is None:
+            target_time = self.default_target_time
+        probabilities = self._predict_risks("CIF", None, target_time)
+        return auc_cr(
+            predict_probs=probabilities,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            target_time=target_time,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
+            control_definition=control_definition,
+            return_details=return_details,
+        )
+
+    def auc_per_event(
+        self,
+        event_of_interest: int = 1,
+        target_time: float | None = None,
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+    ) -> float:
+        """Calculate AUC for one cause using its CIF probability at the target.
+
+        Args:
+            event_of_interest: Integer cause label from 1 through n_causes.
+            target_time: Evaluation horizon, with the same default as auc.
+            method: "Naive" (default) or "IPCW", case-insensitive.
+            control_definition: "NotCase" (default) or "EventFree",
+                case-insensitive. See auc_cr_per_event for definitions and weights.
+
+        Returns:
+            Selected cause's AUC, with half credit for exactly tied predictions.
+
+        Raises:
+            ValueError: If the cause is invalid, cases or controls are absent,
+                or inputs do not satisfy auc_cr_per_event's requirements.
+        """
+        if (
+            isinstance(event_of_interest, (bool, np.bool_))
+            or not isinstance(event_of_interest, (int, np.integer))
+            or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
+        ):
+            raise ValueError("event_of_interest must be an integer from 1 to n_causes.")
+        if target_time is None:
+            target_time = self.default_target_time
+        probabilities = self._predict_risks(
+            "CIF", None, target_time, event_of_interest=event_of_interest
+        )
+        return auc_cr_per_event(
+            predict_probs=probabilities,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            target_time=target_time,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
+            event_of_interest=event_of_interest,
+            control_definition=control_definition,
+        )
+
+    def auroc(
+        self,
+        target_time: float | None = None,
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+        return_details: bool = False,
+    ) -> float | tuple[float, dict]:
+        """Alias for auc, with the same arguments, defaults and return values."""
+        return self.auc(target_time, method, control_definition, return_details)
+
+    def auroc_per_event(
+        self,
+        event_of_interest: int = 1,
+        target_time: float | None = None,
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+    ) -> float:
+        """Alias for auc_per_event, with the same arguments and return value."""
+        return self.auc_per_event(
+            event_of_interest, target_time, method, control_definition
+        )
 
     def concordance(
         self,
@@ -527,9 +624,12 @@ class CompetingRisksEvaluator:
             or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
         ):
             raise ValueError("event_of_interest must be an integer from 1 to n_causes.")
-        risks = self._predict_risks(predict_risk_method, tau, target_time)[
-            :, event_of_interest - 1
-        ]
+        risks = self._predict_risks(
+            predict_risk_method,
+            tau,
+            target_time,
+            event_of_interest=event_of_interest,
+        )
         return concordance_cr_per_event(
             predicted_risks=risks,
             event_times=self.event_times,

@@ -200,7 +200,7 @@ coverage, coverage_gap, average_width = evl.coverage(
 )
 ```
 
-## Right-Censored Metrics
+## Single-Event Right-Censored Metrics
 
 Right-censored survival-curve evaluators include `SurvivalEvaluator`,
 `LifelinesEvaluator`, `PycoxEvaluator`, `ScikitSurvivalEvaluator`, and
@@ -295,6 +295,12 @@ bounds exclude the input curves and IPCW training data. The lower-level
 matrix and counts its pairs directly, since separate columns at the same event
 time may contain different scores.
 
+## Competing-Risks Metrics
+
+`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance and AUC metrics, as well as CR-D-calibration.
+
+Readme docs to be updated before formal release
+
 ## Interval-Censored Metrics
 
 `IntervalCenEvaluator` evaluates predicted survival curves against interval
@@ -345,7 +351,6 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 | `PointEvaluator` | Evaluates already-computed point survival-time predictions with concordance, MAE, MSE, RMSE, and log-rank tests. | `PointEvaluator(predicted_times, event_times, event_indicators, ...)` |
 | `SingleTimeEvaluator` | Evaluates already-computed survival probabilities at one target time with AUC, Brier score, one-calibration, and ICI. | `SingleTimeEvaluator(predicted_probs, event_times, event_indicators, ...)` |
 | `QuantileRegEvaluator` | Converts event-time quantile predictions into survival curves and reuses right-censored survival-curve metrics. | `QuantileRegEvaluator(predicted_quantiles, quantile_levels, ...)` |
-| `CompetingRisksEvaluator` | Evaluates competing-risks CIF curves with CR-D-calibration and per-cause or aggregated concordance. | `CompetingRisksEvaluator(pred_cifs, time_coordinates, event_times, event_indicators)` |
 | Lower-level functions | Most evaluator methods are also available under `SurvivalEVAL.Evaluations` for advanced use cases. | `SurvivalEVAL.Evaluations.concordance(...)` |
 
 `SurvivalEVAL.Evaluations.OtherMetrics` includes research helpers such as

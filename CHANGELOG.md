@@ -58,6 +58,13 @@
     uncensored test sets. Reject nonpositive or nonfinite contributing censoring
     probabilities instead of dropping their contributions. Allow AUROC beyond
     training follow-up when its extrapolated censoring probabilities are positive.
+13. Add competing-risk AUC/AUROC with naive and IPCW scoring and both Blanche
+    control definitions: event-free subjects or all non-cases, including competing
+    events. Export `auc_cr_per_event` and `auc_cr`, with matching evaluator methods
+    and an equal-weight mean across causes. Fit the censoring model once per
+    aggregate call, retain undefined causes as NaN, and share the ROC calculation
+    with single-event AUC. Extend outcome validation to competing-risk labels and
+    remove duplicated concordance and evaluator outcome checks.
 
 ## 2026-10-08: Version 0.8.7
 

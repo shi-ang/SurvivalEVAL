@@ -25,6 +25,25 @@ def predictions():
     return cifs, np.array([0, 2, 4]), np.array([1, 3, 4]), np.array([1, 0, 2])
 
 
+@pytest.mark.parametrize("training", [False, True])
+def test_default_target_time_reflects_current_outcomes(
+    predictions, training: bool
+) -> None:
+    options = (
+        {"train_event_times": [1, 2, 6], "train_event_indicators": [1, 0, 2]}
+        if training
+        else {}
+    )
+    evaluator = CompetingRisksEvaluator(*predictions, **options)
+    assert evaluator.default_target_time == (2.5 if training else 3)
+
+    evaluator.event_times[:] = [0.2, 0.4, 0.6]
+    assert evaluator.default_target_time == pytest.approx(0.8 if training else 0.4)
+    if training:
+        evaluator.train_event_times[:] = [2, 3, 4]
+        assert evaluator.default_target_time == pytest.approx(1.3)
+
+
 @pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize(
@@ -120,14 +139,14 @@ def test_finite_horizon_requires_explicit_eventual_probabilities(predictions):
         ("duplicate_time", "strictly increasing"),
         ("infinite_time", "finite, non-negative"),
         ("negative_time", "finite, non-negative"),
-        ("observed_rank", "one entry per predicted sample"),
-        ("negative_observed", "within the prediction horizon"),
-        ("infinite_observed", "within the prediction horizon"),
+        ("observed_rank", "1D arrays"),
+        ("negative_observed", "finite and non-negative"),
+        ("infinite_observed", "finite and non-negative"),
         ("beyond_horizon", "within the prediction horizon"),
-        ("fractional_cause", "integer cause labels"),
-        ("negative_cause", "integer cause labels"),
+        ("fractional_cause", "integer labels"),
+        ("negative_cause", "integer labels"),
         ("unknown_cause", "integer cause labels"),
-        ("infinite_cause", "integer cause labels"),
+        ("infinite_cause", "integer labels"),
         ("negative_cif", "probabilities in"),
         ("infinite_cif", "probabilities in"),
         ("decreasing_cif", "nondecreasing"),
@@ -305,6 +324,28 @@ def test_concordance_matches_standalone(
             ),
             expected,
         )
+
+
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize("risk_method", ["RMTL", "CIF"])
+@pytest.mark.parametrize("n_samples", [1, 3])
+def test_selected_cause_risks_are_vectors(
+    predictions, interpolation: str, risk_method: str, n_samples: int
+) -> None:
+    cifs, times, observed, events = predictions
+    evaluator = CompetingRisksEvaluator(
+        cifs[:n_samples], times, observed[:n_samples], events[:n_samples], interpolation
+    )
+    tau = 2.5 if risk_method == "RMTL" else None
+    target_time = 2.5 if risk_method == "CIF" else None
+    all_risks = evaluator._predict_risks(risk_method, tau, target_time)
+    assert all_risks.shape == (n_samples, 2)
+    for cause in (1, 2):
+        risks = evaluator._predict_risks(
+            risk_method, tau, target_time, event_of_interest=cause
+        )
+        assert risks.shape == (n_samples,)
+        np.testing.assert_allclose(risks, all_risks[:, cause - 1])
 
 
 def test_tau_sets_rmtl_horizon_and_cif_uses_target_time():

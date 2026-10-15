@@ -133,6 +133,7 @@ def check_and_convert_event_data(
     event_indicators: NumericArrayLike,
     *,
     copy: bool = False,
+    competing_risks: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Validate and convert right-censored survival outcomes.
 
@@ -140,20 +141,34 @@ def check_and_convert_event_data(
         event_times: A 1D array of finite, non-negative observed times.
         event_indicators: Matching binary indicators: 1 for events, 0 for censoring.
         copy: Return independent arrays instead of reusing compatible inputs.
+        competing_risks: Accept non-negative integer cause labels instead of
+            binary indicators. Zero denotes censoring; positive labels denote events.
 
     Returns:
-        Observed times and boolean event indicators. Compatible input arrays
-        are reused when copy is False; inputs are never modified.
+        Observed times and boolean indicators, or unchanged cause labels when
+        competing_risks is True. Compatible input arrays are reused when copy
+        is False; inputs are never modified.
 
     Raises:
         ValueError: If shapes differ, outcomes are not 1D, times are nonfinite
-            or negative, or indicators contain values other than 0 and 1.
+            or negative, or indicators contain invalid event labels.
     """
     times = _as_continuous_array(event_times, copy=copy, input_name="event_times")
     indicators = _as_numpy_array(event_indicators, "event_indicators")
     _validate_numeric_array(indicators, "event_indicators")
 
-    if not np.issubdtype(indicators.dtype, np.bool_):
+    if competing_risks:
+        if (
+            not np.all(np.isfinite(indicators))
+            or np.any(indicators < 0)
+            or np.any(indicators != np.floor(indicators))
+        ):
+            raise ValueError(
+                "event_indicators must contain non-negative integer labels."
+            )
+        if copy:
+            indicators = indicators.copy()
+    elif not np.issubdtype(indicators.dtype, np.bool_):
         if not np.all((indicators == 0) | (indicators == 1)):
             raise ValueError("event_indicators must contain only 0 and 1.")
         indicators = indicators.astype(bool, copy=False)
