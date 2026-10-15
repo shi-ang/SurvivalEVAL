@@ -65,6 +65,7 @@
     aggregate call, retain undefined causes as NaN, and share the ROC calculation
     with single-event AUC. Extend outcome validation to competing-risk labels and
     remove duplicated concordance and evaluator outcome checks.
+14. Other small improvements and bug fixes across the evaluation metrics.
 
 ## 2026-10-08: Version 0.8.7
 

@@ -122,6 +122,15 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.interpolation = interpolation
         self._NO_CENSOR = np.all(left_limits == right_limits)
 
+    @property
+    def default_target_time(self) -> float:
+        """Median unique finite bound across available training and test intervals."""
+        bounds = [self.left_limits, self.right_limits]
+        if self.train_left_limits is not None and self.train_right_limits is not None:
+            bounds.extend((self.train_left_limits, self.train_right_limits))
+        times = np.concatenate(bounds)
+        return float(np.quantile(np.unique(times[np.isfinite(times)]), 0.5))
+
     def _error_trainset(self, method_name: str):
         if (self.train_left_limits is None) or (self.train_right_limits is None):
             raise TypeError(
@@ -228,23 +237,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
                 )
 
         if target_time is None:
-            time_arrays = [
-                self.left_limits,
-                self.right_limits[np.isfinite(self.right_limits)],
-            ]
-            if (
-                self.train_left_limits is not None
-                and self.train_right_limits is not None
-            ):
-                time_arrays.extend(
-                    [
-                        self.train_left_limits,
-                        self.train_right_limits[np.isfinite(self.train_right_limits)],
-                    ]
-                )
-            tau_vals = np.concatenate(time_arrays)
-            tau = np.unique(np.sort(tau_vals))
-            target_time = np.quantile(tau, 0.5)
+            target_time = self.default_target_time
 
         predict_probs = self.predict_probability_from_curve(target_time)
 
@@ -541,7 +534,7 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
     def one_calibration(
         self,
-        target_time: Numeric,
+        target_time: Numeric | None = None,
         num_bins: int = 10,
         binning_strategy: str = "C",
         method: str = "Turnbull",
@@ -552,8 +545,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
 
         Parameters
         ----------
-        target_time: Numeric
-            The time point at which to calculate the one calibration score.
+        target_time: Numeric | None, default: None
+            Evaluation time. None uses default_target_time, the median of unique
+            finite bounds across available training and test intervals.
         num_bins: int, default: 10
             Number of bins used to calculate the one calibration score.
         binning_strategy: str
@@ -591,6 +585,9 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             Only returned when 'return_details' is set to True.
 
         """
+        if target_time is None:
+            target_time = self.default_target_time
+
         predict_probs = self.predict_probability_from_curve(target_time)
         p_value, hl_stats, obs, exp = one_cal_ic(
             preds=1 - predict_probs,

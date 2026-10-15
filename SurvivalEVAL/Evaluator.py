@@ -243,6 +243,14 @@ class SurvivalEvaluator:
         self._clear_cache()
 
     @property
+    def default_target_time(self) -> float:
+        """Median observed time across the available training and test outcomes."""
+        times = self.event_times
+        if self.train_event_times is not None:
+            times = np.concatenate((times, self.train_event_times))
+        return float(np.quantile(times, 0.5))
+
+    @property
     def pred_survs(self):
         return self._pred_survs
 
@@ -833,14 +841,8 @@ class SurvivalEvaluator:
         if method.lower() in {"ipcw", "uno"}:
             self._error_trainset("IPCW AUROC")
 
-        event_times = (
-            np.concatenate((self.event_times, self.train_event_times))
-            if self.train_event_times is not None
-            else self.event_times
-        )
-
         if target_time is None:
-            target_time = np.quantile(event_times, 0.5)
+            target_time = self.default_target_time
 
         predict_probs = self.predict_probability_from_curve(target_time)
 
@@ -977,10 +979,7 @@ class SurvivalEvaluator:
             The Brier score at the target time point.
         """
         if target_time is None:
-            time_arrays = [self.event_times]
-            if self.train_event_times is not None:
-                time_arrays.append(self.train_event_times)
-            target_time = np.quantile(np.concatenate(time_arrays), 0.5)
+            target_time = self.default_target_time
 
         return float(
             self.brier_score_multiple_points(np.asarray([target_time]), IPCW_weighted)[
@@ -1340,7 +1339,7 @@ class SurvivalEvaluator:
 
     def one_calibration(
         self,
-        target_time: Numeric,
+        target_time: Numeric | None = None,
         num_bins: int = 10,
         binning_strategy: str = "C",
         method: str = "DN",
@@ -1350,8 +1349,9 @@ class SurvivalEvaluator:
         Calculate the one calibration score at a given time point from the predicted survival curve.
         Parameters
         ----------
-        target_time: float, int
-            Time point at which the one calibration score is to be calculated.
+        target_time: Numeric | None, default: None
+            Evaluation time. None uses default_target_time, the median observed
+            time across available training and test outcomes.
         num_bins: int, default: 10
             Number of bins used to calculate the one calibration score.
         binning_strategy: str
@@ -1385,6 +1385,9 @@ class SurvivalEvaluator:
             - pp_plot: A tuple containing the figure and axes of the P-P plot.
             Only returned when 'return_details' is set to True.
         """
+        if target_time is None:
+            target_time = self.default_target_time
+
         if self._NO_CENSOR:
             method = "Uncensored"
 
@@ -1459,7 +1462,7 @@ class SurvivalEvaluator:
 
     def integrated_calibration_index(
         self,
-        target_time: Numeric,
+        target_time: Numeric | None = None,
         knots: int = 3,
         draw_figure: bool | None = True,
         figure_range: tuple | None = None,
@@ -1469,8 +1472,9 @@ class SurvivalEvaluator:
 
         Parameters
         ----------
-        target_time: Numeric
-            The specific time points for which to estimate the one calibration scores.
+        target_time: Numeric | None, default: None
+            Evaluation time. None uses default_target_time, the median observed
+            time across available training and test outcomes.
         knots: int, default: 3
             The number of knots to use for the spline fit in the ICI calculation.
         draw_figure: bool, default: True
@@ -1487,6 +1491,9 @@ class SurvivalEvaluator:
         fig: plt.figure
             A figure showing the graphical calibration curve.
         """
+        if target_time is None:
+            target_time = self.default_target_time
+
         predict_probs = self.predict_probability_from_curve(target_time)
         return integrated_calibration_index(
             preds=1 - predict_probs,
