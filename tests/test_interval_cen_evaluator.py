@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
+from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_cal_ic
 from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
@@ -18,13 +19,21 @@ def _load_breast_data():
     return df
 
 
-def _midpoint_times(interval_df: pd.DataFrame):
-    left = interval_df["left"].to_numpy(float)
-    right = interval_df["right"].to_numpy(float)
-    is_finite = np.isfinite(right)
-    times = np.where(is_finite, (left + right) / 2.0, left)
-    indicators = is_finite.astype(int)
-    return times, indicators
+@pytest.mark.parametrize(
+    "method",
+    [
+        "auc",
+        "auroc",
+        "concordance_time_dependent",
+        "integrated_calibration_index",
+        "residuals",
+        "km_calibration",
+        "log_rank",
+    ],
+)
+def test_interval_evaluator_does_not_expose_right_censored_metrics(method: str) -> None:
+    assert hasattr(SurvivalEvaluator, method)
+    assert not hasattr(IntervalCenEvaluator, method)
 
 
 def test_h_statistic_interval_one_calibration_includes_prediction_one():
@@ -117,14 +126,6 @@ def interval_evaluator():
         train_left_limits=train_df["left"].values,
         train_right_limits=train_df["right"].values,
     )
-
-    test_times, test_indicators = _midpoint_times(test_df)
-    train_times, train_indicators = _midpoint_times(train_df)
-
-    evaluator.event_times = test_times
-    evaluator.event_indicators = test_indicators
-    evaluator.train_event_times = train_times
-    evaluator.train_event_indicators = train_indicators
 
     return evaluator, time_coords
 

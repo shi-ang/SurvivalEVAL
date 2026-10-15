@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.integrate import simpson, trapezoid
 
-from SurvivalEVAL import SurvivalEvaluator
+from SurvivalEVAL._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
 from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points_ic,
@@ -30,15 +30,12 @@ from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
     fit_least_squares,
-    predict_mean_st,
-    predict_median_st,
-    predict_rmst,
     validate_time_points,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 
 
-class IntervalCenEvaluator(SurvivalEvaluator):
+class IntervalCenEvaluator(_BaseSurvivalEvaluator):
     """
     Evaluator for interval-censored survival data.
     """
@@ -89,10 +86,6 @@ class IntervalCenEvaluator(SurvivalEvaluator):
             raise ValueError("Found an interval with left > right in the testing data.")
         self.left_limits = left_limits
         self.right_limits = right_limits
-        self.set_prediction_inputs(
-            pred_survs=pred_survs, time_coordinates=time_coordinates
-        )
-
         if (train_left_limits is not None) and (train_right_limits is not None):
             train_left_limits, train_right_limits = check_and_convert(
                 train_left_limits, train_right_limits
@@ -108,19 +101,14 @@ class IntervalCenEvaluator(SurvivalEvaluator):
         self.train_left_limits = train_left_limits
         self.train_right_limits = train_right_limits
 
-        predict_time_method = predict_time_method.lower()
-        if predict_time_method == "median":
-            self.predict_time_method = predict_median_st
-        elif predict_time_method == "mean":
-            self.predict_time_method = predict_mean_st
-        elif predict_time_method == "rmst":
-            self.predict_time_method = predict_rmst
-        else:
-            error = "Please enter one of 'Median', 'Mean', or 'RMST' for calculating predicted survival time."
-            raise TypeError(error)
-
-        self.interpolation = interpolation
         self._NO_CENSOR = np.all(left_limits == right_limits)
+        super().__init__(
+            pred_survs,
+            time_coordinates,
+            n_samples=self.left_limits.shape[0],
+            predict_time_method=predict_time_method,
+            interpolation=interpolation,
+        )
 
     @property
     def default_target_time(self) -> float:
