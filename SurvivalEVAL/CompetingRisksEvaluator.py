@@ -7,6 +7,12 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
 
+from SurvivalEVAL.Evaluations.BrierScore import (
+    _brier_time_grid,
+    _integrate_brier_scores,
+    brier_multiple_points_cr,
+    brier_multiple_points_cr_per_event,
+)
 from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.Evaluations.Discrimination import (
@@ -20,6 +26,7 @@ from SurvivalEVAL.Evaluations.util import (
     check_and_convert_event_data,
     interpolated_curve,
     validate_time_point,
+    validate_time_points,
     zero_padding,
 )
 from SurvivalEVAL.Evaluations.util_plots import _plot_curves, _validate_plot_indices
@@ -59,7 +66,7 @@ class CompetingRisksEvaluator:
         interpolation : {"Linear", "Pchip"}, default="Linear"
             Interpolation method, matching the survival evaluator.
         train_event_times, train_event_indicators : NumericArrayLike, optional
-            Matching 1D training outcomes, required for IPCW concordance and AUC.
+            Matching 1D training outcomes, required for IPCW concordance, AUC, and Brier scores.
             Times must be finite and non-negative; labels are non-negative
             integers with 0 for censoring. Training times may extend beyond
             the prediction horizon. Supply both arrays together.
@@ -365,20 +372,31 @@ class CompetingRisksEvaluator:
             areas += (left + endpoint) * width / 2
         return areas
 
-    def _predict_risks(
+    def predict_risks(
         self,
-        predict_risk_method: str,
-        tau: float | None,
-        target_time: float | None,
+        predict_risk_method: str = "RMTL",
+        tau: float | None = None,
+        target_time: float | None = None,
         event_of_interest: int | None = None,
     ) -> np.ndarray:
         """Compute per-cause risk scores from RMTL or fixed-time CIF probabilities.
 
-        RMTL integrates each CIF to tau (or the final prediction time).
-        CIF evaluates each curve at an explicit target_time. Prediction horizons
-        must be finite and within the grid. Both choices return an array of
-        shape (n_samples, n_causes), or (n_samples,) when event_of_interest
-        selects one cause. Higher scores indicate greater risk.
+        Args:
+            predict_risk_method: "RMTL" (default) or "CIF", case-insensitive.
+            tau: Finite, non-negative RMTL integration horizon within the
+                prediction grid. None uses the final prediction time. Unused for CIF.
+            target_time: Finite, non-negative prediction time within the grid.
+                Required for CIF; must be omitted for RMTL.
+            event_of_interest: Integer cause label from 1 through n_causes.
+                None returns risk scores for all causes.
+
+        Returns:
+            Array of shape (n_samples, n_causes), or (n_samples,) when selecting
+            one cause. Higher scores indicate greater risk. RMTL scores are
+            areas under CIF curves; CIF scores are fixed-time probabilities.
+
+        Raises:
+            ValueError: If the method, horizon, or cause label is invalid.
         """
         risk_method = (
             predict_risk_method.lower()
@@ -392,6 +410,8 @@ class CompetingRisksEvaluator:
                 raise ValueError(
                     "target_time is only used with predict_risk_method='CIF'."
                 )
+            if event_of_interest is not None:
+                self._check_event_of_interest(event_of_interest)
             risks = self.predict_rmtl(tau)
             return (
                 risks if event_of_interest is None else risks[:, event_of_interest - 1]
@@ -399,19 +419,267 @@ class CompetingRisksEvaluator:
         if target_time is None:
             raise ValueError("target_time is required for predict_risk_method='CIF'.")
         target_time = validate_time_point(target_time, "target_time")
-        if not np.isfinite(target_time) or target_time > self.time_coordinates[-1]:
+        return self.predict_cifs(np.array([target_time]), event_of_interest)[..., 0]
+
+    def predict_cifs(
+        self, target_times: np.ndarray, event_of_interest: int | None = None
+    ) -> np.ndarray:
+        """Predict cumulative incidence probabilities at the requested times.
+
+        Args:
+            target_times: One-dimensional array of finite, non-negative times
+                within the prediction horizon. Order and repeated times are preserved.
+            event_of_interest: Integer cause label from 1 through n_causes.
+                None returns predictions for all causes.
+
+        Returns:
+            Array of shape (n_samples, n_causes, n_times), or (n_samples, n_times)
+            when selecting one cause. Uses the evaluator's Linear or Pchip interpolation.
+
+        Raises:
+            ValueError: If times or the cause label are invalid.
+        """
+        target_times = validate_time_points(target_times, input_name="target_times")
+        if not np.all(np.isfinite(target_times)) or np.any(
+            target_times > self.time_coordinates[-1]
+        ):
             raise ValueError(
-                "target_time must be finite and within the prediction horizon."
+                "target_times must be finite and within the prediction horizon."
             )
         cifs = self.pred_cifs
         if event_of_interest is not None:
+            self._check_event_of_interest(event_of_interest)
             cifs = cifs[:, event_of_interest - 1, :]
-        risks = np.empty(cifs.shape[:-1], dtype=float)
-        for index in np.ndindex(risks.shape):
-            risks[index] = interpolated_curve(
+        probabilities = np.empty((*cifs.shape[:-1], target_times.size), dtype=float)
+        for index in np.ndindex(cifs.shape[:-1]):
+            probabilities[index] = interpolated_curve(
                 self.time_coordinates, cifs[index], self.interpolation
-            )(target_time)
-        return np.clip(risks, 0, cifs[..., -1])
+            )(target_times)
+        np.clip(probabilities, 0, cifs[..., -1, None], out=probabilities)
+        return probabilities
+
+    def brier_score(
+        self, target_time: float | None = None, IPCW_weighted: bool = True
+    ) -> float:
+        """Calculate the mean cause-specific Brier score at one time.
+
+        Args:
+            target_time: Finite time within the CIF horizon. None uses
+                default_target_time, the median available train/test observed time.
+            IPCW_weighted: Use training-based IPCW. Defaults to True. Fully
+                observed test data automatically use plain scoring.
+
+        Returns:
+            Equal-weight mean across every predicted cause.
+        """
+        if target_time is None:
+            target_time = self.default_target_time
+        target_time = validate_time_point(target_time, "target_time")
+        return float(
+            self.brier_score_multiple_points(np.array([target_time]), IPCW_weighted)[0]
+        )
+
+    def brier_score_per_event(
+        self,
+        event_of_interest: int = 1,
+        target_time: float | None = None,
+        IPCW_weighted: bool = True,
+    ) -> float:
+        """Calculate a cause-specific Brier score at one time.
+
+        Args:
+            event_of_interest: Integer cause label from 1 through n_causes.
+            target_time: Finite time within the CIF horizon. None uses
+                default_target_time, the median available train/test observed time.
+            IPCW_weighted: Use training-based IPCW, defaulting to True.
+                Fully observed test data automatically use plain scoring.
+
+        Returns:
+            Brier score for the selected cause, including competing-event
+            negative outcomes. An absent cause still has a defined score.
+        """
+        if target_time is None:
+            target_time = self.default_target_time
+        target_time = validate_time_point(target_time, "target_time")
+        return float(
+            self.brier_score_multiple_points_per_event(
+                np.array([target_time]), event_of_interest, IPCW_weighted
+            )[0]
+        )
+
+    def brier_score_multiple_points(
+        self, target_times: np.ndarray, IPCW_weighted: bool = True
+    ) -> np.ndarray:
+        """Calculate mean cause-specific Brier scores at multiple times.
+
+        Args:
+            target_times: Finite, non-negative times within the CIF horizon.
+                Scores follow this order, including repeated times.
+            IPCW_weighted: Use training-based IPCW, defaulting to True.
+                Fully observed test data automatically use plain scoring.
+
+        Returns:
+            A vector of equal-weight means across all predicted causes. Earlier
+            censorings contribute zero; the denominator is the full test size.
+            IPCW fits one censoring model for all causes and times.
+        """
+        return self._brier_score_multiple_points(target_times, IPCW_weighted, None)
+
+    def brier_score_multiple_points_per_event(
+        self,
+        target_times: np.ndarray,
+        event_of_interest: int = 1,
+        IPCW_weighted: bool = True,
+    ) -> np.ndarray:
+        """Calculate a selected cause's Brier scores at multiple times.
+
+        Args:
+            target_times: Finite, non-negative times within the CIF horizon.
+            event_of_interest: Integer cause label from 1 through n_causes.
+            IPCW_weighted: Use training-based IPCW, defaulting to True.
+                Fully observed test data automatically use plain scoring.
+
+        Returns:
+            One score per target time, including competing events as negative
+            outcomes. Earlier censorings contribute zero; divide by full test size.
+        """
+        self._check_event_of_interest(event_of_interest)
+        return self._brier_score_multiple_points(
+            target_times, IPCW_weighted, event_of_interest
+        )
+
+    def _brier_score_multiple_points(
+        self, target_times: np.ndarray, ipcw: bool, event_of_interest: int | None
+    ) -> np.ndarray:
+        """Predict CIFs and dispatch to aggregate or selected-cause scoring."""
+        probabilities = self.predict_cifs(target_times, event_of_interest)
+        if np.all(self.event_indicators > 0):
+            ipcw = False
+        metric = (
+            brier_multiple_points_cr
+            if event_of_interest is None
+            else brier_multiple_points_cr_per_event
+        )
+        options = (
+            {}
+            if event_of_interest is None
+            else {"event_of_interest": event_of_interest}
+        )
+        return metric(
+            pred_mat=probabilities,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            target_times=target_times,
+            ipcw=ipcw,
+            **options,
+        )
+
+    def integrated_brier_score(
+        self,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
+        IPCW_weighted: bool = True,
+        integration_method: str = "trapz",
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """Integrate the mean cause-specific Brier score over a time grid.
+
+        Args:
+            num_points: Generate this many times from zero through the maximum
+                train/test observed time. Mutually exclusive with target_times.
+            target_times: Explicit integration grid within the CIF horizon.
+                Unsorted times are sorted with a warning. If neither grid option
+                is supplied, use unique test censoring times; at least two are needed.
+            IPCW_weighted: Use training-based IPCW, defaulting to True.
+                Fully observed test data automatically use plain scoring.
+            integration_method: Case-insensitive 'trapz' (default) or 'simpson'.
+            draw_figure: Also return the Brier curve figure and axes.
+
+        Returns:
+            The integral divided by the time span, or (ibs, (fig, ax)) when
+            draw_figure is True. Every predicted cause receives equal weight.
+        """
+        return self._integrated_brier_score(
+            None,
+            num_points,
+            target_times,
+            IPCW_weighted,
+            integration_method,
+            draw_figure,
+        )
+
+    def integrated_brier_score_per_event(
+        self,
+        event_of_interest: int = 1,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
+        IPCW_weighted: bool = True,
+        integration_method: str = "trapz",
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """Integrate a cause-specific Brier score over a time grid.
+
+        Args:
+            event_of_interest: Integer cause label from 1 through n_causes.
+            num_points: Generate times from zero through the maximum train/test
+                observed time. Mutually exclusive with target_times.
+            target_times: Explicit grid within the CIF horizon, sorted with a
+                warning if needed. With neither grid option, infer unique test
+                censoring times; at least two are needed.
+            IPCW_weighted: Use training-based IPCW, defaulting to True.
+                Fully observed test data automatically use plain scoring.
+            integration_method: Case-insensitive 'trapz' (default) or 'simpson'.
+            draw_figure: Also return the Brier curve figure and axes.
+
+        Returns:
+            The cause-specific integral divided by the grid's time span, or
+            (ibs, (fig, ax)) when draw_figure is True.
+        """
+        self._check_event_of_interest(event_of_interest)
+        return self._integrated_brier_score(
+            event_of_interest,
+            num_points,
+            target_times,
+            IPCW_weighted,
+            integration_method,
+            draw_figure,
+        )
+
+    def _integrated_brier_score(
+        self,
+        event_of_interest: int | None,
+        num_points: int | None,
+        target_times: np.ndarray | None,
+        ipcw: bool,
+        integration_method: str,
+        draw_figure: bool,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """Resolve the common grid, evaluate once, then integrate and optionally plot."""
+        target_times = _brier_time_grid(
+            self.event_times,
+            self.event_indicators,
+            self.train_event_times,
+            num_points,
+            target_times,
+        )
+        scores = self._brier_score_multiple_points(
+            target_times, ipcw, event_of_interest
+        )
+        ibs = _integrate_brier_scores(scores, target_times, integration_method)
+        if not draw_figure:
+            return ibs
+        fig, ax = _plot_curves(
+            target_times,
+            scores,
+            [f"IBS = {ibs:.3f}"],
+            title="Integrated Brier Score",
+            x_label="Time",
+            y_label="Brier Score",
+            marker="o",
+        )
+        return ibs, (fig, ax)
 
     def auc(
         self,
@@ -439,7 +707,7 @@ class CompetingRisksEvaluator:
         """
         if target_time is None:
             target_time = self.default_target_time
-        probabilities = self._predict_risks("CIF", None, target_time)
+        probabilities = self.predict_risks("CIF", None, target_time)
         return auc_cr(
             predict_probs=probabilities,
             event_times=self.event_times,
@@ -475,15 +743,10 @@ class CompetingRisksEvaluator:
             ValueError: If the cause is invalid, cases or controls are absent,
                 or inputs do not satisfy auc_cr_per_event's requirements.
         """
-        if (
-            isinstance(event_of_interest, (bool, np.bool_))
-            or not isinstance(event_of_interest, (int, np.integer))
-            or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
-        ):
-            raise ValueError("event_of_interest must be an integer from 1 to n_causes.")
+        self._check_event_of_interest(event_of_interest)
         if target_time is None:
             target_time = self.default_target_time
-        probabilities = self._predict_risks(
+        probabilities = self.predict_risks(
             "CIF", None, target_time, event_of_interest=event_of_interest
         )
         return auc_cr_per_event(
@@ -572,7 +835,7 @@ class CompetingRisksEvaluator:
         details : dict, optional
             Per-cause scores and counts; counts are weighted for IPCW.
         """
-        risks = self._predict_risks(predict_risk_method, tau, target_time)
+        risks = self.predict_risks(predict_risk_method, tau, target_time)
         return concordance_cr(
             predicted_risks=risks,
             event_times=self.event_times,
@@ -628,13 +891,8 @@ class CompetingRisksEvaluator:
             Per-cause concordance and pair counts, including half credit for
             retained ties. Counts are weighted for IPCW.
         """
-        if (
-            isinstance(event_of_interest, (bool, np.bool_))
-            or not isinstance(event_of_interest, (int, np.integer))
-            or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
-        ):
-            raise ValueError("event_of_interest must be an integer from 1 to n_causes.")
-        risks = self._predict_risks(
+        self._check_event_of_interest(event_of_interest)
+        risks = self.predict_risks(
             predict_risk_method,
             tau,
             target_time,
@@ -716,3 +974,12 @@ class CompetingRisksEvaluator:
             reduction=reduction,
             return_details=return_details,
         )
+
+    def _check_event_of_interest(self, event_of_interest: int) -> None:
+        """Require a cause label from 1 through the number of predicted causes."""
+        if (
+            isinstance(event_of_interest, (bool, np.bool_))
+            or not isinstance(event_of_interest, (int, np.integer))
+            or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
+        ):
+            raise ValueError("event_of_interest must be an integer from 1 to n_causes.")

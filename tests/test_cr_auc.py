@@ -451,7 +451,7 @@ def test_cr_evaluator_auc_matches_standalone(
             np.median(np.r_[outcomes["event_times"], outcomes["train_event_times"]])
         )
     )
-    predicted = evaluator._predict_risks("CIF", None, target)
+    predicted = evaluator.predict_risks("CIF", None, target)
     options = dict(method=method, control_definition=controls)
     call = dict(options, target_time=3) if explicit_target else options
     expected = auc_cr(

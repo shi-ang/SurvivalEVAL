@@ -353,10 +353,10 @@ def test_selected_cause_risks_are_vectors(
     )
     tau = 2.5 if risk_method == "RMTL" else None
     target_time = 2.5 if risk_method == "CIF" else None
-    all_risks = evaluator._predict_risks(risk_method, tau, target_time)
+    all_risks = evaluator.predict_risks(risk_method, tau, target_time)
     assert all_risks.shape == (n_samples, 2)
-    for cause in (1, 2):
-        risks = evaluator._predict_risks(
+    for cause in (1, 2, np.int64(1), np.int32(2)):
+        risks = evaluator.predict_risks(
             risk_method, tau, target_time, event_of_interest=cause
         )
         assert risks.shape == (n_samples,)
@@ -400,11 +400,12 @@ def test_invalid_rmtl_horizons(predictions, tau):
         evaluator.concordance_per_event(tau=tau)
 
 
-@pytest.mark.parametrize("cause", [0, 3, 1.5, True])
-def test_invalid_concordance_cause(predictions, cause):
+@pytest.mark.parametrize("cause", [None, 0, 3, 1.5, True, np.bool_(True)])
+@pytest.mark.parametrize("metric", ["auc_per_event", "concordance_per_event"])
+def test_invalid_per_event_cause(predictions: tuple, cause: object, metric: str) -> None:
     evaluator = CompetingRisksEvaluator(*predictions)
     with pytest.raises(ValueError, match="event_of_interest"):
-        evaluator.concordance_per_event(cause)
+        getattr(evaluator, metric)(cause)
 
 
 def test_ipcw_concordance_requires_training_data(predictions):

@@ -297,7 +297,7 @@ time may contain different scores.
 
 ## Competing-Risks Metrics
 
-`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance and AUC metrics, as well as CR-D-calibration.
+`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance, AUC, Brier scores, and integrated Brier scores, as well as CR-D-calibration.
 
 Readme docs to be updated before formal release
 

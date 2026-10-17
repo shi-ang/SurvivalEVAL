@@ -66,6 +66,13 @@
     with single-event AUC. Extend outcome validation to competing-risk labels and
     remove duplicated concordance and evaluator outcome checks.
 14. Other small improvements and bug fixes across the evaluation metrics.
+15. Add plain and IPCW competing-risk Brier scores and IBS, with per-cause
+    evaluator methods and equal-weight means across predicted causes. Export
+    `brier_multiple_points_cr` and `brier_multiple_points_cr_per_event`.
+    Share Brier masks, left-limit censoring weights, and squared-error scoring
+    with survival Brier scores; fit censoring once per call and process causes
+    with one floating-point error workspace. Share survival/competing-risk IBS
+    grid resolution and integration, and correct the survival Simpson call.
 
 ## 2026-10-08: Version 0.8.7
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from lifelines import WeibullAFTFitter
+from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric
 from SurvivalEVAL.Evaluations.util import (
@@ -262,71 +265,316 @@ def brier_multiple_points(
     brier_scores: np.ndarray, shape = (n_time_points, )
         Values of multiple Brier scores in target_times order.
     """
+    pred_mat, event_times, event_indicators, target_times = _check_brier_inputs(
+        pred_mat, event_times, event_indicators, target_times
+    )
+    components = _brier_components(
+        event_times,
+        event_indicators,
+        target_times,
+        train_event_times,
+        train_event_indicators,
+        ipcw,
+    )
+    return _brier_scores(pred_mat, None, *components)
+
+
+def brier_multiple_points_cr_per_event(
+    pred_mat: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
+    target_times: np.ndarray,
+    ipcw: bool = True,
+    event_of_interest: int = 1,
+) -> np.ndarray:
+    """Calculate cause-specific Brier scores from CIF probabilities.
+
+    Args:
+        pred_mat: Finite CIF probabilities in [0, 1], shape (n_samples, n_times).
+        event_times: Finite, non-negative observed event or censoring times.
+        event_indicators: Non-negative integer causes; 0 denotes censoring.
+        train_event_times: Training outcomes, required for IPCW.
+        train_event_indicators: Training causes. All positive labels are events
+            when fitting the censoring distribution.
+        target_times: Finite, non-negative evaluation times, in prediction order.
+        ipcw: Use training reverse-KM censoring weights. Defaults to True.
+        event_of_interest: Positive integer cause label. Defaults to 1.
+
+    Returns:
+        A Brier score per target time. Observed competing events have outcome 0
+        and remain in the score. Earlier censorings contribute zero; the
+        denominator is the full test sample size even without IPCW. A cause
+        absent from the test data still has a defined score.
+
+    Raises:
+        ValueError: If inputs are invalid, IPCW training outcomes are missing,
+            or a contributing censoring probability is nonfinite or nonpositive.
+
+    Notes:
+        Events by the target receive weight 1/G(event_time-); observations
+        after the target and censorings exactly at it receive 1/G(target_time-).
+        Without IPCW these contributions receive unit weights. Marginal IPCW
+        assumes independent censoring; reverse KM retains its linear tail
+        beyond training follow-up, matching the package's other IPCW metrics.
+
+    References:
+        Gerds and Schumacher (2006), https://doi.org/10.1002/bimj.200610301.
+    """
+    if (
+        isinstance(event_of_interest, (bool, np.bool_))
+        or not isinstance(event_of_interest, (int, np.integer))
+        or event_of_interest < 1
+    ):
+        raise ValueError("event_of_interest must be a positive integer cause label.")
+    pred_mat, event_times, event_indicators, target_times = _check_brier_inputs(
+        pred_mat, event_times, event_indicators, target_times, competing_risks=True
+    )
+    components = _brier_components(
+        event_times,
+        event_indicators,
+        target_times,
+        train_event_times,
+        train_event_indicators,
+        ipcw,
+        competing_risks=True,
+    )
+    return _brier_scores(pred_mat, event_indicators == event_of_interest, *components)
+
+
+def brier_multiple_points_cr(
+    pred_mat: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
+    target_times: np.ndarray,
+    ipcw: bool = True,
+) -> np.ndarray:
+    """Calculate the equal-weight mean of cause-specific Brier scores.
+
+    Args:
+        pred_mat: Finite CIF probabilities in [0, 1], shape
+            (n_samples, n_causes, n_times). Column k - 1 represents cause k.
+        event_times: Finite, non-negative observed event or censoring times.
+        event_indicators: Integer labels from 0 through n_causes; 0 is censoring.
+        train_event_times: Training outcomes, required for IPCW.
+        train_event_indicators: Non-negative integer training cause labels.
+        target_times: Finite, non-negative evaluation times, in prediction order.
+        ipcw: Use training reverse-KM censoring weights. Defaults to True.
+
+    Returns:
+        A mean Brier score per target time. Every predicted cause is included,
+        including causes absent from the test outcomes. This averages binary
+        cause-specific scores; it does not add an event-free-state score.
+
+    Raises:
+        ValueError: If inputs or required censoring probabilities are invalid.
+            See brier_multiple_points_cr_per_event for weighting conventions.
+
+    Notes:
+        Censoring weights are calculated once for all causes. After input
+        conversion, working memory beyond the inputs is O(n_samples * n_times),
+        independent of n_causes.
+    """
+    pred_mat, event_times, event_indicators, target_times = _check_brier_inputs(
+        pred_mat,
+        event_times,
+        event_indicators,
+        target_times,
+        competing_risks=True,
+        ndim=3,
+    )
+    if np.any(event_indicators > pred_mat.shape[1]):
+        raise ValueError("Event labels must not exceed the number of predicted causes.")
+    components = _brier_components(
+        event_times,
+        event_indicators,
+        target_times,
+        train_event_times,
+        train_event_indicators,
+        ipcw,
+        competing_risks=True,
+    )
+    scores = np.zeros(target_times.size, dtype=float)
+    for cause, predictions in enumerate(pred_mat.transpose(1, 0, 2), start=1):
+        scores += _brier_scores(predictions, event_indicators == cause, *components)
+    return scores / pred_mat.shape[1]
+
+
+def _check_brier_inputs(
+    pred_mat: np.ndarray,
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    target_times: np.ndarray,
+    *,
+    competing_risks: bool = False,
+    ndim: int = 2,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Validate predictions and outcomes for survival or cause-specific Brier scores."""
     pred_mat = check_and_convert(pred_mat)
     event_times, event_indicators = check_and_convert_event_data(
-        event_times, event_indicators
+        event_times, event_indicators, competing_risks=competing_risks
     )
     target_times = validate_time_points(target_times, input_name="target_times")
     if not np.all(np.isfinite(target_times)):
         raise ValueError("target_times must be finite.")
-    n_samples = event_times.size
-    n_times = target_times.size
-    if pred_mat.shape != (n_samples, n_times):
-        raise ValueError(
-            "pred_mat must have shape (n_samples, n_time_points) = "
-            f"({n_samples}, {n_times}), got {pred_mat.shape}"
+    if (
+        pred_mat.ndim != ndim
+        or pred_mat.shape[0] != event_times.size
+        or pred_mat.shape[-1] != target_times.size
+    ):
+        shape = (
+            "(n_samples, n_time_points)"
+            if ndim == 2
+            else "(n_samples, n_causes, n_time_points)"
         )
-    if not np.all(np.isfinite(pred_mat)) or np.any((pred_mat < 0) | (pred_mat > 1)):
-        raise ValueError("pred_mat must contain finite probabilities in [0, 1].")
-    if ipcw and (train_event_times is None or train_event_indicators is None):
-        raise ValueError(
-            "Training event times and indicators must be provided for IPCW weighting."
-        )
+        raise ValueError(f"pred_mat must have shape {shape}, got {pred_mat.shape}.")
+    # Validate one cause at a time so temporary masks do not grow with n_causes.
+    matrices = (pred_mat,) if ndim == 2 else pred_mat.transpose(1, 0, 2)
+    for predictions in matrices:
+        if not np.all(np.isfinite(predictions)) or np.any(
+            (predictions < 0) | (predictions > 1)
+        ):
+            raise ValueError("pred_mat must contain finite probabilities in [0, 1].")
+    return pred_mat, event_times, event_indicators, target_times
 
-    target_times_row = target_times[None, :]
-    event_times_column = event_times[:, None]
-    event_indicators_column = event_indicators[:, None]
 
-    if ipcw:
-        train_times, train_events = check_and_convert_event_data(
-            train_event_times, train_event_indicators
-        )
-        ipc_model = KaplanMeier(train_times, train_events, reverse=True)
-
-    # Accumulate the two mutually exclusive Brier components sequentially so
-    # only one dense floating-point error matrix is live at a time.
-    event_before_or_at_target = event_times_column <= target_times_row
-    event_before_or_at_target &= event_indicators_column
-    component_error = np.square(pred_mat, dtype=float)
-    component_error *= event_before_or_at_target
-    if ipcw:
-        contributing_events = event_before_or_at_target.any(axis=1)
-        event_weights = np.ones(n_samples, dtype=float)
-        event_weights[contributing_events] = _inverse_censoring_weights(
-            ipc_model.predict(event_times[contributing_events], side="left")
-        )
-        component_error *= event_weights[:, None]
-    brier_sums = component_error.sum(axis=0)
-    del component_error, event_before_or_at_target
-
-    event_free_at_target = event_times_column > target_times_row
-    censored_at_target = event_times_column == target_times_row
-    censored_at_target &= ~event_indicators_column
-    event_free_at_target |= censored_at_target
+def _brier_components(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    target_times: np.ndarray,
+    train_event_times: np.ndarray | None,
+    train_event_indicators: np.ndarray | None,
+    ipcw: bool,
+    *,
+    competing_risks: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Prepare shared event/event-free masks and their one-dimensional weights."""
+    observed = event_indicators > 0
+    event_before = event_times[:, None] <= target_times[None, :]
+    event_before &= observed[:, None]
+    event_free = event_times[:, None] > target_times[None, :]
+    censored_at_target = event_times[:, None] == target_times[None, :]
+    censored_at_target &= ~observed[:, None]
+    event_free |= censored_at_target
     del censored_at_target
-    component_error = np.subtract(1.0, pred_mat, dtype=float)
-    np.square(component_error, out=component_error)
-    component_error *= event_free_at_target
+    event_weights = np.ones(event_times.size, dtype=float)
+    target_weights = np.ones(target_times.size, dtype=float)
     if ipcw:
-        contributing_targets = event_free_at_target.any(axis=0)
-        target_weights = np.ones(n_times, dtype=float)
-        target_weights[contributing_targets] = _inverse_censoring_weights(
-            ipc_model.predict(target_times[contributing_targets], side="left")
+        if train_event_times is None or train_event_indicators is None:
+            raise ValueError(
+                "Training event times and indicators must be provided for IPCW weighting."
+            )
+        train_times, train_events = check_and_convert_event_data(
+            train_event_times, train_event_indicators, competing_risks=competing_risks
         )
-        component_error *= target_weights[None, :]
-    brier_sums += component_error.sum(axis=0)
+        model = KaplanMeier(train_times, train_events > 0, reverse=True)
+        contributing_events = event_before.any(axis=1)
+        event_weights[contributing_events] = _inverse_censoring_weights(
+            model.predict(event_times[contributing_events], side="left")
+        )
+        contributing_targets = event_free.any(axis=0)
+        target_weights[contributing_targets] = _inverse_censoring_weights(
+            model.predict(target_times[contributing_targets], side="left")
+        )
+    return event_before, event_free, event_weights, target_weights
 
-    return brier_sums / n_samples
+
+def _brier_scores(
+    pred_mat: np.ndarray,
+    event_targets: np.ndarray | None,
+    event_before: np.ndarray,
+    event_free: np.ndarray,
+    event_weights: np.ndarray,
+    target_weights: np.ndarray,
+) -> np.ndarray:
+    """Score survival (event_targets=None) or one cause using one float workspace."""
+    component_error = np.subtract(
+        pred_mat, 0.0 if event_targets is None else event_targets[:, None], dtype=float
+    )
+    np.square(component_error, out=component_error)
+    component_error *= event_before
+    component_error *= event_weights[:, None]
+    scores = component_error.sum(axis=0)
+    del component_error
+
+    component_error = np.subtract(
+        pred_mat, 1.0 if event_targets is None else 0.0, dtype=float
+    )
+    np.square(component_error, out=component_error)
+    component_error *= event_free
+    component_error *= target_weights[None, :]
+    scores += component_error.sum(axis=0)
+    return scores / pred_mat.shape[0]
+
+
+def _brier_time_grid(
+    event_times: np.ndarray,
+    event_indicators: np.ndarray,
+    train_event_times: np.ndarray | None,
+    num_points: int | None,
+    target_times: np.ndarray | None,
+) -> np.ndarray:
+    """Resolve the IBS grid, retaining the survival evaluator's censor-time default."""
+    if num_points is not None and target_times is not None:
+        raise ValueError(
+            "Please provide either `num_points` OR `target_times`, not both."
+        )
+    if target_times is not None:
+        times = np.asarray(target_times, dtype=float)
+        if times.ndim != 1:
+            raise ValueError("`target_times` must be a 1D array of times.")
+    elif num_points is not None:
+        if (
+            isinstance(num_points, (bool, np.bool_))
+            or not isinstance(num_points, (int, np.integer))
+            or num_points < 2
+        ):
+            raise ValueError(
+                "`num_points` must be an integer >= 2 to perform integration."
+            )
+        max_time = event_times.max()
+        if train_event_times is not None:
+            max_time = max(max_time, train_event_times.max())
+        times = np.linspace(0.0, max_time, num_points)
+    else:
+        times = np.unique(event_times[event_indicators == 0])
+        if times.size < 2:
+            raise ValueError(
+                "Could not infer `target_times` from censored samples. "
+                "Please provide `num_points` or `target_times`."
+            )
+    if times.size < 2:
+        raise ValueError(
+            "`target_times` must contain at least 2 time values for integration."
+        )
+    times = validate_time_points(times, input_name="target_times")
+    if not np.all(np.isfinite(times)):
+        raise ValueError("target_times must be finite.")
+    if np.any(np.diff(times) < 0):
+        warnings.warn("`target_times` is not sorted; sorting it now.", stacklevel=2)
+        times = np.sort(times)
+    if times[-1] <= times[0]:
+        raise ValueError("target_times must span a positive range for IBS integration.")
+    return times
+
+
+def _integrate_brier_scores(
+    scores: np.ndarray, target_times: np.ndarray, integration_method: str
+) -> float:
+    """Average the Brier curve over a validated positive time span."""
+    integration_method = integration_method.lower()
+    if integration_method == "trapz":
+        integral = trapezoid(scores, x=target_times)
+    elif integration_method == "simpson":
+        integral = simpson(scores, x=target_times)
+    else:
+        raise ValueError(
+            f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'."
+        )
+    return float(integral / (target_times[-1] - target_times[0]))
 
 
 def brier_multiple_points_ic(

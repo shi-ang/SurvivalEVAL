@@ -214,7 +214,7 @@ def validate_time_point(
     TypeError
         If the input is not a numeric scalar.
     ValueError
-        If the scalar time point is negative.
+        If the scalar time point is negative or NaN.
     """
     is_scalar = np.isscalar(time_point) or (
         isinstance(time_point, np.ndarray) and time_point.ndim == 0
@@ -232,6 +232,8 @@ def validate_time_point(
         raise TypeError(f"{input_name} must be a numeric scalar.")
 
     time_point = float(np.asarray(time_point, dtype=float))
+    if np.isnan(time_point):
+        raise ValueError(f"{input_name} must be finite or positive infinity, not NaN.")
     if time_point < 0:
         raise ValueError(f"{input_name} must be non-negative.")
 

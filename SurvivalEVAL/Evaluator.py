@@ -8,11 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from lifelines.statistics import logrank_test
-from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
-from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points
+from SurvivalEVAL.Evaluations.BrierScore import (
+    _brier_time_grid,
+    _integrate_brier_scores,
+    brier_multiple_points,
+)
 from SurvivalEVAL.Evaluations.Calibration import (
     d_calibration,
     integrated_calibration_index,
@@ -418,8 +421,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             across train + test.
 
             If both `num_points` and `target_times` are None:
-            - We try to infer `target_times` from the unique censoring times in the *test* set.
-            (This matches your old behavior.)
+            - Infer `target_times` from the unique censoring times in the test set.
 
         target_times : np.ndarray, shape = (m,), optional (default=None)
             Explicit time grid at which to evaluate the Brier score.
@@ -450,76 +452,13 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Integrated Brier Score (IBS)")
 
-        # Sanity check: cannot pass both num_points and target_times
-        if (num_points is not None) and (target_times is not None):
-            raise ValueError(
-                "Please provide either `num_points` OR `target_times`, not both."
-            )
-
-        # Compute max_target_time from test set (and train set if available)
-        if self.train_event_times is not None:
-            max_target_time = np.max(
-                np.concatenate((self.event_times, self.train_event_times))
-            )
-        else:
-            max_target_time = np.max(self.event_times)
-
-        # Case 1: user provided explicit target_times
-        if target_times is not None:
-            # ensure numpy array
-            target_times = np.asarray(target_times, dtype=float)
-
-            if target_times.ndim != 1:
-                raise ValueError("`target_times` must be a 1D array of times.")
-
-            if len(target_times) < 2:
-                raise ValueError(
-                    "`target_times` must contain at least 2 time values "
-                    "to perform numerical integration."
-                )
-
-            # Sort explicit target times if needed, preserving the integration range.
-            if not np.all(np.diff(target_times) >= 0):
-                warnings.warn("`target_times` is not sorted; sorting it now.")
-                target_times = np.sort(target_times)
-
-            # time_range is the range on which we integrate
-            time_range = target_times[-1] - target_times[0]
-            if time_range <= 0:
-                raise ValueError(
-                    "target_times must span a positive range for IBS integration."
-                )
-
-        # Case 2: user provided num_points
-        elif num_points is not None:
-            if num_points < 2:
-                raise ValueError("`num_points` must be >= 2 to perform integration.")
-
-            # Uniform grid from 0 to max_target_time
-            target_times = np.linspace(0.0, max_target_time, num_points)
-            time_range = max_target_time  # because we started at 0
-
-        # Case 3: neither provided → infer from censored times in test set
-        else:
-            censored_times = self.event_times[self.event_indicators == 0]
-            target_times = np.unique(censored_times)
-
-            if target_times.size < 2:
-                # (old behavior raised if no censor data at all)
-                raise ValueError(
-                    "Could not infer `target_times` from censored samples "
-                    "(e.g., no/too-few censored test points). "
-                    "Please provide `num_points` or `target_times`."
-                )
-
-            # Sort just in case (np.unique already sorts but let's be explicit)
-            target_times = np.sort(target_times)
-
-            time_range = target_times[-1] - target_times[0]
-
-        # Get single brier score from multiple target times, and use integral to calculate ISB.
-        #########################
-        # Solution 1, implemented using metrics multiplication, this is geometrically faster than solution 2
+        target_times = _brier_time_grid(
+            self.event_times,
+            self.event_indicators,
+            self.train_event_times,
+            num_points,
+            target_times,
+        )
         b_scores = self.brier_score_multiple_points(target_times, IPCW_weighted)
         if np.isnan(b_scores).any():
             warnings.warn("Time-dependent Brier Score contains nan")
@@ -528,32 +467,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
                 bs_dict[time_point] = b_score
             print("Brier scores for multiple time points are:\n", bs_dict)
 
-        integration_method = integration_method.lower()
-        if integration_method == "trapz":
-            integral_value = trapezoid(b_scores, target_times)
-        elif integration_method == "simpson":
-            if len(b_scores) < 3:
-                # Fall back to trapezoidal rule if not enough points for Simpson's rule
-                integral_value = trapezoid(b_scores, target_times)
-            else:
-                integral_value = simpson(b_scores, target_times)
-        else:
-            raise ValueError(
-                f"Integration method '{integration_method}' not supported. Use 'trapz' or 'simpson'."
-            )
-
-        ibs_score = integral_value / time_range
-        ##########################
-        # (Deprecated)
-        # Solution 2, implemented by iteratively calling self.brier_score(),
-        # this solution is much slower than solution 1
-        # b_scores = []
-        # for i in range(len(target_times)):
-        #     b_score = self.brier_score(target_times[i])
-        #     b_scores.append(b_score)
-        # b_scores = np.array(b_scores)
-        # integral_value = trapezoid(b_scores, target_times)
-        # ibs_score = integral_value / time_range
+        ibs_score = _integrate_brier_scores(b_scores, target_times, integration_method)
 
         # Draw the Brier score graph
         if draw_figure:

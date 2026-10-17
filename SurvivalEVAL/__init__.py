@@ -2,6 +2,8 @@ from SurvivalEVAL.CompetingRisksEvaluator import CompetingRisksEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_right_censor
 from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points,
+    brier_multiple_points_cr,
+    brier_multiple_points_cr_per_event,
     brier_multiple_points_ic,
     brier_score_ic,
 )
@@ -68,6 +70,8 @@ __all__ = [
     "auprc_ic",
     "brier_score_ic",
     "brier_multiple_points",
+    "brier_multiple_points_cr",
+    "brier_multiple_points_cr_per_event",
     "brier_multiple_points_ic",
     "concordance",
     "concordance_cr",
