@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import trapezoid
 
-from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert,
+    check_and_convert_event_data,
+    check_and_convert_probabilities,
+    zero_padding,
+)
 from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
     AalenJohansenCompetingRisks,
 )
@@ -48,9 +53,11 @@ def _aj_calibration_scores(
     mean_pred_cifs, aj_cifs : ndarray, shape (n_evaluated_causes, n_retained_times)
         Mean predictions and right-continuous Aalen–Johansen reference CIFs.
     """
-    cifs = check_and_convert(pred_cifs)
+    cifs = check_and_convert_probabilities(pred_cifs, "CIFs")
     times = check_and_convert(time_coordinates)
-    observed_times, events = check_and_convert(event_times, event_indicators)
+    observed_times, events = check_and_convert_event_data(
+        event_times, event_indicators, competing_risks=True
+    )
     if event_of_interest is not None:
         if cifs.ndim != 2:
             raise ValueError(
@@ -67,7 +74,7 @@ def _aj_calibration_scores(
         )
     if cifs.shape[2] != times.size:
         raise ValueError("The CIF time axis must match time_coordinates.")
-    if observed_times.ndim != 1 or cifs.shape[0] != observed_times.size:
+    if cifs.shape[0] != observed_times.size:
         raise ValueError("Event arrays must have one entry per predicted sample.")
     if (
         not np.all(np.isfinite(times))
@@ -77,18 +84,10 @@ def _aj_calibration_scores(
         raise ValueError(
             "time_coordinates must be finite, non-negative and strictly increasing."
         )
-    if not np.all(np.isfinite(cifs)) or np.any((cifs < 0) | (cifs > 1)):
-        raise ValueError("CIFs must contain finite probabilities in [0, 1].")
     if np.any(np.diff(cifs, axis=2) < 0):
         raise ValueError("CIF curves must be nondecreasing.")
     if np.any(cifs.sum(axis=1, dtype=float) > 1 + 1e-6):
         raise ValueError("CIFs across causes must sum to at most one.")
-    if (
-        not np.all(np.isfinite(events))
-        or np.any(events < 0)
-        or np.any(events != np.floor(events))
-    ):
-        raise ValueError("event_indicators must contain non-negative integer labels.")
     if not np.isscalar(alpha) or not np.isfinite(alpha) or alpha < 1:
         raise ValueError("alpha must be finite and at least 1.")
     if (
@@ -98,18 +97,15 @@ def _aj_calibration_scores(
     ):
         raise ValueError("min_prop_at_risk must be finite and between 0 and 1.")
 
-    n_causes = (
-        cifs.shape[1]
-        if event_of_interest is None
-        else max(event_of_interest, int(events.max()))
-    )
+    n_causes = cifs.shape[1]
+    if event_of_interest is not None:
+        # Pool competing causes without changing the selected marginal CIF.
+        events = np.where(events == event_of_interest, 1, np.where(events > 0, 2, 0))
+        n_causes = 2
     aj = AalenJohansenCompetingRisks(n_causes=n_causes).fit(observed_times, events)
-    mean_cifs = cifs.mean(axis=0, dtype=float)
-    if times[0] > 0:
-        times = np.concatenate(([0], times))
-        mean_cifs = np.concatenate(
-            (np.zeros((mean_cifs.shape[0], 1)), mean_cifs), axis=1
-        )
+    mean_cifs, times = zero_padding(
+        cifs.mean(axis=0, dtype=float), times, initial_value=0.0
+    )
 
     # Count T >= t, including event/censoring ties, without an n_samples x n_times array.
     at_risk = observed_times.size - np.searchsorted(np.sort(observed_times), times)
@@ -121,7 +117,7 @@ def _aj_calibration_scores(
         )
     aj_cifs = aj.predict_cif(times).T
     if event_of_interest is not None:
-        aj_cifs = aj_cifs[event_of_interest - 1 : event_of_interest]
+        aj_cifs = aj_cifs[:1]
 
     # Integrating on the normalized grid gives the time-averaged powered error.
     scores = trapezoid(np.abs(mean_cifs - aj_cifs) ** alpha, times / times[-1], axis=1)

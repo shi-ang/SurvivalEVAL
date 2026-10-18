@@ -298,7 +298,7 @@ time may contain different scores.
 
 ## Competing-Risks Metrics
 
-`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance, AUC, Brier scores, and integrated Brier scores, as well as CR-D-calibration.
+`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance, AUC, Brier scores, integrated Brier scores, single-time calibration, AJ-calibration, and CR-D-calibration.
 
 Readme docs to be updated before formal release
 
@@ -314,6 +314,32 @@ p_value, details = evl.one_calibration(
 `one_calibration_cr` provides the same cause-specific test for CIF probabilities
 at a fixed time. C/H binning and curve diagnostics match single-event calibration;
 competing causes remain observed events in the AJ estimate and variance.
+
+AJ-calibration compares each mean predicted CIF with the marginal
+Aalen–Johansen estimate, analogous to single-event `km_calibration`:
+
+```python
+score = evl.aj_calibration()  # mean across all predicted causes
+score, details = evl.aj_calibration(return_details=True)
+cause_score, (fig, ax) = evl.aj_calibration_per_event(
+    event_of_interest=1, draw_figure=True
+)
+```
+
+The default is the time-averaged squared curve difference (`alpha=2`); zero is
+best. `alpha=1` uses absolute differences. Scores use trapezoidal integration on
+the retained prediction grid and normalize by its final time. By default, grid
+points with fewer than 5% of subjects still at risk are excluded; set
+`min_prop_at_risk=0` to use the full grid. This grid can differ from the event
+grid used by KM-calibration. Independent censoring is required for the marginal
+AJ reference. These are calibration errors, not hypothesis-test p-values.
+
+Aggregate details include `per_event_scores`, `time_coordinates`,
+`mean_pred_cifs`, and `aj_cifs`. All predicted causes are included, even when
+unobserved; censoring is not scored as a separate cause. The per-cause plot
+returns its figure and axes without displaying it. The standalone
+`aj_calibration` and `aj_calibration_per_event` functions expose the same scores
+and optional curve details.
 
 ## Interval-Censored Metrics
 

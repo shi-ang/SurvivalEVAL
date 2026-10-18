@@ -13,7 +13,12 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points_cr,
     brier_multiple_points_cr_per_event,
 )
-from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration, one_calibration_cr
+from SurvivalEVAL.Evaluations.Calibration import (
+    aj_calibration,
+    aj_calibration_per_event,
+    cr_d_calibration,
+    one_calibration_cr,
+)
 from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
     _calibration_curve_details,
 )
@@ -974,6 +979,98 @@ class CompetingRisksEvaluator:
             details["observed_probabilities"],
             details["expected_probabilities"],
         )
+
+    def aj_calibration(
+        self,
+        alpha: float = 2,
+        reduction: str = "mean",
+        min_prop_at_risk: float = 0.05,
+        return_details: bool = False,
+    ) -> float | tuple[float, dict]:
+        """Compare mean predicted CIFs with marginal Aalen–Johansen estimates.
+
+        Args:
+            alpha: Finite exponent at least 1. The default gives time-averaged
+                squared error; 1 gives time-averaged absolute error.
+            reduction: Case-insensitive 'mean' (default), 'sum', or 'max' of the
+                per-cause errors. Includes all predicted causes, even if absent.
+            min_prop_at_risk: Retain prediction times where at least this
+                fraction of subjects has an observed time greater than or equal
+                to the horizon. Defaults to 0.05; 0 uses the full grid.
+            return_details: Include per_event_scores, retained time_coordinates,
+                mean_pred_cifs, and aj_cifs with shape (n_causes, n_times).
+
+        Returns:
+            Calibration error, or (score, details). Lower is better. Integrates
+            absolute curve differences raised to alpha with the trapezoidal rule
+            on the retained prediction grid, divided by its final time. Requires
+            at least two retained times and independent censoring for marginal
+            AJ estimation. This is a marginal error, not a hypothesis-test p-value.
+        """
+        return aj_calibration(
+            self.pred_cifs,
+            self.time_coordinates,
+            self.event_times,
+            self.event_indicators,
+            alpha=alpha,
+            reduction=reduction,
+            min_prop_at_risk=min_prop_at_risk,
+            return_details=return_details,
+        )
+
+    def aj_calibration_per_event(
+        self,
+        event_of_interest: int = 1,
+        alpha: float = 2,
+        min_prop_at_risk: float = 0.05,
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """Compare one cause's mean predicted CIF with its AJ reference curve.
+
+        Args:
+            event_of_interest: Integer cause label from 1 through n_causes.
+            alpha: Finite exponent at least 1; defaults to squared error.
+            min_prop_at_risk: Minimum observed fraction at risk at retained
+                prediction times. Defaults to 0.05; 0 uses the full grid.
+            draw_figure: Also return the comparison figure and axes, without
+                displaying the plot. Curves are joined on the retained grid.
+
+        Returns:
+            The time-normalized calibration error, or (score, (fig, ax)) when
+            draw_figure is True, matching km_calibration's plotting convention.
+            Uses the same integration and censoring assumptions as aj_calibration.
+            Competing events remain observed events in the reference estimate.
+        """
+        self._check_event_of_interest(event_of_interest)
+        result = aj_calibration_per_event(
+            self.pred_cifs[:, event_of_interest - 1],
+            self.time_coordinates,
+            self.event_times,
+            self.event_indicators,
+            event_of_interest,
+            alpha=alpha,
+            min_prop_at_risk=min_prop_at_risk,
+            return_details=draw_figure,
+        )
+        if not draw_figure:
+            return result
+        score, details = result
+        fig, ax = _plot_curves(
+            details["time_coordinates"],
+            np.stack((details["mean_pred_cifs"], details["aj_cifs"])),
+            ["Average prediction", "Aalen–Johansen estimate"],
+            title=f"AJ calibration for cause {event_of_interest} = {score:.3f}",
+            x_label="Time",
+            y_label="Cumulative incidence",
+            y_lim=(0, 1.02),
+        )
+        ax.fill_between(
+            details["time_coordinates"],
+            details["mean_pred_cifs"],
+            details["aj_cifs"],
+            alpha=0.2,
+        )
+        return score, (fig, ax)
 
     def cr_d_calibration(
         self,
