@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.MeanError import mean_error
+from SurvivalEVAL.Evaluations.PredictionError import mean_error
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 

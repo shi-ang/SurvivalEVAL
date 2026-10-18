@@ -5,7 +5,6 @@ import pytest
 from scipy.integrate import trapezoid
 
 from SurvivalEVAL import PointEvaluator, SingleTimeEvaluator, SurvivalEvaluator
-from SurvivalEVAL.Evaluations.BrierScore import brier_multiple_points
 from SurvivalEVAL.Evaluations.Discrimination import (
     auc,
     concordance,
@@ -14,7 +13,7 @@ from SurvivalEVAL.Evaluations.Discrimination import (
 from SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance import (
     concordance_time_dependent,
 )
-from SurvivalEVAL.Evaluations.MeanError import mean_error
+from SurvivalEVAL.Evaluations.PredictionError import brier_multiple_points, mean_error
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 METRICS = ["brier", "auc", "concordance", "dynamic", "competing", "error"]

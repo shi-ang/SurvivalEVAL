@@ -9,12 +9,6 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.interpolate import PchipInterpolator
 
-from SurvivalEVAL.Evaluations.BrierScore import (
-    _brier_time_grid,
-    _integrate_brier_scores,
-    brier_multiple_points_cr,
-    brier_multiple_points_cr_per_event,
-)
 from SurvivalEVAL.Evaluations.Calibration import (
     aj_calibration,
     aj_calibration_per_event,
@@ -30,6 +24,14 @@ from SurvivalEVAL.Evaluations.Discrimination import (
     auc_cr_per_event,
     concordance_cr,
     concordance_cr_per_event,
+)
+from SurvivalEVAL.Evaluations.PredictionError import (
+    brier_multiple_points_cr,
+    brier_multiple_points_cr_per_event,
+)
+from SurvivalEVAL.Evaluations.PredictionError.BrierScore import (
+    _brier_time_grid,
+    _integrate_brier_scores,
 )
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,

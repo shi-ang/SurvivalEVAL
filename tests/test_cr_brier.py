@@ -441,7 +441,7 @@ def test_one_censoring_fit_and_vector_queries(
     cr_data: tuple,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module("SurvivalEVAL.Evaluations.BrierScore")
+    module = importlib.import_module("SurvivalEVAL.Evaluations.PredictionError.BrierScore")
     original_predict = module.KaplanMeier.predict
     queries = []
 

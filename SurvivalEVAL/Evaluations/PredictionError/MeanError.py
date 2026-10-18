@@ -1,4 +1,3 @@
-# ruff: noqa: N999  # Public module name follows the package's naming convention.
 from __future__ import annotations
 
 import numpy as np

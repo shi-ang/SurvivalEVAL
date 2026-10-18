@@ -11,11 +11,6 @@ from lifelines.statistics import logrank_test
 
 from SurvivalEVAL._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_right_censor
-from SurvivalEVAL.Evaluations.BrierScore import (
-    _brier_time_grid,
-    _integrate_brier_scores,
-    brier_multiple_points,
-)
 from SurvivalEVAL.Evaluations.Calibration import (
     d_calibration,
     integrated_calibration_index,
@@ -35,7 +30,11 @@ from SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcord
     _concordance_time_dependent,
     _normalize_time_dependent_method,
 )
-from SurvivalEVAL.Evaluations.MeanError import mean_error
+from SurvivalEVAL.Evaluations.PredictionError import brier_multiple_points, mean_error
+from SurvivalEVAL.Evaluations.PredictionError.BrierScore import (
+    _brier_time_grid,
+    _integrate_brier_scores,
+)
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
     check_and_convert_event_data,

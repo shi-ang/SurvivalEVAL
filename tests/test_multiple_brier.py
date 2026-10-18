@@ -6,11 +6,13 @@ import pytest
 from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations.BrierScore import (
-    _predict_survival_at_observed_times,
+from SurvivalEVAL.Evaluations.PredictionError import (
     brier_multiple_points,
     brier_multiple_points_ic,
     brier_score_ic,
+)
+from SurvivalEVAL.Evaluations.PredictionError.BrierScore import (
+    _predict_survival_at_observed_times,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 

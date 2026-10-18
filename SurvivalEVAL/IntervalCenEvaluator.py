@@ -9,10 +9,6 @@ from scipy.integrate import simpson, trapezoid
 
 from SurvivalEVAL._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic
-from SurvivalEVAL.Evaluations.BrierScore import (
-    brier_multiple_points_ic,
-    brier_score_ic,
-)
 from SurvivalEVAL.Evaluations.Calibration import (
     coverage_ic,
     d_cal_ic,
@@ -28,7 +24,12 @@ from SurvivalEVAL.Evaluations.Discrimination import concordance, concordance_ic
 from SurvivalEVAL.Evaluations.Discrimination.Static.IntervalConcordance import (
     impute_times_midpoint,
 )
-from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
+from SurvivalEVAL.Evaluations.PredictionError import (
+    brier_multiple_points_ic,
+    brier_score_ic,
+    inclusion_rate,
+    mean_error_ic,
+)
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
     fit_least_squares,
