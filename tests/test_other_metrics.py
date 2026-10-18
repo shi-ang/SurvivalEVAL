@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL.Evaluations.Discrimination.SingleTime.AreaUnderROCurve import auc
-from SurvivalEVAL.Evaluations.OtherMetrics import cov
+from SurvivalEVAL.Evaluations.Others import cov
 
 
 def test_auc_treats_censored_at_target_time_as_event_free():

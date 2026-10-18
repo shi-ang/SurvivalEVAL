@@ -1,7 +1,4 @@
-# ruff: noqa: N999  # Public package name follows the project's naming convention.
-
 from SurvivalEVAL.CompetingRisksEvaluator import CompetingRisksEvaluator
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import auprc_ic, auprc_right_censor
 from SurvivalEVAL.Evaluations.Calibration import (
     aj_calibration,
     aj_calibration_per_event,
@@ -29,6 +26,7 @@ from SurvivalEVAL.Evaluations.Discrimination import (
     concordance_ic,
     concordance_time_dependent,
 )
+from SurvivalEVAL.Evaluations.Others import auprc_ic, auprc_right_censor
 from SurvivalEVAL.Evaluations.PredictionError import (
     brier_multiple_points,
     brier_multiple_points_cr,

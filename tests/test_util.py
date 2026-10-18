@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 import torch
 
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import (
+from SurvivalEVAL.Evaluations.Others import (
     auprc_ic,
     auprc_right_censored_grid,
     auprc_uncensored_grid,
