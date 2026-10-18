@@ -71,7 +71,8 @@ def _score(metric: str, times: np.ndarray, target: float) -> float:
     ],
 )
 def test_ipcw_metrics_share_positive_linear_extrapolation(
-    metric: str, expected: float
+    metric: str,
+    expected: float,
 ) -> None:
     # Reverse KM is 2/3 after 2, 1/3 after 4, and 1/3 at 6.
     # The existing line from (0, 1) to (6, 1/3) gives G(7)=2/9.
@@ -86,7 +87,8 @@ def test_ipcw_metrics_reject_nonpositive_contributing_tail(metric: str) -> None:
 
 @pytest.mark.parametrize("metric", METRICS)
 def test_ipcw_metrics_reject_nonfinite_contributing_probabilities(
-    metric: str, monkeypatch
+    metric: str,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(
         KaplanMeier,
@@ -223,12 +225,15 @@ def test_brier_ipcw_is_default_for_low_level_function() -> None:
 
 
 def _evaluator(
-    kind: str, training: bool, *, uncensored: bool = True
+    kind: str,
+    training: bool,
+    *,
+    uncensored: bool = True,
 ) -> SurvivalEvaluator | SingleTimeEvaluator | PointEvaluator:
-    outcomes = dict(
-        event_times=np.array([2.0, 4.0, 6.0]),
-        event_indicators=np.array([1, 1 if uncensored else 0, 1], dtype=bool),
-    )
+    outcomes = {
+        "event_times": np.array([2.0, 4.0, 6.0]),
+        "event_indicators": np.array([1, 1 if uncensored else 0, 1], dtype=bool),
+    }
     if training:
         outcomes.update(
             train_event_times=np.array([2.0, 2.0, 4.0, 6.0]),
@@ -251,7 +256,9 @@ def _evaluator(
 @pytest.mark.parametrize("training", [False, True])
 @pytest.mark.parametrize("uncensored", [False, True])
 def test_evaluator_brier_default_and_uncensored_shortcut(
-    kind: str, training: bool, uncensored: bool
+    kind: str,
+    training: bool,
+    uncensored: bool,
 ) -> None:
     evaluator = _evaluator(kind, training, uncensored=uncensored)
     kwargs = {"target_time": 4} if kind == "survival" else {}
@@ -276,7 +283,8 @@ def test_evaluator_brier_default_and_uncensored_shortcut(
 @pytest.mark.parametrize("training", [False, True])
 @pytest.mark.parametrize("uncensored", [False, True])
 def test_evaluator_brier_multiple_and_ibs_defaults(
-    training: bool, uncensored: bool
+    training: bool,
+    uncensored: bool,
 ) -> None:
     grid = np.array([2.0, 4.0, 6.0])
     evaluator = _evaluator("survival", training, uncensored=uncensored)
@@ -316,7 +324,9 @@ def test_evaluator_brier_multiple_and_ibs_defaults(
 @pytest.mark.parametrize("method", ["Harrell", "Naive", "Uno", "IPCW", "Margin"])
 @pytest.mark.parametrize("training", [False, True])
 def test_evaluator_static_concordance_uses_harrell_on_uncensored_data(
-    kind: str, method: str, training: bool
+    kind: str,
+    method: str,
+    training: bool,
 ) -> None:
     evaluator = _evaluator(kind, training)
     # Two correctly ranked pairs and one incorrectly ranked pair.
@@ -331,7 +341,10 @@ def test_evaluator_static_concordance_uses_harrell_on_uncensored_data(
     "method", ["Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"]
 )
 def test_evaluator_error_methods_use_uncensored_scores(
-    kind: str, metric: str, training: bool, method: str
+    kind: str,
+    metric: str,
+    training: bool,
+    method: str,
 ) -> None:
     evaluator = _evaluator(kind, training)
     predictions = (
@@ -349,7 +362,8 @@ def test_evaluator_error_methods_use_uncensored_scores(
 @pytest.mark.parametrize("kind", ["survival", "point"])
 @pytest.mark.parametrize("metric", ["mae", "mse", "rmse"])
 def test_evaluator_ipcw_d_still_weights_errors_when_test_set_contains_censoring(
-    kind: str, metric: str
+    kind: str,
+    metric: str,
 ) -> None:
     with pytest.raises(ValueError, match="training set values"):
         getattr(_evaluator(kind, False, uncensored=False), metric)(method="IPCW-D")
@@ -375,7 +389,9 @@ def test_evaluator_ipcw_d_still_weights_errors_when_test_set_contains_censoring(
 @pytest.mark.parametrize("training", [False, True])
 @pytest.mark.parametrize("risks", ["Survival", "Hazard"])
 def test_evaluator_dynamic_concordance_uses_antolini_on_uncensored_data(
-    method: str, training: bool, risks: str
+    method: str,
+    training: bool,
+    risks: str,
 ) -> None:
     evaluator = _evaluator("survival", training)
     np.testing.assert_allclose(

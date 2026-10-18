@@ -1,9 +1,14 @@
 """
-Pure-Python implementation of Algorithm 1 from:
-"A unified nonparametric fiducial approach to interval-censored data"
-(Cui et al., 2023)
+Nonparametric fiducial inference for interval-censored survival data.
 
-This module provides a fiducial inference method for interval-censored survival data.
+This module implements Algorithm 1 of [1]_.
+
+References
+----------
+.. [1] Cui, Y.; Hannig, J.; Kosorok, M. R. (2024). "A Unified Nonparametric
+   Fiducial Approach to Interval-Censored Data". Journal of the American
+   Statistical Association, 119(547), 2230-2241.
+   https://doi.org/10.1080/01621459.2023.2252143
 """
 
 from __future__ import annotations
@@ -24,12 +29,28 @@ _RIDGE = 1e-8  # Ridge regularization for PSD enforcement
 
 
 def _validate_grid(
-    grid_low: float, grid_high: float, ngrid: int
+    grid_low: float,
+    grid_high: float,
+    ngrid: int,
 ) -> tuple[float, float]:
     """
     Validate and adjust grid bounds to ensure numerical stability.
 
     Returns adjusted (grid_low, grid_high).
+
+    Parameters
+    ----------
+    grid_low : float
+        Lower bound of the interpolation grid.
+    grid_high : float
+        Upper bound of the interpolation grid.
+    ngrid : int
+        Number of grid points used to determine the minimum grid spacing.
+
+    Returns
+    -------
+    tuple[float, float]
+        Adjusted lower and upper grid bounds.
     """
     # Handle NaN/Inf
     if not np.isfinite(grid_low):
@@ -54,7 +75,9 @@ def _validate_grid(
 
 
 def _build_qp_matrices(
-    ngrid: int, grid: np.ndarray, lam: float = 1.0
+    ngrid: int,
+    grid: np.ndarray,
+    lam: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Build the quadratic programming matrices Q (Hessian) for linear interpolation.
@@ -78,16 +101,16 @@ def _build_qp_matrices(
     ----------
     ngrid : int
         Number of grid points
-    grid : np.ndarray
+    grid : ndarray
         Grid points (length ngrid)
     lam : float
         Regularization parameter (default 1.0)
 
     Returns
     -------
-    Q : np.ndarray
+    Q : ndarray
         Hessian matrix (ngrid x ngrid)
-    dgrid : np.ndarray
+    dgrid : ndarray
         Differences used in the matrix (length ngrid-1)
     """
     diff_grid = np.diff(grid)
@@ -138,8 +161,8 @@ def _linear_interpolation_qp(
     lam: float,
     rng: np.random.Generator,
     solver: str = "osqp",
-    osqp_solver: object | None = None,
-) -> tuple[np.ndarray, object | None]:
+    osqp_solver: osqp.OSQP | None = None,
+) -> tuple[np.ndarray, osqp.OSQP | None]:
     """
     Solve the quadratic programming problem for linear interpolation.
 
@@ -147,13 +170,13 @@ def _linear_interpolation_qp(
 
     Parameters
     ----------
-    grid : np.ndarray
+    grid : ndarray
         Grid points
-    fid_lower : np.ndarray
+    fid_lower : ndarray
         Lower bounds from fiducial samples
-    fid_upper : np.ndarray
+    fid_upper : ndarray
         Upper bounds from fiducial samples
-    Q : np.ndarray
+    Q : ndarray
         Hessian matrix
     lam : float
         Regularization parameter
@@ -161,14 +184,14 @@ def _linear_interpolation_qp(
         Random number generator
     solver : str
         Solver to use ("osqp" or "scipy")
-    osqp_solver : optional
+    osqp_solver : osqp.OSQP, optional
         Pre-built OSQP solver for warm-starting
 
     Returns
     -------
-    w : np.ndarray
+    w : ndarray
         Solution vector
-    osqp_solver : optional
+    osqp_solver : osqp.OSQP or None
         Updated OSQP solver (for warm-starting)
     """
     ngrid = len(grid)
@@ -224,8 +247,8 @@ def _solve_qp_osqp(
     q: np.ndarray,
     lb: np.ndarray,
     ub: np.ndarray,
-    solver: object | None = None,
-) -> tuple[np.ndarray, object]:
+    solver: osqp.OSQP | None = None,
+) -> tuple[np.ndarray, osqp.OSQP]:
     """
     Solve QP using OSQP with warm-starting.
 
@@ -234,6 +257,24 @@ def _solve_qp_osqp(
 
     OSQP formulation requires: l <= Ax <= u
     We use A = I (identity) for box constraints.
+
+    Parameters
+    ----------
+    Q : ndarray
+        Quadratic objective matrix.
+    q : ndarray
+        Linear objective coefficients.
+    lb : ndarray
+        Elementwise lower bounds for the optimization variables.
+    ub : ndarray
+        Elementwise upper bounds for the optimization variables.
+    solver : osqp.OSQP or None
+        OSQP solver to update and reuse; None creates a new solver.
+
+    Returns
+    -------
+    tuple[ndarray, osqp.OSQP]
+        Bounded solution vector and the OSQP solver instance for subsequent reuse.
     """
     n = len(q)
 
@@ -286,23 +327,68 @@ def _solve_qp_osqp(
 
 
 def _solve_qp_scipy(
-    Q: np.ndarray, q: np.ndarray, lb: np.ndarray, ub: np.ndarray
+    Q: np.ndarray,
+    q: np.ndarray,
+    lb: np.ndarray,
+    ub: np.ndarray,
 ) -> np.ndarray:
     """
     Solve QP using scipy.optimize.minimize (L-BFGS-B with bounds).
 
     minimize 0.5 * x^T Q x + q^T x
     subject to lb <= x <= ub
+
+    Parameters
+    ----------
+    Q : ndarray
+        Quadratic objective matrix.
+    q : ndarray
+        Linear objective coefficients.
+    lb : ndarray
+        Elementwise lower bounds for the optimization variables.
+    ub : ndarray
+        Elementwise upper bounds for the optimization variables.
+
+    Returns
+    -------
+    ndarray
+        Solution vector clipped to the supplied bounds.
     """
     # Handle any remaining NaN/Inf
     lb = np.nan_to_num(lb, nan=0.0, posinf=1.0, neginf=0.0)
     ub = np.nan_to_num(ub, nan=1.0, posinf=1.0, neginf=0.0)
     q = np.nan_to_num(q, nan=0.0, posinf=0.0, neginf=0.0)
 
-    def objective(x):
+    def objective(x: np.ndarray) -> float:
+        """
+        Evaluate the bounded quadratic objective.
+
+        Parameters
+        ----------
+        x : ndarray
+            Candidate optimization vector.
+
+        Returns
+        -------
+        float
+            Quadratic objective value at x.
+        """
         return 0.5 * x @ Q @ x + q @ x
 
-    def gradient(x):
+    def gradient(x: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the gradient of the bounded quadratic objective.
+
+        Parameters
+        ----------
+        x : ndarray
+            Candidate optimization vector.
+
+        Returns
+        -------
+        ndarray
+            Gradient of the quadratic objective at x.
+        """
         return Q @ x + q
 
     # Initial guess: midpoint of bounds
@@ -337,20 +423,20 @@ def _compute_bounds_fast(
 
     Parameters
     ----------
-    u : np.ndarray
+    u : ndarray
         Current u values (length n)
-    left : np.ndarray
+    left : ndarray
         Left endpoints of intervals (length n)
-    right : np.ndarray
+    right : ndarray
         Right endpoints of intervals (length n)
-    query_points : np.ndarray
+    query_points : ndarray
         Points at which to evaluate bounds
 
     Returns
     -------
-    lower : np.ndarray
+    lower : ndarray
         Lower bounds at query points
-    upper : np.ndarray
+    upper : ndarray
         Upper bounds at query points
     """
     # For lower bound: max u among right <= s
@@ -404,18 +490,18 @@ def _gibbs_step(
 
     Parameters
     ----------
-    u : np.ndarray
+    u : ndarray
         Current u values (modified in place)
-    left : np.ndarray
+    left : ndarray
         Left endpoints
-    right : np.ndarray
+    right : ndarray
         Right endpoints
     rng : np.random.Generator
         Random number generator
 
     Returns
     -------
-    u : np.ndarray
+    u : ndarray
         Updated u values
     """
     n = len(u)
@@ -451,6 +537,18 @@ def _rank_resample(u: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     u = sort(temp)[rank(u)]
 
     This preserves the ordering of u while resampling the values.
+
+    Parameters
+    ----------
+    u : ndarray
+        Latent uniform values whose rank order is preserved by resampling.
+    rng : np.random.Generator
+        Random number generator used for uniform draws.
+
+    Returns
+    -------
+    ndarray
+        Resampled uniform values with the original rank order.
     """
     n = len(u)
     temp = rng.uniform(0, 1, n)
@@ -482,14 +580,13 @@ def fit_fiducial_interval_censor(
     """
     Fit fiducial inference for interval-censored data.
 
-    Implements Algorithm 1 from "A unified nonparametric fiducial approach to
-    interval-censored data" (Cui et al., 2023).
+    Implements Algorithm 1 from [1]_.
 
     Parameters
     ----------
-    l : np.ndarray
+    l : ndarray
         Left endpoints of intervals (length n)
-    r : np.ndarray
+    r : ndarray
         Right endpoints of intervals (length n)
     mfid : int
         Number of fiducial samples (default 1000)
@@ -520,27 +617,35 @@ def fit_fiducial_interval_censor(
 
     Returns
     -------
-    dict with keys:
-        testgrid : np.ndarray (ntest,)
+    dict
+        Fiducial estimates and confidence bounds with the following keys:
+        testgrid : ndarray (ntest,)
             Test grid points
-        FiducialMidLine : np.ndarray (mfid, ntest)
+        FiducialMidLine : ndarray (mfid, ntest)
             Fiducial samples of CDF at testgrid
-        F_median : np.ndarray (ntest,)
+        F_median : ndarray (ntest,)
             Median CDF estimate
-        F_low : np.ndarray (ntest,)
+        F_low : ndarray (ntest,)
             Lower (alpha/2) quantile of CDF
-        F_high : np.ndarray (ntest,)
+        F_high : ndarray (ntest,)
             Upper (1-alpha/2) quantile of CDF
-        S_hat : np.ndarray (ntest,)
+        S_hat : ndarray (ntest,)
             Median survival estimate (1 - F_median)
-        S_low : np.ndarray (ntest,)
+        S_low : ndarray (ntest,)
             Lower survival bound (1 - F_high)
-        S_high : np.ndarray (ntest,)
+        S_high : ndarray (ntest,)
             Upper survival bound (1 - F_low)
-        F_mean : np.ndarray (ntest,)
+        F_mean : ndarray (ntest,)
             Mean CDF estimate (for debugging)
-        S_mean : np.ndarray (ntest,)
+        S_mean : ndarray (ntest,)
             Mean survival estimate (for debugging)
+
+    References
+    ----------
+    .. [1] Cui, Y.; Hannig, J.; Kosorok, M. R. (2024). "A Unified Nonparametric
+       Fiducial Approach to Interval-Censored Data". Journal of the American
+       Statistical Association, 119(547), 2230-2241.
+       https://doi.org/10.1080/01621459.2023.2252143
 
     Examples
     --------
@@ -710,10 +815,23 @@ def _validate_results(
     """
     Validate fiducial inference results.
 
-    Checks:
+    Checks :
     (a) Each curve is within [0, 1]
     (b) Curves are non-decreasing (CDF property)
     (c) lower <= median <= upper pointwise
+
+    Parameters
+    ----------
+    FiducialMidLine : ndarray
+        Interpolated fiducial CDF on the test grid.
+    F_median : ndarray
+        Pointwise median fiducial CDF.
+    F_low : ndarray
+        Pointwise lower confidence bound for the CDF.
+    F_high : ndarray
+        Pointwise upper confidence bound for the CDF.
+    testgrid : ndarray
+        Time grid on which the returned CDFs are evaluated.
     """
     # (a) Check [0, 1] bounds
     if np.any(FiducialMidLine < -_EPS) or np.any(FiducialMidLine > 1 + _EPS):
@@ -732,10 +850,8 @@ def _validate_results(
         warnings.warn("F_median > F_high detected")
 
 
-def _demo():
-    """
-    Demonstration of fiducial interval censoring with synthetic data.
-    """
+def _demo() -> None:
+    """Demonstration of fiducial interval censoring with synthetic data."""
     print("=" * 60)
     print("Fiducial Interval Censoring Demo")
     print("=" * 60)

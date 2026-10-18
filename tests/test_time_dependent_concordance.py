@@ -467,7 +467,8 @@ def test_select_risk_anchors_matches_reference_on_randomized_inputs():
 
 @pytest.mark.parametrize("risks", ["Survival", "Hazard"])
 def test_evaluator_predicts_each_sample_once_at_unique_contributing_times(
-    monkeypatch, risks
+    monkeypatch,
+    risks,
 ):
     time_grid = np.array([0.0, 1.0, 2.0, 3.0])
     hazards = np.array([0.5, 0.4, 0.2, 0.1])
@@ -515,13 +516,13 @@ def test_streamed_counts_match_brute_force_on_randomized_inputs(weighting):
                 rng.uniform(0.25, 2, n_samples) if weighting == "anchor" else None
             )
             tau = None if rng.random() < 0.5 else float(rng.integers(1, 9))
-            kwargs = dict(
-                sample_weights=sample_weights,
-                anchor_pair_weights=anchor_pair_weights,
-                tau=tau,
-            )
+            kwargs = {
+                "sample_weights": sample_weights,
+                "anchor_pair_weights": anchor_pair_weights,
+                "tau": tau,
+            }
 
-            def predict_risks(sample_index, target_times):
+            def predict_risks(sample_index, target_times, scores=scores):
                 return scores[sample_index, np.searchsorted(time_grid, target_times)]
 
             actual = _time_dependent_risk_counts_from_predictions(
@@ -576,10 +577,10 @@ def test_streamed_counts_preserve_subtraction_at_risk_tie_boundaries(weighting, 
     event_times = np.concatenate((np.ones(anchor_risks.size), [1.0, 2.0, 2.0]))
     event_indicators = np.arange(scores.size) < anchor_risks.size
     weights = (np.arange(scores.size) % 4).astype(float)
-    kwargs = dict(
-        sample_weights=None if weighting == "unweighted" else weights,
-        anchor_pair_weights=weights[::-1] if weighting == "anchor" else None,
-    )
+    kwargs = {
+        "sample_weights": None if weighting == "unweighted" else weights,
+        "anchor_pair_weights": weights[::-1] if weighting == "anchor" else None,
+    }
 
     def predict_risks(sample_index, target_times):
         return np.full(target_times.size, scores[sample_index])
@@ -609,11 +610,11 @@ def test_streamed_nonfinite_risks_preserve_dense_pair_classification(weighting, 
     event_times = np.repeat([1.0, 1.0, 2.0, 3.0], risk_values.size)
     event_indicators = np.repeat([True, False, True, False], risk_values.size)
     weights = (np.arange(event_times.size) % 5).astype(float)
-    kwargs = dict(
-        sample_weights=None if weighting == "unweighted" else weights,
-        anchor_pair_weights=weights[::-1] if weighting == "anchor" else None,
-        tau=tau,
-    )
+    kwargs = {
+        "sample_weights": None if weighting == "unweighted" else weights,
+        "anchor_pair_weights": weights[::-1] if weighting == "anchor" else None,
+        "tau": tau,
+    }
 
     def predict_risks(sample_index, target_times):
         return scores[sample_index, target_times.astype(int) - 1]
@@ -644,10 +645,10 @@ def test_streamed_group_weights_are_independent_including_zero_weight_groups(wei
     scores = np.array(
         [[0.0, 0.0, 0.0]] * 2 + [[0.0, 1.0, 0.0]] * 3 + [[0.0, 0.0, 0.0]] * 3
     )
-    kwargs = dict(
-        sample_weights=weights,
-        anchor_pair_weights=weights if weighting == "anchor" else None,
-    )
+    kwargs = {
+        "sample_weights": weights,
+        "anchor_pair_weights": weights if weighting == "anchor" else None,
+    }
 
     def predict_risks(sample_index, target_times):
         return scores[sample_index, target_times.astype(int) - 1]
@@ -674,10 +675,10 @@ def test_streamed_small_concordant_weight_survives_large_risk_tie_weight(weighti
     event_indicators = np.array([True, True, False])
     weights = np.array([1e16, 1.0, 1.0])
     scores = np.array([1.0, 2.0, 1.0])
-    kwargs = dict(
-        sample_weights=weights,
-        anchor_pair_weights=weights if weighting == "anchor" else None,
-    )
+    kwargs = {
+        "sample_weights": weights,
+        "anchor_pair_weights": weights if weighting == "anchor" else None,
+    }
 
     def predict_risks(sample_index, target_times):
         return np.full(target_times.size, scores[sample_index])
@@ -703,16 +704,17 @@ def test_streamed_small_concordant_weight_survives_large_risk_tie_weight(weighti
 @pytest.mark.parametrize("weighting", ["symmetric", "anchor"])
 @pytest.mark.parametrize("candidate_time", [1.0, 2.0])
 def test_streamed_small_risk_tie_weight_survives_large_discordant_weight(
-    weighting, candidate_time
+    weighting,
+    candidate_time,
 ):
     event_times = np.array([1.0, 1.0, candidate_time])
     event_indicators = np.array([True, True, False])
     weights = np.array([1e16, 1.0, 1.0])
     scores = np.array([1.0, 2.0, 2.0])
-    kwargs = dict(
-        sample_weights=weights,
-        anchor_pair_weights=weights if weighting == "anchor" else None,
-    )
+    kwargs = {
+        "sample_weights": weights,
+        "anchor_pair_weights": weights if weighting == "anchor" else None,
+    }
 
     def predict_risks(sample_index, target_times):
         return np.full(target_times.size, scores[sample_index])
@@ -781,7 +783,10 @@ def test_dense_scores_retain_distinct_columns_for_events_at_the_same_time():
 @pytest.mark.parametrize("curve_layout", ["shared_grid", "shared_curve", "individual"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_streamed_evaluator_matches_dense_for_crossing_curves(
-    risks, interpolation, curve_layout, dtype
+    risks,
+    interpolation,
+    curve_layout,
+    dtype,
 ):
     rng = np.random.default_rng(16)
     n_samples = 14
@@ -883,7 +888,8 @@ def test_streamed_evaluator_uses_linear_working_memory(risks, tau):
 
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
 def test_streamed_evaluator_counts_final_event_ties_without_predictions(
-    monkeypatch, ties
+    monkeypatch,
+    ties,
 ):
     evaluator = SurvivalEvaluator(
         pred_survs=np.ones((3, 1)),

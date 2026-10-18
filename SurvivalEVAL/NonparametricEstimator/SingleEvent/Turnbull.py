@@ -17,6 +17,18 @@ def create_support_intervals(tau: np.ndarray, exact_times: np.ndarray) -> np.nda
     The first cells represent the ranges between adjacent tau values. Exact
     observations add singleton cells {t}; those cells own their endpoints so
     they remain distinct from the adjacent ranges.
+
+    Parameters
+    ----------
+    tau : ndarray
+        Sorted support-grid endpoints, including positive infinity when required.
+    exact_times : ndarray
+        Distinct exact event times to represent as singleton support cells.
+
+    Returns
+    -------
+    ndarray
+        Adjacent grid intervals followed by singleton exact-event cells, with shape (n_cells, 2).
     """
     adjacent_intervals = np.column_stack((tau[:-1], tau[1:]))
     exact_intervals = np.column_stack((exact_times, exact_times))
@@ -24,7 +36,19 @@ def create_support_intervals(tau: np.ndarray, exact_times: np.ndarray) -> np.nda
 
 
 def initialise_p(support_intervals: np.ndarray) -> np.ndarray:
-    """Initialize masses uniformly over the support cells."""
+    """
+    Initialize masses uniformly over the support cells.
+
+    Parameters
+    ----------
+    support_intervals : ndarray
+        Support-cell bounds with shape (n_cells, 2), including singleton cells for exact events.
+
+    Returns
+    -------
+    ndarray
+        Uniform positive masses over all support cells, summing to one.
+    """
     num_intervals = len(support_intervals)
     if num_intervals == 0:
         raise ValueError("At least one support interval is required.")
@@ -32,13 +56,29 @@ def initialise_p(support_intervals: np.ndarray) -> np.ndarray:
 
 
 def build_alphas(
-    left: np.ndarray, right: np.ndarray, support_intervals: np.ndarray
+    left: np.ndarray,
+    right: np.ndarray,
+    support_intervals: np.ndarray,
 ) -> np.ndarray:
     """
     Build the incidence matrix between observations and support cells.
 
     Non-exact observations use (left_i, right_i]. Exact observations use the
     singleton {right_i}, represented by left_i == right_i.
+
+    Parameters
+    ----------
+    left : ndarray
+        Left observation bounds; equality with right denotes an exact event.
+    right : ndarray
+        Right observation bounds; positive infinity denotes right censoring.
+    support_intervals : ndarray
+        Support-cell bounds with shape (n_cells, 2), including singleton cells for exact events.
+
+    Returns
+    -------
+    ndarray
+        Observation-by-support incidence matrix with shape (n_samples, n_cells).
     """
     left = left[:, None]  # shape (n, 1)
     right = right[:, None]  # shape (n, 1)
@@ -69,12 +109,29 @@ def build_alphas(
 @dataclass
 class TurnbullEstimator:
     """
-    Turnbull non-parametric estimator for interval-censored survival data.
+    Estimate survival nonparametrically from interval-censored observations.
 
     Non-exact observations use left-open, right-closed intervals (left, right].
-    Observations with left == right are treated as exact event times.
+    Observations with left == right are exact event times. The EM algorithm follows
+    Turnbull [1]_; implementation notes are available in [2]_.
 
-    https://www.ms.uky.edu/~mai/splus/icensem.pdf
+    Parameters
+    ----------
+    eps : float, default=1e-8
+        Convergence threshold for the maximum change in support-cell masses.
+    iter_max : int, default=1000
+        Maximum number of expectation-maximization iterations.
+    verbose : bool, default=False
+        Whether to print iteration progress.
+
+    References
+    ----------
+    .. [1] Turnbull, B. W. (1976). "The Empirical Distribution Function with Arbitrarily Grouped,
+       Censored and Truncated Data". Journal of the Royal Statistical Society: Series B
+       (Methodological), 38(3), 290-295. https://doi.org/10.1111/j.2517-6161.1976.tb01597.x
+       https://academic.oup.com/jrsssb/article/38/3/290/7027379
+    .. [2] Interval-censoring EM algorithm notes.
+       https://www.ms.uky.edu/~mai/splus/icensem.pdf
     """
 
     eps: float = 1e-8
@@ -104,21 +161,27 @@ class TurnbullEstimator:
     ) -> TurnbullEstimator:
         """
         Fit the Turnbull estimator to interval-censored data.
+
         Parameters
         ----------
-        left : np.ndarray
+        left : ndarray
             Left limits of intervals. For exact events, use the event time in
             both left and right.
-        right : np.ndarray
+        right : ndarray
             Right limits of intervals. Can contain np.inf for right-censored.
-        tau : np.ndarray, optional
+        tau : ndarray, optional
             Unique time points for the survival function. If None, it is
             constructed as the unique sorted union of left and right,
             including np.inf when present.
-        p_init : np.ndarray, optional
+        p_init : ndarray, optional
             Initial masses for adjacent tau intervals, followed by one mass
             for each unique exact event time. If None, masses are initialized
             uniformly.
+
+        Returns
+        -------
+        TurnbullEstimator
+            This estimator after fitting.
         """
         exact_times = np.unique(left[left == right])
         if tau is None:
@@ -202,13 +265,15 @@ class TurnbullEstimator:
     def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict survival probabilities at given times using the fitted Turnbull estimator.
+
         Parameters
         ----------
-        prediction_times: float | np.ndarray
+        prediction_times : float | ndarray
             Time(s) at which to predict survival probabilities.
+
         Returns
         -------
-        probabilities: float | np.ndarray
+        probabilities : float | ndarray
             Predicted survival probabilities at the given times.
         """
         if self.survival_times_ is None or self.survival_probabilities_ is None:
@@ -235,12 +300,33 @@ class TurnbullEstimator:
 
 @dataclass
 class TurnbullEstimatorLifelines:
-    """Fit a Turnbull estimate using the upper survival-bound convention.
+    """
+    Fit a Turnbull estimate using the upper survival-bound convention.
+
+    The general fit delegates to ``lifelines.KaplanMeierFitter.fit_interval_censoring`` [1]_.
 
     If all observation intervals intersect, a point mass at their common
     upper endpoint maximizes the likelihood. Construct that estimate directly
     rather than fitting a degenerate model. An infinite common upper endpoint
     leaves survival equal to 1 at every finite time.
+
+    Parameters
+    ----------
+    left : ndarray, shape (n_samples,)
+        Left observation bounds.
+    right : ndarray, shape (n_samples,)
+        Right observation bounds; infinity denotes right censoring.
+    alpha : float, default=0.05
+        Significance level passed to the lifelines estimator.
+    tol : float, default=1e-5
+        Convergence tolerance for the fitted interval-censoring model.
+    label : str, default="Turnbull"
+        Label used for the fitted survival function.
+
+    References
+    ----------
+    .. [1] lifelines documentation. "KaplanMeierFitter.fit_interval_censoring".
+       https://lifelines.readthedocs.io/en/latest/fitters/univariate/KaplanMeierFitter.html
     """
 
     left: InitVar[np.ndarray]
@@ -255,7 +341,30 @@ class TurnbullEstimatorLifelines:
     survival_times: np.ndarray | None = field(init=False, default=None)
     survival_probabilities: np.ndarray | None = field(init=False, default=None)
 
-    def __post_init__(self, left, right, alpha, tol, label):
+    def __post_init__(
+        self,
+        left: np.ndarray,
+        right: np.ndarray,
+        alpha: float,
+        tol: float,
+        label: str,
+    ) -> None:
+        """
+        Fit the TurnbullEstimatorLifelines estimator from the supplied observations.
+
+        Parameters
+        ----------
+        left : ndarray
+            Left observation bounds; equality with right denotes an exact event.
+        right : ndarray
+            Right observation bounds; positive infinity denotes right censoring.
+        alpha : float
+            Confidence-interval significance level.
+        tol : float
+            Convergence tolerance passed to the interval-censoring estimator.
+        label : str
+            Label assigned to the fitted survival function.
+        """
         common_left, common_right = np.max(left), np.min(right)
         if common_left <= common_right:
             self.survival_times = np.unique([common_left, common_right]).astype(float)
@@ -286,13 +395,15 @@ class TurnbullEstimatorLifelines:
     def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
+
         Parameters
         ----------
-        prediction_times: float | np.ndarray
+        prediction_times : float | ndarray
             Time(s) at which to predict the survival probabilities.
+
         Returns
         -------
-        probabilities: float | np.ndarray
+        probabilities : float | ndarray
             Predicted survival probabilities at the given time(s).
         """
         prediction_times = np.asarray(prediction_times, dtype=float)

@@ -56,7 +56,8 @@ def _pairwise_ipcw_auc(
 
 @pytest.mark.parametrize("method", ["Naive", "nAiVe", "IPCW", "iPcW", "Uno", "uNo"])
 def test_auc_hand_computed_mixed_training_ties(
-    auc_data: dict[str, np.ndarray], method: str
+    auc_data: dict[str, np.ndarray],
+    method: str,
 ) -> None:
     # G(1-)=G(2-)=1; the tied event/censoring at 2 gives G(3-)=2/3.
     # Case weights are [1, 1, 3/2], with respectively [0, 1, 2] wins.
@@ -191,7 +192,9 @@ def test_ipcw_auc_matches_scikit_survival_without_exact_time_ties(seed: int) -> 
 @pytest.mark.parametrize("missing", ["both", "times", "indicators"])
 @pytest.mark.parametrize("method", ["IPCW", "Uno"])
 def test_ipcw_auc_requires_training_outcomes(
-    auc_data: dict[str, np.ndarray], missing: str, method: str
+    auc_data: dict[str, np.ndarray],
+    missing: str,
+    method: str,
 ) -> None:
     if missing in {"both", "times"}:
         auc_data.pop("train_event_times")
@@ -220,7 +223,8 @@ def test_ipcw_auc_rejects_nonpositive_extrapolated_censoring_survival() -> None:
 
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 def test_auc_default_target_remains_test_median(
-    auc_data: dict[str, np.ndarray], method: str
+    auc_data: dict[str, np.ndarray],
+    method: str,
 ) -> None:
     target = float(np.median(auc_data["event_times"]))
     assert auc(**auc_data, method=method) == pytest.approx(
@@ -230,7 +234,8 @@ def test_auc_default_target_remains_test_median(
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_ipcw_auc_does_not_modify_readonly_inputs(
-    auc_data: dict[str, np.ndarray], dtype: type
+    auc_data: dict[str, np.ndarray],
+    dtype: type,
 ) -> None:
     for name, values in auc_data.items():
         auc_data[name] = values.astype(bool if "indicators" in name else dtype)
@@ -242,7 +247,9 @@ def test_ipcw_auc_does_not_modify_readonly_inputs(
 
 
 def _make_evaluator(
-    data: dict[str, np.ndarray], kind: str, training: bool = True
+    data: dict[str, np.ndarray],
+    kind: str,
+    training: bool = True,
 ) -> SurvivalEvaluator | SingleTimeEvaluator:
     outcomes = {
         name: values for name, values in data.items() if name != "predict_probs"
@@ -262,7 +269,10 @@ def _make_evaluator(
 @pytest.mark.parametrize("uncensored", [False, True])
 @pytest.mark.parametrize("method", ["iPcW", "Uno", "uNo"])
 def test_evaluators_forward_ipcw_even_with_fully_observed_test_outcomes(
-    auc_data: dict[str, np.ndarray], kind: str, uncensored: bool, method: str
+    auc_data: dict[str, np.ndarray],
+    kind: str,
+    uncensored: bool,
+    method: str,
 ) -> None:
     if uncensored:
         auc_data["event_times"][-1] = 7
@@ -281,7 +291,10 @@ def test_evaluators_forward_ipcw_even_with_fully_observed_test_outcomes(
 @pytest.mark.parametrize("uncensored", [False, True])
 @pytest.mark.parametrize("method", ["IPCW", "Uno", "uNo"])
 def test_evaluators_require_ipcw_training_even_without_test_censoring(
-    auc_data: dict[str, np.ndarray], kind: str, uncensored: bool, method: str
+    auc_data: dict[str, np.ndarray],
+    kind: str,
+    uncensored: bool,
+    method: str,
 ) -> None:
     if uncensored:
         auc_data["event_indicators"] = np.ones(6, dtype=bool)
@@ -292,7 +305,8 @@ def test_evaluators_require_ipcw_training_even_without_test_censoring(
 
 @pytest.mark.parametrize("kind", ["survival", "single-time"])
 def test_evaluator_default_target_remains_combined_median(
-    auc_data: dict[str, np.ndarray], kind: str
+    auc_data: dict[str, np.ndarray],
+    kind: str,
 ) -> None:
     target = float(
         np.median(np.r_[auc_data["event_times"], auc_data["train_event_times"]])

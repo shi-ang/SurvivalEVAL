@@ -1,12 +1,16 @@
 """Aalen–Johansen estimation from aggregated multi-state transition counts."""
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from SurvivalEVAL.NonparametricEstimator.util import _predict_step
 
 
 class AalenJohansenMultiState:
-    """Estimate transition matrices for states numbered 0 through n_states - 1.
+    """
+    Estimate transition matrices for states numbered 0 through n_states - 1.
+
+    The estimator follows Aalen and Johansen [1]_.
 
     At each time, off-diagonal hazard increments are transition counts divided
     by their source state's risk set. Diagonal increments are minus the sum of
@@ -30,9 +34,24 @@ class AalenJohansenMultiState:
         Sorted update times.
     P_ : ndarray, shape (J, n_states, n_states)
         Transition matrices from before the first update through each time.
+
+    References
+    ----------
+    .. [1] Aalen, O. O.; Johansen, S. (1978). "An Empirical Transition Matrix for
+       Non-Homogeneous Markov Chains Based on Censored Observations".
+       Scandinavian Journal of Statistics, 5(3), 141-150.
+       https://www.jstor.org/stable/4615704
     """
 
-    def __init__(self, n_states: int):
+    def __init__(self, n_states: int) -> None:
+        """
+        Initialize the AalenJohansenMultiState estimator.
+
+        Parameters
+        ----------
+        n_states : int
+            Positive number of states, including absorbing states.
+        """
         if (
             isinstance(n_states, (bool, np.bool_))
             or not isinstance(n_states, (int, np.integer))
@@ -43,8 +62,14 @@ class AalenJohansenMultiState:
         self.unique_times_ = None
         self.P_ = None
 
-    def fit(self, event_times, risk_sets, transitions):
-        """Fit from aggregated risk sets and transition counts, returning self.
+    def fit(
+        self,
+        event_times: ArrayLike,
+        risk_sets: ArrayLike,
+        transitions: ArrayLike,
+    ) -> "AalenJohansenMultiState":
+        """
+        Fit from aggregated risk sets and transition counts, returning self.
 
         Parameters
         ----------
@@ -57,6 +82,11 @@ class AalenJohansenMultiState:
             Non-negative counts from source state r to destination state s.
             Diagonal entries must be zero; do not supply negative diagonal
             hazard increments. Total departures cannot exceed the risk set.
+
+        Returns
+        -------
+        AalenJohansenMultiState
+            This estimator after fitting.
 
         Notes
         -----
@@ -110,11 +140,22 @@ class AalenJohansenMultiState:
         self.P_ = matrices
         return self
 
-    def predict_P(self, t):
-        """Return matrices with shape ``shape(t) + (n_states, n_states)``.
+    def predict_P(self, t: ArrayLike) -> np.ndarray:
+        """
+        Return matrices with shape ``shape(t) + (n_states, n_states)``.
 
         Predictions are right-continuous, equal identity before the first
         update, and remain constant after the last update. Positive infinity
         returns the final estimate; negative times and NaN are invalid.
+
+        Parameters
+        ----------
+        t : array_like
+            Non-negative query times; positive infinity requests the final fitted estimate.
+
+        Returns
+        -------
+        ndarray
+            Transition probability matrices with the query shape followed by the two state axes.
         """
         return _predict_step(t, self.unique_times_, self.P_, np.eye(self.n_states))

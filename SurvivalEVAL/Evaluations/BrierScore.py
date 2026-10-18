@@ -25,12 +25,27 @@ def _predict_survival_at_observed_times(
     features: pd.DataFrame,
     times: np.ndarray,
 ) -> np.ndarray:
-    """Predict one survival probability per subject at that subject's time.
+    """
+    Predict one survival probability per subject at that subject's time.
 
     Lifelines evaluates every requested time for every supplied subject.
     Extract diagonals from bounded batches to avoid an n-by-n matrix when
     only n paired predictions are needed. Keep the fitted model's public
     prediction API, including its handling of zero and infinite times.
+
+    Parameters
+    ----------
+    model : WeibullAFTFitter
+        Fitted Weibull accelerated failure time model.
+    features : pd.DataFrame
+        Covariate rows in the same order as the requested subject times.
+    times : ndarray
+        One observed time per subject, aligned with the feature rows.
+
+    Returns
+    -------
+    ndarray
+        One predicted survival probability per subject at that subject's observed time.
     """
     probabilities = np.empty(times.size, dtype=float)
     batch_size = 256
@@ -60,33 +75,44 @@ def brier_score_ic(
     """
     Calculate the Brier score at a specific time.
 
+    The ``Tsouprou-marginal`` and ``Tsouprou-conditional`` methods adapt the
+    interval-censoring approach of Tsouprou [1]_, using Turnbull and Weibull AFT
+    survival estimates, respectively.
+
     Parameters
     ----------
-    preds: np.ndarray, shape = (n_samples, )
+    preds : ndarray, shape = (n_samples, )
         Estimated survival probabilities at the specific time for the testing samples.
-    left_limits: np.ndarray, shape = (n_samples, )
+    left_limits : ndarray, shape = (n_samples, )
         Actual left limit event/censor time for the testing samples.
-    right_limits: np.ndarray, shape = (n_samples, )
+    right_limits : ndarray, shape = (n_samples, )
         Actual right limit event/censor time for the testing samples.
-    train_left_limits: np.ndarray, shape = (n_train_samples, )
+    train_left_limits : ndarray, shape = (n_train_samples, )
         Actual left limit event/censor time for the training samples.
-    train_right_limits: np.ndarray, shape = (n_train_samples, )
+    train_right_limits : ndarray, shape = (n_train_samples, )
         Actual right limit event/censor time for the training samples.
-    x: np.ndarray, shape = (n_samples, n_features), default: None
+    x : ndarray, shape = (n_samples, n_features), default=None
         Features for the testing samples. Use only when method is 'Tsouprou-conditional'.
-    x_train: np.ndarray, shape = (n_train_samples, n_features), default: None
+    x_train : ndarray, shape = (n_train_samples, n_features), default=None
         Features for the training samples. Use only when method is 'Tsouprou-conditional'.
-    target_time: numeric, default: None
+    target_time : numeric, default=None
         The specific time point for which to estimate the Brier score.
-    method: str, default: "Tsouprou-marginal"
+    method : str, default="Tsouprou-marginal"
         Method to use for handling censoring. One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
         'uncensored': Exclude samples whose event status is ambiguous at the target time.
         'Tsouprou-marginal': Use marginal survival probabilities based on Turnbull estimator.
         'Tsouprou-conditional': Use conditional survival probabilities based on Weibull AFT model.
+
     Returns
     -------
-    brier_score: float
+    brier_score : float
         Value of the brier score.
+
+    References
+    ----------
+    .. [1] Tsouprou, Sofia (2015). "Measures of discrimination and predictive
+       accuracy for interval censored survival data". Master's thesis,
+       Leiden University. https://math.leidenuniv.nl/scripties/MasterTsouprou.pdf
     """
     if target_time is None:
         tau_vals = np.concatenate(
@@ -215,10 +241,23 @@ def _columnwise_mean_excluding(
     values: np.ndarray,
     excluded: np.ndarray,
 ) -> np.ndarray:
-    """Return column means after excluding selected cells.
+    """
+    Return column means after excluding selected cells.
 
     ``values`` is consumed in place so callers do not need another dense
     matrix for masking. Columns with no included values return ``nan``.
+
+    Parameters
+    ----------
+    values : ndarray
+        Two-dimensional numeric workspace modified in place to form column sums.
+    excluded : ndarray
+        Boolean mask of cells to omit when calculating column means.
+
+    Returns
+    -------
+    ndarray
+        One mean per column; columns without included cells contain NaN.
     """
     values[excluded] = 0.0
     included_counts = values.shape[0] - np.count_nonzero(excluded, axis=0)
@@ -239,31 +278,50 @@ def brier_multiple_points(
     target_times: np.ndarray,
     ipcw: bool = True,
 ) -> np.ndarray:
-    """Calculate plain or IPCW Brier scores at multiple evaluation times.
+    """
+    Calculate plain or IPCW Brier scores at multiple evaluation times.
+
+    The Brier score measures squared probability error [1]_. With ``ipcw=True``,
+    right-censoring is handled using inverse probability of censoring weights
+    as proposed by Graf et al. [2]_ and studied by Gerds and Schumacher [3]_.
 
     Parameters
     ----------
-    pred_mat: np.ndarray, shape = (n_samples, n_time_points)
+    pred_mat : ndarray, shape = (n_samples, n_time_points)
         Predicted probability array (2-D) for each instances at each time point.
-    event_times: np.ndarray, shape = (n_samples, )
+    event_times : ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    event_indicators: np.ndarray, shape = (n_samples, )
+    event_indicators : ndarray, shape = (n_samples, )
         Binary event indicators for the testing samples: 1 denotes an observed
         event and 0 denotes a censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples, )
+    train_event_times : ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    train_event_indicators: np.ndarray, shape = (n_train_samples, )
+    train_event_indicators : ndarray, shape = (n_train_samples, )
         Binary event indicators for the training samples: 1 denotes an observed
         event and 0 denotes a censored observation.
-    target_times: np.ndarray, shape = (n_time_points,)
+    target_times : ndarray, shape = (n_time_points,)
         The specific time points for which to estimate the Brier scores.
-    ipcw: bool, default: True
+    ipcw : bool, default=True
         Whether to use Inverse Probability of Censoring Weighting (IPCW) in the calculation.
 
     Returns
     -------
-    brier_scores: np.ndarray, shape = (n_time_points, )
+    brier_scores : ndarray, shape = (n_time_points, )
         Values of multiple Brier scores in target_times order.
+
+    References
+    ----------
+    .. [1] Brier, G. W. (1950). "Verification of forecasts expressed in terms
+       of probability". Monthly Weather Review, 78(1), 1-3.
+       https://doi.org/10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2
+    .. [2] Graf, E.; Schmoor, C.; Sauerbrei, W.; Schumacher, M. (1999).
+       "Assessment and comparison of prognostic classification schemes for
+       survival data". Statistics in Medicine, 18(17-18), 2529-2545.
+       https://doi.org/10.1002/(SICI)1097-0258(19990915/30)18:17/18<2529::AID-SIM274>3.0.CO;2-5
+    .. [3] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+       Expected Brier Score in General Survival Models with Right-Censored
+       Event Times". Biometrical Journal, 48(6), 1029-1040.
+       https://doi.org/10.1002/bimj.200610301
     """
     pred_mat, event_times, event_indicators, target_times = _check_brier_inputs(
         pred_mat, event_times, event_indicators, target_times
@@ -289,38 +347,56 @@ def brier_multiple_points_cr_per_event(
     ipcw: bool = True,
     event_of_interest: int = 1,
 ) -> np.ndarray:
-    """Calculate cause-specific Brier scores from CIF probabilities.
+    """
+    Calculate cause-specific Brier scores from CIF probabilities.
 
-    Args:
-        pred_mat: Finite CIF probabilities in [0, 1], shape (n_samples, n_times).
-        event_times: Finite, non-negative observed event or censoring times.
-        event_indicators: Non-negative integer causes; 0 denotes censoring.
-        train_event_times: Training outcomes, required for IPCW.
-        train_event_indicators: Training causes. All positive labels are events
-            when fitting the censoring distribution.
-        target_times: Finite, non-negative evaluation times, in prediction order.
-        ipcw: Use training reverse-KM censoring weights. Defaults to True.
-        event_of_interest: Positive integer cause label. Defaults to 1.
+    The competing-risk prediction error follows Schoop et al. [2]_, extending
+    the IPCW approach of Gerds and Schumacher [1]_.
 
-    Returns:
+    Parameters
+    ----------
+    pred_mat : ndarray
+        Finite CIF probabilities in [0, 1], shape (n_samples, n_times).
+    event_times : ndarray
+        Finite, non-negative observed event or censoring times.
+    event_indicators : ndarray
+        Non-negative integer causes; 0 denotes censoring.
+    train_event_times : ndarray | None
+        Training outcomes, required for IPCW.
+    train_event_indicators : ndarray | None
+        Training causes. All positive labels are events
+        when fitting the censoring distribution.
+    target_times : ndarray
+        Finite, non-negative evaluation times, in prediction order.
+    ipcw : bool
+        Use training reverse-KM censoring weights. Defaults to True.
+    event_of_interest : int
+        Positive integer cause label. Defaults to 1.
+
+    Returns
+    -------
+    ndarray
         A Brier score per target time. Observed competing events have outcome 0
         and remain in the score. Earlier censorings contribute zero; the
         denominator is the full test sample size even without IPCW. A cause
         absent from the test data still has a defined score.
 
-    Raises:
-        ValueError: If inputs are invalid, IPCW training outcomes are missing,
-            or a contributing censoring probability is nonfinite or nonpositive.
+    Raises
+    ------
+    ValueError
+        If inputs are invalid, IPCW training outcomes are missing,
+        or a contributing censoring probability is nonfinite or nonpositive.
 
-    Notes:
-        Events by the target receive weight 1/G(event_time-); observations
-        after the target and censorings exactly at it receive 1/G(target_time-).
-        Without IPCW these contributions receive unit weights. Marginal IPCW
-        assumes independent censoring; reverse KM retains its linear tail
-        beyond training follow-up, matching the package's other IPCW metrics.
-
-    References:
-        Gerds and Schumacher (2006), https://doi.org/10.1002/bimj.200610301.
+    References
+    ----------
+    .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+       Expected Brier Score in General Survival Models with Right-Censored
+       Event Times". Biometrical Journal, 48(6), 1029-1040.
+       https://doi.org/10.1002/bimj.200610301
+    .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+       "Quantifying the predictive accuracy of time-to-event models in the
+       presence of competing risks". Biometrical Journal, 53(1), 88-112.
+       https://doi.org/10.1002/bimj.201000073
     """
     if (
         isinstance(event_of_interest, (bool, np.bool_))
@@ -352,31 +428,49 @@ def brier_multiple_points_cr(
     target_times: np.ndarray,
     ipcw: bool = True,
 ) -> np.ndarray:
-    """Calculate the equal-weight mean of cause-specific Brier scores.
+    """
+    Calculate the equal-weight mean of cause-specific Brier scores.
 
-    Args:
-        pred_mat: Finite CIF probabilities in [0, 1], shape
-            (n_samples, n_causes, n_times). Column k - 1 represents cause k.
-        event_times: Finite, non-negative observed event or censoring times.
-        event_indicators: Integer labels from 0 through n_causes; 0 is censoring.
-        train_event_times: Training outcomes, required for IPCW.
-        train_event_indicators: Non-negative integer training cause labels.
-        target_times: Finite, non-negative evaluation times, in prediction order.
-        ipcw: Use training reverse-KM censoring weights. Defaults to True.
+    Each component uses the competing-risk prediction error of Schoop et al.
+    [1]_. This function averages those scores equally across predicted causes.
 
-    Returns:
+    Parameters
+    ----------
+    pred_mat : ndarray
+        Finite CIF probabilities in [0, 1], shape
+        (n_samples, n_causes, n_times). Column k - 1 represents cause k.
+    event_times : ndarray
+        Finite, non-negative observed event or censoring times.
+    event_indicators : ndarray
+        Integer labels from 0 through n_causes; 0 is censoring.
+    train_event_times : ndarray | None
+        Training outcomes, required for IPCW.
+    train_event_indicators : ndarray | None
+        Non-negative integer training cause labels.
+    target_times : ndarray
+        Finite, non-negative evaluation times, in prediction order.
+    ipcw : bool
+        Use training reverse-KM censoring weights. Defaults to True.
+
+    Returns
+    -------
+    ndarray
         A mean Brier score per target time. Every predicted cause is included,
         including causes absent from the test outcomes. This averages binary
         cause-specific scores; it does not add an event-free-state score.
 
-    Raises:
-        ValueError: If inputs or required censoring probabilities are invalid.
-            See brier_multiple_points_cr_per_event for weighting conventions.
+    Raises
+    ------
+    ValueError
+        If inputs or required censoring probabilities are invalid.
+        See brier_multiple_points_cr_per_event for weighting conventions.
 
-    Notes:
-        Censoring weights are calculated once for all causes. After input
-        conversion, working memory beyond the inputs is O(n_samples * n_times),
-        independent of n_causes.
+    References
+    ----------
+    .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+       "Quantifying the predictive accuracy of time-to-event models in the
+       presence of competing risks". Biometrical Journal, 53(1), 88-112.
+       https://doi.org/10.1002/bimj.201000073
     """
     pred_mat, event_times, event_indicators, target_times = _check_brier_inputs(
         pred_mat,
@@ -412,7 +506,29 @@ def _check_brier_inputs(
     competing_risks: bool = False,
     ndim: int = 2,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Validate predictions and outcomes for survival or cause-specific Brier scores."""
+    """
+    Validate predictions and outcomes for survival or cause-specific Brier scores.
+
+    Parameters
+    ----------
+    pred_mat : ndarray
+        Predicted probabilities with sample axis first and evaluation-time axis last.
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    target_times : ndarray
+        One-dimensional array of non-negative evaluation times.
+    competing_risks : bool
+        Whether positive event labels may identify multiple competing causes.
+    ndim : int
+        Expected number of dimensions of the prediction array.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray, ndarray, ndarray]
+        Validated predictions, observed times, event labels, and target times, in that order.
+    """
     pred_mat = check_and_convert_probabilities(pred_mat, "pred_mat")
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators, competing_risks=competing_risks
@@ -444,7 +560,31 @@ def _brier_components(
     *,
     competing_risks: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Prepare shared event/event-free masks and their one-dimensional weights."""
+    """
+    Prepare shared event/event-free masks and their one-dimensional weights.
+
+    Parameters
+    ----------
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    target_times : ndarray
+        One-dimensional array of non-negative evaluation times.
+    train_event_times : ndarray | None
+        Training event or censoring times used to estimate the censoring distribution.
+    train_event_indicators : ndarray | None
+        Training status labels, with 0 for censoring and positive labels for observed events.
+    ipcw : bool
+        Whether to apply inverse probability of censoring weights estimated from the training outcomes.
+    competing_risks : bool
+        Whether positive event labels may identify multiple competing causes.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray, ndarray, ndarray]
+        Event-before-target and event-free masks, followed by event-time and target-time censoring weights.
+    """
     observed = event_indicators > 0
     event_before = event_times[:, None] <= target_times[None, :]
     event_before &= observed[:, None]
@@ -483,7 +623,29 @@ def _brier_scores(
     event_weights: np.ndarray,
     target_weights: np.ndarray,
 ) -> np.ndarray:
-    """Score survival (event_targets=None) or one cause using one float workspace."""
+    """
+    Score survival (event_targets=None) or one cause using one float workspace.
+
+    Parameters
+    ----------
+    pred_mat : ndarray
+        Predicted probabilities with sample axis first and evaluation-time axis last.
+    event_targets : ndarray | None
+        Boolean mask selecting the event cause for each sample; None evaluates survival.
+    event_before : ndarray
+        Boolean array of observed events at or before each target, with shape (n_samples, n_times).
+    event_free : ndarray
+        Boolean array of samples known to be event-free at each target, with shape (n_samples, n_times).
+    event_weights : ndarray
+        One inverse censoring weight per sample evaluated just before its observed event.
+    target_weights : ndarray
+        One inverse censoring weight per evaluation time.
+
+    Returns
+    -------
+    ndarray
+        Brier scores with shape (n_times,).
+    """
     component_error = np.subtract(
         pred_mat, 0.0 if event_targets is None else event_targets[:, None], dtype=float
     )
@@ -510,7 +672,27 @@ def _brier_time_grid(
     num_points: int | None,
     target_times: np.ndarray | None,
 ) -> np.ndarray:
-    """Resolve the IBS grid, retaining the survival evaluator's censor-time default."""
+    """
+    Resolve the IBS grid, retaining the survival evaluator's censor-time default.
+
+    Parameters
+    ----------
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    train_event_times : ndarray | None
+        Training event or censoring times used to estimate the censoring distribution.
+    num_points : int | None
+        Number of equally spaced evaluation times; mutually exclusive with target_times.
+    target_times : ndarray | None
+        One-dimensional array of non-negative evaluation times.
+
+    Returns
+    -------
+    ndarray
+        Sorted evaluation times spanning a positive interval for integration.
+    """
     if num_points is not None and target_times is not None:
         raise ValueError(
             "Please provide either `num_points` OR `target_times`, not both."
@@ -555,9 +737,27 @@ def _brier_time_grid(
 
 
 def _integrate_brier_scores(
-    scores: np.ndarray, target_times: np.ndarray, integration_method: str
+    scores: np.ndarray,
+    target_times: np.ndarray,
+    integration_method: str,
 ) -> float:
-    """Average the Brier curve over a validated positive time span."""
+    """
+    Average the Brier curve over a validated positive time span.
+
+    Parameters
+    ----------
+    scores : ndarray
+        One Brier score per evaluation time.
+    target_times : ndarray
+        One-dimensional array of non-negative evaluation times.
+    integration_method : str
+        Numerical integration rule, "trapz" or "simpson".
+
+    Returns
+    -------
+    float
+        Integrated score divided by the length of the evaluation interval.
+    """
     integration_method = integration_method.lower()
     if integration_method == "trapz":
         integral = trapezoid(scores, x=target_times)
@@ -584,29 +784,39 @@ def brier_multiple_points_ic(
     """
     Compute Brier scores at multiple target times for interval-censored data.
 
+    The ``Tsouprou-marginal`` and ``Tsouprou-conditional`` methods adapt the
+    interval-censoring approach of Tsouprou [1]_, using Turnbull and Weibull AFT
+    survival estimates, respectively.
+
     Parameters
     ----------
-    pred_mat: np.ndarray, shape = (n_samples, n_time_points)
+    pred_mat : ndarray, shape = (n_samples, n_time_points)
         Predicted survival probabilities for each sample at each target time.
         pred_mat[i, j] ~= S_hat_i(target_times[j])
-    left_limits: np.ndarray, shape = (n_samples,)
+    left_limits : ndarray, shape = (n_samples,)
         Left interval bounds L_i.
-    right_limits: np.ndarray, shape = (n_samples,)
+    right_limits : ndarray, shape = (n_samples,)
         Right interval bounds R_i. Use np.inf for right-censoring (no observed event yet).
-    target_times: np.ndarray, shape = (n_time_points,)
+    target_times : ndarray, shape = (n_time_points,)
         Time points t_j at which to evaluate the Brier score.
-    train_left_limits, train_right_limits:
+    train_left_limits, train_right_limits : ndarray or None
         Training interval bounds, required for Tsouprou-based weighting.
-    x, x_train:
+    x, x_train : ndarray or None
         Feature arrays for conditional model ('Tsouprou-conditional').
         May be 1-D (n_samples,) or 2-D (n_samples, n_features).
-    method: str
+    method : str
         One of ['uncensored', 'Tsouprou-marginal', 'Tsouprou-conditional'].
 
     Returns
     -------
-    brier_scores: np.ndarray, shape = (n_time_points,)
+    brier_scores : ndarray, shape = (n_time_points,)
         One Brier score per target time.
+
+    References
+    ----------
+    .. [1] Tsouprou, Sofia (2015). "Measures of discrimination and predictive
+       accuracy for interval censored survival data". Master's thesis,
+       Leiden University. https://math.leidenuniv.nl/scripties/MasterTsouprou.pdf
     """
 
     # -------------------------

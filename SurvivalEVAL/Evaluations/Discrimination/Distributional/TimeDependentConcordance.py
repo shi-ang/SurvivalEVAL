@@ -5,8 +5,8 @@ from collections.abc import Callable
 import numpy as np
 
 from SurvivalEVAL.Evaluations.util import (
-    check_and_convert_event_data,
     check_and_convert,
+    check_and_convert_event_data,
 )
 
 from .._concordance_utils import (
@@ -23,7 +23,19 @@ from .._concordance_utils import (
 
 
 def _normalize_time_dependent_method(method: str) -> str:
-    """Normalize and validate a time-dependent concordance method."""
+    """
+    Normalize and validate a time-dependent concordance method.
+
+    Parameters
+    ----------
+    method : str
+        Time-dependent concordance method, "Antolini", "Naive", or "IPCW", case-insensitive.
+
+    Returns
+    -------
+    str
+        Validated lowercase method name.
+    """
     normalized = method.lower()
     if normalized not in {"antolini", "naive", "ipcw"}:
         raise ValueError(
@@ -38,12 +50,27 @@ def _select_risk_anchors(
     event_indicators: np.ndarray,
     tau: float | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return all event anchors and those that require predicted risk scores.
+    """
+    Return all event anchors and those that require predicted risk scores.
 
     Every event before the final observed time has a later candidate. Events
     at the final time require risks only when that block also contains a
     censored sample. Final event-only blocks can contribute time ties, but the
     concordance counter never reads their risk columns.
+
+    Parameters
+    ----------
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Boolean observed-event mask, with True for events and False for censoring.
+    tau : float | None
+        Finite, non-negative truncation time; None leaves times untruncated.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray]
+        Observed-event anchor times and a boolean mask identifying anchors that require risk predictions.
     """
     anchor_times = event_times[event_indicators]
     if anchor_times.size == 0:
@@ -73,7 +100,7 @@ def concordance_time_dependent(
 
     Parameters
     ----------
-    risk_scores: np.ndarray, shape = (n_samples, n_anchor_times)
+    risk_scores : ndarray, shape = (n_samples, n_anchor_times)
         The predicted risk scores for each sample at each anchor time.
         The risk scores should be ordered such that higher scores indicate higher risk
         (i.e., lower survival probability or higher hazard score).
@@ -84,40 +111,52 @@ def concordance_time_dependent(
         If multiple observed events share the same time, ``risk_scores`` must
         include one column for each of those samples in observed-event sample
         order.
-    event_times: np.ndarray, shape = (n_samples,)
+    event_times : ndarray, shape = (n_samples,)
         Finite, non-negative observed event or censoring times.
-    event_indicators: np.ndarray, shape = (n_samples,)
+    event_indicators : ndarray, shape = (n_samples,)
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples,), optional
+    train_event_times : ndarray, shape = (n_train_samples,), optional
         The true survival times of the training set. Required for "IPCW".
-    train_event_indicators: np.ndarray, shape = (n_train_samples,), optional
+    train_event_indicators : ndarray, shape = (n_train_samples,), optional
         Binary training-set event indicators: 1 denotes an observed event and
         0 denotes a censored observation. Required for "IPCW".
-    method: str, optional (default="Antolini")
+    method : str, optional, default="Antolini"
         A string indicating the method for constructing the pairs of samples.
         Options are "Antolini" (default), "Naive", or "IPCW".
         "Antolini": comparable pairs are anchored by samples with observed
         events. If sample i has an observed event at time t_i, it is compared
-        with samples whose observed event/censoring time is greater than t_i.
+        with samples whose observed event/censoring time is greater than t_i [1]_.
         "Naive": alias of "Antolini".
         "IPCW": Antolini-style comparable pairs weighted by inverse probability
-        of censoring weights from the training data.
-    ties: str, optional (default="Risk")
+        of censoring weights from the training data [2]_, [3]_.
+    ties : str, optional, default="Risk"
         A string indicating the way ties should be handled.
         Options: "None", "Time", "Risk" (default), or "All"
-    tau: float, optional
+    tau : float, optional
         Finite, non-negative truncation time. If provided, only event anchors whose observed time is
         strictly before ``tau`` are counted. If None, no truncation is applied.
 
     Returns
     -------
-    c_index: float
+    c_index : float
         The concordance index.
-    num_concordant_pairs: float
+    num_concordant_pairs : float
         The number of concordant pairs.
-    num_total_pairs: float
+    num_total_pairs : float
         The number of total pairs.
+
+    References
+    ----------
+    .. [1] Antolini, L.; Boracchi, P.; Biganzoli, E. (2005). "A time-dependent
+       discrimination index for survival data". Statistics in Medicine,
+       24(24), 3927-3944. https://doi.org/10.1002/sim.2427
+    .. [2] Gandy, A.; Matcham, T. J. (2025). "A proper concordance index for
+       models with crossing hazards". Scandinavian Journal of Statistics,
+       52(4), 1479-1504. https://doi.org/10.1111/sjos.70000
+    .. [3] Faruk, A.; Palczewski, J.; Aivaliotis, G. (2025). "A new discrimination
+       measure for assessing predictive performance of non-linear survival models".
+       arXiv preprint, arXiv:2504.05630. https://arxiv.org/abs/2504.05630
     """
     if callable(risk_scores):
         raise TypeError("risk_scores must be a numeric array.")
@@ -144,11 +183,36 @@ def _concordance_time_dependent(
     ties: str = "Risk",
     tau: float | None = None,
 ) -> tuple[float, float, float]:
-    """Validate outcomes and evaluate a risk array or a per-sample predictor.
+    """
+    Validate outcomes and evaluate a risk array or a per-sample predictor.
 
     A callable receives a sample index and unique, increasing anchor times,
     and returns a 1-D array of that sample's risks at those times. This lets
     the evaluator count pairs without allocating the dense risk matrix.
+
+    Parameters
+    ----------
+    risk_scores : ndarray | Callable[[int, ndarray], ndarray]
+        Risk matrix indexed by sample and event anchor, or a callable taking (sample_index, anchor_times).
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    train_event_times : ndarray | None
+        Training event or censoring times used to estimate the censoring distribution.
+    train_event_indicators : ndarray | None
+        Training status labels, with 0 for censoring and positive labels for observed events.
+    method : str
+        Time-dependent concordance method, "Antolini", "Naive", or "IPCW", case-insensitive.
+    ties : str
+        Tie policy: "None", "Time", "Risk", or "All", case-insensitive.
+    tau : float | None
+        Finite, non-negative truncation time; None leaves times untruncated.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        Concordance index, weighted concordant-pair count, and weighted comparable-pair count.
     """
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators
@@ -212,7 +276,8 @@ def _time_dependent_risk_counts_from_predictions(
     tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
-    """Count pairs by ranking risks within equal-event-time groups.
+    """
+    Count pairs by ranking risks within equal-event-time groups.
 
     Visit samples in increasing observed-time order, processing events before
     censorings at the same time. Sort each event group's own risks once; later
@@ -225,6 +290,28 @@ def _time_dependent_risk_counts_from_predictions(
     event group. Small prediction batches contain at most n scores; no dense
     sample-by-anchor matrix is constructed. These bounds exclude prediction
     costs and the stored input curves.
+
+    Parameters
+    ----------
+    risk_scores : Callable[[int, ndarray], ndarray]
+        Callable taking (sample_index, anchor_times) and returning that sample's risk scores.
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    sample_weights : ndarray | None
+        Non-negative weights for individual samples; None assigns unit weights.
+    anchor_pair_weights : ndarray | None
+        Pair weights associated with event anchors; None assigns unit weights.
+    tau : float | None
+        Finite, non-negative truncation time; None leaves times untruncated.
+    tied_tol : float
+        Maximum absolute risk difference treated as a risk tie.
+
+    Returns
+    -------
+    _ConcordanceCounts
+        Weighted counts of concordant, discordant, risk-tied, and time-tied pairs.
     """
     if sample_weights is None:
         sample_weights = np.ones(event_times.shape[0], dtype=float)
@@ -331,11 +418,30 @@ def _grouped_risk_ranks(
     candidate_risks: np.ndarray,
     tied_tol: float,
 ) -> np.ndarray:
-    """Find discordant and nonconcordant prefixes of sorted anchor groups.
+    """
+    Find discordant and nonconcordant prefixes of sorted anchor groups.
 
     The returned array has shape (2, batch_size, n_groups). Binary searches
     compare candidate-minus-anchor risks directly: searching for risk plus or
     minus the tolerance can round differently at floating-point boundaries.
+
+    Parameters
+    ----------
+    anchor_risks : ndarray
+        Sorted anchor risks concatenated in group order.
+    group_starts : ndarray
+        Start offsets of the concatenated anchor groups.
+    group_ends : ndarray
+        Exclusive end offsets of the concatenated anchor groups.
+    candidate_risks : ndarray
+        Candidate risks at each anchor group, with shape (batch_size, n_groups).
+    tied_tol : float
+        Maximum absolute risk difference treated as a risk tie.
+
+    Returns
+    -------
+    ndarray
+        Prefix lengths for discordant and nonconcordant risks, with shape (2, batch_size, n_groups).
     """
     shape = (2, *candidate_risks.shape)
     low = np.broadcast_to(group_starts, shape).copy()
@@ -359,13 +465,30 @@ def _grouped_risk_weights(
     group_ends: np.ndarray,
     ranks: np.ndarray,
 ) -> np.ndarray:
-    """Sum discordant, tied, and concordant intervals without subtraction.
+    """
+    Sum discordant, tied, and concordant intervals without subtraction.
 
     Each group's tree occupies twice its size, with sorted weights in the
     second half and parent sums above them (index zero is unused). Queries
     add only nodes entirely inside their interval, preserving small weights
     even when much larger weights lie outside it. The result has shape
     (3, batch_size, n_groups), matching the interval order above.
+
+    Parameters
+    ----------
+    weight_trees : ndarray
+        Concatenated segment trees containing anchor weights for each group.
+    group_starts : ndarray
+        Start offsets of the concatenated anchor groups.
+    group_ends : ndarray
+        Exclusive end offsets of the concatenated anchor groups.
+    ranks : ndarray
+        Discordant and nonconcordant prefix lengths, with shape (2, batch_size, n_groups).
+
+    Returns
+    -------
+    ndarray
+        Discordant, tied, and concordant weight sums, with shape (3, batch_size, n_groups).
     """
     sizes = group_ends - group_starts
     left = np.empty((3, *ranks.shape[1:]), dtype=int)
@@ -398,27 +521,28 @@ def _time_dependent_risk_counts(
     tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
-    """Count Antolini-style time-dependent concordance pairs.
+    """
+    Count Antolini-style time-dependent concordance pairs.
 
     Parameters
     ----------
-    risk_scores: np.ndarray, shape = (n_samples, n_observed_events)
+    risk_scores : ndarray, shape = (n_samples, n_observed_events)
         Risk scores evaluated at observed-event anchor times. Higher scores
         indicate higher event risk.
-    event_times: np.ndarray, shape = (n_samples,)
+    event_times : ndarray, shape = (n_samples,)
         Observed event or censoring times.
-    event_indicators: np.ndarray, shape = (n_samples,)
+    event_indicators : ndarray, shape = (n_samples,)
         Boolean event indicators, where True denotes an observed event.
-    sample_weights: np.ndarray, shape = (n_samples,), optional
+    sample_weights : ndarray, shape = (n_samples,), optional
         Optional symmetric sample weights used for same-time event ties and,
         unless ``anchor_pair_weights`` is provided, comparable pair weights.
-    anchor_pair_weights: np.ndarray, shape = (n_samples,), optional
+    anchor_pair_weights : ndarray, shape = (n_samples,), optional
         Optional per-anchor pair weights. If provided, every comparable pair
         anchored by sample ``i`` receives ``anchor_pair_weights[i]``.
-    tau: float, optional (default=None)
+    tau : float, optional, default=None
         Truncation time. If provided, only event anchors whose observed time is
         strictly before ``tau`` are counted. If None, no truncation is applied.
-    tied_tol: float, optional (default=1e-8)
+    tied_tol : float, optional, default=1e-8
         Absolute tolerance for risk-score ties.
 
     Returns

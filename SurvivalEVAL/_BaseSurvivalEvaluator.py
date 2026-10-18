@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Callable
+from typing import Any, Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,7 +36,22 @@ class _BaseSurvivalEvaluator:
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
     ) -> None:
-        """Initialize curves for the sample count validated by the outcome evaluator."""
+        """
+        Initialize curves for the sample count validated by the outcome evaluator.
+
+        Parameters
+        ----------
+        pred_survs : NumericArrayLike
+            Survival probabilities with shape (n_times,) or (n_samples, n_times).
+        time_coordinates : NumericArrayLike
+            Time coordinates matching the last axis of the predicted curves.
+        n_samples : int
+            Number of samples that the predicted curves must describe.
+        predict_time_method : str
+            Point prediction method, "Median", "Mean", or "RMST", case-insensitive.
+        interpolation : str
+            Curve interpolation method, "Linear" or "Pchip".
+        """
         self._n_samples = n_samples
         self.set_prediction_inputs(pred_survs, time_coordinates)
 
@@ -60,14 +75,15 @@ class _BaseSurvivalEvaluator:
         time_coordinates: np.ndarray,
         n_samples: int,
     ) -> None:
-        """Validate that prediction inputs have one row per testing sample.
+        """
+        Validate that prediction inputs have one row per testing sample.
 
         Parameters
         ----------
-        pred_survs : np.ndarray
+        pred_survs : ndarray
             Predicted survival curves, either shared across samples or one row
             per sample.
-        time_coordinates : np.ndarray
+        time_coordinates : ndarray
             Time coordinates, either shared across samples or one row per sample.
         n_samples : int
             Expected number of testing samples.
@@ -101,13 +117,14 @@ class _BaseSurvivalEvaluator:
         pred_survs: np.ndarray,
         time_coordinates: np.ndarray,
     ) -> None:
-        """Validate survival-curve probability and time-grid invariants.
+        """
+        Validate survival-curve probability and time-grid invariants.
 
         Parameters
         ----------
-        pred_survs : np.ndarray
+        pred_survs : ndarray
             Predicted survival probabilities after any zero-padding.
-        time_coordinates : np.ndarray
+        time_coordinates : ndarray
             Time coordinates after any zero-padding.
 
         Raises
@@ -137,6 +154,13 @@ class _BaseSurvivalEvaluator:
         Prefer this method when updating both inputs together, because the
         pair is validated, zero-padded, and cached-property invalidated once.
         Property setters remain available for changing only one input.
+
+        Parameters
+        ----------
+        pred_survs : NumericArrayLike
+            Survival probabilities with shape (n_times,) or (n_samples, n_times).
+        time_coordinates : NumericArrayLike
+            Time coordinates matching the last axis of the predicted curves.
         """
         pred_survs = check_and_convert(pred_survs)
         time_coordinates = check_and_convert(time_coordinates)
@@ -160,10 +184,26 @@ class _BaseSurvivalEvaluator:
 
     @property
     def pred_survs(self) -> np.ndarray:
+        """
+        Return the stored survival curves.
+
+        Returns
+        -------
+        ndarray
+            Stored survival probabilities, shared across samples or with one row per sample.
+        """
         return self._pred_survs
 
     @pred_survs.setter
     def pred_survs(self, val: NumericArrayLike) -> None:
+        """
+        Replace and validate the stored survival curves.
+
+        Parameters
+        ----------
+        val : NumericArrayLike
+            Replacement survival probabilities matching the stored grid.
+        """
         print("Setter called. Resetting predicted curves for this evaluator.")
         pred_survs = check_and_convert(val)
         # The stored grid may already include a zero-time column inserted by
@@ -183,10 +223,26 @@ class _BaseSurvivalEvaluator:
 
     @property
     def time_coordinates(self) -> np.ndarray:
+        """
+        Return the stored curve time coordinates.
+
+        Returns
+        -------
+        ndarray
+            Stored time coordinates corresponding to the predicted curves.
+        """
         return self._time_coordinates
 
     @time_coordinates.setter
     def time_coordinates(self, val: NumericArrayLike) -> None:
+        """
+        Replace and validate the time coordinates for the stored curves.
+
+        Parameters
+        ----------
+        val : NumericArrayLike
+            Replacement time coordinates matching the stored curves.
+        """
         print("Setter called. Resetting time coordinates for this evaluator.")
         time_coordinates = check_and_convert(val)
         # Symmetric one-sided update: if curves are already zero-padded and
@@ -209,11 +265,26 @@ class _BaseSurvivalEvaluator:
 
     @property
     def interpolation(self) -> str:
-        """Curve interpolation method; changing it invalidates cached event times."""
+        """
+        Curve interpolation method; changing it invalidates cached event times.
+
+        Returns
+        -------
+        str
+            Interpolation method used when evaluating curves between their time coordinates.
+        """
         return self._interpolation
 
     @interpolation.setter
     def interpolation(self, value: str) -> None:
+        """
+        Set the curve interpolation method and invalidate cached predictions.
+
+        Parameters
+        ----------
+        value : str
+            Curve interpolation method, "Linear" or "Pchip".
+        """
         if not isinstance(value, str) or value.lower() not in {"linear", "pchip"}:
             raise ValueError("interpolation must be 'Linear' or 'Pchip'.")
         self._interpolation = value.capitalize()
@@ -221,25 +292,34 @@ class _BaseSurvivalEvaluator:
 
     @cached_property
     def predicted_event_times(self) -> np.ndarray:
+        """
+        Predict and cache event times using the configured curve summary.
+
+        Returns
+        -------
+        ndarray
+            One event-time point prediction per sample using the configured prediction method.
+        """
         return self.predict_time_from_curve(self.predict_time_method)
 
     def _clear_cache(self) -> None:
         # See how to clear cache in functools:
         # https://docs.python.org/3/library/functools.html#functools.cached_property
         # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
+        """Invalidate cached event-time predictions."""
         self.__dict__.pop("predicted_event_times", None)
 
     def predict_time_from_curve(
         self,
-        predict_method: Callable,
+        predict_method: Callable[[np.ndarray, np.ndarray, str], float | np.ndarray],
     ) -> np.ndarray:
         """
         Predict survival time from survival curves.
 
         Parameters
         ----------
-        predict_method: Callable
-            A function that takes in a survival curve and returns a predicted survival time.
+        predict_method : callable
+            Function accepting (survival_curves, time_coordinates, interpolation) and returning event times.
             There are three build-in methods: 'predict_median_st', 'predict_mean_st', and 'predict_rmst'.
             'predict_median_st' uses the median of the survival curve as the predicted survival time.
             'predict_mean_st' uses the expected time of the survival curve as the predicted survival time.
@@ -247,7 +327,7 @@ class _BaseSurvivalEvaluator:
 
         Returns
         -------
-        predicted_times: np.ndarray, shape = (n_samples, )
+        predicted_times : ndarray, shape = (n_samples, )
             Predicted survival time for each sample.
         """
         if (
@@ -279,7 +359,7 @@ class _BaseSurvivalEvaluator:
 
         Parameters
         ----------
-        target_time: float | np.ndarray, shape = (n_samples, )
+        target_time : float | ndarray, shape = (n_samples, )
             Time point(s) at which the survival probability is to be predicted.
             If float or int, the same time point is used for all samples. If
             array-like, each sample will have its own target time. The length
@@ -287,7 +367,7 @@ class _BaseSurvivalEvaluator:
 
         Returns
         -------
-        predicted_survival_probability: np.ndarray, shape = (n_samples, )
+        predicted_survival_probability : ndarray, shape = (n_samples, )
             Predicted survival probabilities at the target time point(s).
         """
         if self.ndim_surv == 2 and self.ndim_time == 1:
@@ -346,19 +426,20 @@ class _BaseSurvivalEvaluator:
         return predict_probs
 
     def predict_multi_probabilities_from_curve(
-        self, target_times: np.ndarray
+        self,
+        target_times: np.ndarray,
     ) -> np.ndarray:
         """
         Calculate the survival probability at multiple time points from the predicted curve.
 
         Parameters
         ----------
-        target_times: np.ndarray, shape = (n_target_times)
+        target_times : ndarray, shape = (n_target_times)
             Time points at which the survival probabilities are to be predicted.
 
         Returns
         -------
-        prob_mat: np.ndarray, shape = (n_samples, n_target_times)
+        prob_mat : ndarray, shape = (n_samples, n_target_times)
             Predicted survival probabilities at the target time points.
         """
         target_times = validate_time_points(target_times, input_name="target_times")
@@ -403,17 +484,16 @@ class _BaseSurvivalEvaluator:
 
     def predict_multi_hazards_from_curve(self, target_times: np.ndarray) -> np.ndarray:
         """
-        Calculate piecewise constant hazard rates at multiple time points from
-        the predicted survival curves.
+        Predict piecewise constant hazard rates at multiple target times.
 
         Parameters
         ----------
-        target_times: np.ndarray, shape = (n_target_times)
+        target_times : ndarray, shape = (n_target_times)
             Time points at which the hazard rates are to be predicted.
 
         Returns
         -------
-        hazard_mat: np.ndarray, shape = (n_samples, n_target_times)
+        hazard_mat : ndarray, shape = (n_samples, n_target_times)
             Predicted hazard rates at the target time points.
         """
         target_times = validate_time_points(target_times, input_name="target_times")
@@ -433,9 +513,28 @@ class _BaseSurvivalEvaluator:
         return hazard_mat
 
     def _predict_risks_from_curve(
-        self, sample_index: int, target_times: np.ndarray, risks: str
+        self,
+        sample_index: int,
+        target_times: np.ndarray,
+        risks: str,
     ) -> np.ndarray:
-        """Predict one sample's risks without allocating a matrix of scores."""
+        """
+        Predict one sample's risks without allocating a matrix of scores.
+
+        Parameters
+        ----------
+        sample_index : int
+            Zero-based index of the sample whose curve is evaluated.
+        target_times : ndarray
+            One-dimensional array of non-negative evaluation times.
+        risks : str
+            "survival" returns negative survival probabilities; "hazard" returns interval hazard rates.
+
+        Returns
+        -------
+        ndarray
+            One risk score per target time for the selected sample.
+        """
         target_times = validate_time_points(target_times, input_name="target_times")
         survival_curve = (
             self._pred_survs[sample_index] if self.ndim_surv == 2 else self._pred_survs
@@ -480,22 +579,24 @@ class _BaseSurvivalEvaluator:
     ) -> np.ndarray:
         """
         Predict the survival interval from the predicted survival curve.
+
         The interval means that the event time will fall between the lower and upper bounds
         with a certain probability (coverage level).
 
         Parameters
         ----------
-        quantile_range: tuple[float, float]
+        quantile_range : tuple[float, float]
             The lower and upper quantiles to define the prediction interval.
             If `cov_level` is also provided, it must equal the difference
             between the upper and lower quantiles.
-        cov_level: float, default: None
+        cov_level : float, default=None
             The coverage level to define the prediction interval.
             If `quantile_range` is also provided, it must equal the difference
             between the upper and lower quantiles.
+
         Returns
         -------
-        intervals: np.ndarray, shape = (n_samples, 2)
+        intervals : ndarray, shape = (n_samples, 2)
             The predicted survival intervals for each sample.
         """
         if (quantile_range is not None) and (cov_level is not None):
@@ -537,10 +638,21 @@ class _BaseSurvivalEvaluator:
         self,
         curve_indices: int | list[int],
     ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-        """Select requested samples, keeping shared 1D inputs without broadcasting.
+        """
+        Select requested samples, keeping shared 1D inputs without broadcasting.
 
         Return survival curves, their time coordinates and sample labels in
         selection order. Copy only selected rows of sample-specific inputs.
+
+        Parameters
+        ----------
+        curve_indices : int | list[int]
+            Zero-based sample indices to select, in the requested order.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray, list[str]]
+            Selected survival curves, matching time grids, and sample labels in selection order.
         """
         indices = _validate_plot_indices(curve_indices, self._n_samples)
         return (
@@ -563,9 +675,10 @@ class _BaseSurvivalEvaluator:
         y_label: str = "Survival probability",
         *,
         ax: plt.Axes | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple[plt.Figure, plt.Axes]:
-        """Plot selected survival curves on the stored prediction grids.
+        """
+        Plot selected survival curves on the stored prediction grids.
 
         Parameters
         ----------
@@ -580,7 +693,7 @@ class _BaseSurvivalEvaluator:
             Axis labels, defaulting to Time and Survival probability.
         ax : matplotlib.axes.Axes, optional
             Existing axes to reuse. Otherwise create a new figure.
-        **kwargs
+        **kwargs : Any
             Matplotlib line options, including linewidth, linestyle, alpha and
             label. A label sequence overrides the generated sample labels.
 
@@ -615,9 +728,10 @@ class _BaseSurvivalEvaluator:
         y_label: str = "Time",
         *,
         ax: plt.Axes | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple[plt.Figure, plt.Axes]:
-        """Plot event-time quantiles for selected samples on the stored grid.
+        """
+        Plot event-time quantiles for selected samples on the stored grid.
 
         Parameters
         ----------
@@ -631,7 +745,7 @@ class _BaseSurvivalEvaluator:
             Axis labels, defaulting to Quantile and Time.
         ax : matplotlib.axes.Axes, optional
             Existing axes to reuse. Otherwise create a new figure.
-        **kwargs
+        **kwargs : Any
             Matplotlib line options; see plot_survival_curves.
 
         Returns

@@ -25,7 +25,8 @@ def _aj_calibration_scores(
     min_prop_at_risk: float = 0.05,
     event_of_interest: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Validate inputs and compute scores with a single Aalen–Johansen fit.
+    """
+    Validate inputs and compute scores with a single Aalen–Johansen fit.
 
     Parameters
     ----------
@@ -134,7 +135,8 @@ def aj_calibration_per_event(
     min_prop_at_risk: float = 0.05,
     return_details: bool = False,
 ) -> float | tuple[float, dict]:
-    """Measure marginal AJ-calibration for one competing cause (lower is better).
+    """
+    Measure marginal AJ-calibration for one competing cause (lower is better).
 
     Fits Aalen–Johansen on the complete calibration set, assuming independent
     censoring for marginal estimation. Approximates the integral over [0,
@@ -146,7 +148,6 @@ def aj_calibration_per_event(
     L_alpha norm, with an alpha-th root after integration; scalar scores differ.
     Unlike hazardous, predictions have no survival channel and a missing
     time-zero point is supplied explicitly.
-
 
     Parameters
     ----------
@@ -182,11 +183,20 @@ def aj_calibration_per_event(
     details : dict, optional
         Time grid and the two marginal CIF curves.
 
+    Notes
+    -----
+    The method is described in [1]_.
+    A related implementation is available in [2]_.
+
     References
     ----------
-    Alberge, Haugomat, Varoquaux and Abecassis (2026), "On the Calibration of
-    Survival Models with Competing Risks", https://proceedings.mlr.press/v300/alberge26a.html
-    https://github.com/soda-inria/hazardous/blob/main/hazardous/metrics/_aj_calibration.py
+    .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
+       "On the Calibration of Survival Models with Competing Risks".
+       Proceedings of the 29th International Conference on Artificial Intelligence
+       and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
+       https://proceedings.mlr.press/v300/alberge26a.html
+    .. [2] Hazardous reference implementation.
+       https://github.com/soda-inria/hazardous/blob/main/hazardous/metrics/_aj_calibration.py
     """
     if (
         isinstance(event_of_interest, (bool, np.bool_))
@@ -223,12 +233,16 @@ def aj_calibration(
     min_prop_at_risk: float = 0.05,
     return_details: bool = False,
 ) -> float | tuple[float, dict]:
-    """Aggregate AJ-calibration over all predicted competing causes.
+    """
+    Aggregate AJ-calibration over all predicted competing causes.
 
     All predicted causes are evaluated, including those absent from observed
     labels. Censoring is not scored as a separate outcome. The hazardous
     implementation also scores survival as event 0 and only includes observed
     causes, so its aggregate can differ even with the same prediction grid.
+
+    The marginal calibration framework is described in [1]_. For the normalization
+    and integration conventions used here, see ``aj_calibration_per_event``.
 
     Parameters
     ----------
@@ -259,6 +273,14 @@ def aj_calibration(
         Aggregated marginal calibration error. Lower is better.
     details : dict, optional
         Per-cause scores and marginal curves from a single AJ fit.
+
+    References
+    ----------
+    .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
+       "On the Calibration of Survival Models with Competing Risks".
+       Proceedings of the 29th International Conference on Artificial Intelligence
+       and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
+       https://proceedings.mlr.press/v300/alberge26a.html
     """
     reduction = reduction.lower()
     if reduction not in ("mean", "sum", "max"):

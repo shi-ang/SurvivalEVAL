@@ -10,7 +10,25 @@ from SurvivalEVAL.NonparametricEstimator.util import _compute_event_counts
 @dataclass
 class NelsonAalen:
     """
-    Implementation of the Nelson-Aalen estimator for cumulative hazard function.
+    Estimate the cumulative hazard and survival functions with Nelson-Aalen increments.
+
+    The estimator is described by Aalen [1]_ and Nelson [2]_, [3]_.
+
+    Parameters
+    ----------
+    event_times : ndarray, shape (n_samples,)
+        Non-negative observed event or censoring times.
+    event_indicators : ndarray, shape (n_samples,)
+        Binary indicators: 1 for observed events and 0 for censoring.
+
+    References
+    ----------
+    .. [1] Aalen, O. (1978). "Nonparametric Inference for a Family of Counting Processes."
+       The Annals of Statistics, 701-726.
+    .. [2] Nelson, W. (1969). "Hazard Plotting for Incomplete Failure Data."
+       Journal of Quality Technology, 1(1), 27-52.
+    .. [3] Nelson, W. (1972). "Theory and Applications of Hazard Plotting for Censored Failure Data."
+       Technometrics, 14(4), 945-966.
     """
 
     event_times: InitVar[np.ndarray]
@@ -22,7 +40,21 @@ class NelsonAalen:
     cumulative_hazard: np.ndarray = field(init=False)
     survival_probabilities: np.ndarray = field(init=False)
 
-    def __post_init__(self, event_times, event_indicators):
+    def __post_init__(
+        self,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+    ) -> None:
+        """
+        Fit the NelsonAalen estimator from the supplied observations.
+
+        Parameters
+        ----------
+        event_times : ndarray
+            Observed event or censoring times, one per sample.
+        event_indicators : ndarray
+            Binary event indicators: 1 denotes an observed event and 0 denotes censoring.
+        """
         self.survival_times, self.population_count, self.events = _compute_event_counts(
             event_times, event_indicators
         )
@@ -46,13 +78,15 @@ class NelsonAalen:
     def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the cumulative hazard based on the survival times.
+
         Parameters
         ----------
-        prediction_times: float | np.ndarray
+        prediction_times : float | ndarray
             Time(s) at which to predict the cumulative hazard.
+
         Returns
         -------
-        cumulative_hazard: float | np.ndarray
+        cumulative_hazard : float | ndarray
             The predicted cumulative hazard at the given times.
         """
         prediction_times = np.asarray(prediction_times, dtype=float)
@@ -76,17 +110,20 @@ class NelsonAalen:
         return cumulative_hazard
 
     def predict_survival(
-        self, prediction_times: float | np.ndarray
+        self,
+        prediction_times: float | np.ndarray,
     ) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
+
         Parameters
         ----------
-        prediction_times: float | np.ndarray
+        prediction_times : float | ndarray
             Time(s) at which to predict the survival probabilities.
+
         Returns
         -------
-        survival_probabilities: float | np.ndarray
+        survival_probabilities : float | ndarray
             The predicted survival probabilities at the given times.
         """
         cum_hazards = self.predict(prediction_times)

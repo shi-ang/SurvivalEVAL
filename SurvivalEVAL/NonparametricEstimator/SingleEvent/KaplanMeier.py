@@ -16,13 +16,31 @@ from SurvivalEVAL.NonparametricEstimator.util import (
 
 @dataclass
 class KaplanMeier:
-    """Kaplan-Meier estimator of event or censoring survival.
+    """
+    Kaplan-Meier estimator of event or censoring survival.
+
+    The survival estimator follows Kaplan and Meier [1]_.
 
     ``event_indicators`` always denotes original observed events. With
     ``reverse=True``, estimate censoring survival by removing original events
     from the risk set before updating tied censorings. In that mode, ``events``
     contains censoring counts and ``population_count`` contains their adjusted
     risk sets.
+
+    Parameters
+    ----------
+    event_times : ndarray, shape (n_samples,)
+        Non-negative observed event or censoring times.
+    event_indicators : ndarray, shape (n_samples,)
+        Binary indicators: 1 for observed events and 0 for censoring.
+    reverse : bool, default=False
+        Whether to estimate censoring survival using events-first risk sets.
+
+    References
+    ----------
+    .. [1] Kaplan, E. L.; Meier, P. (1958). "Nonparametric estimation from incomplete observations".
+       J. Amer. Statist. Assoc., 53(282), 457-481.
+       https://doi.org/10.2307/2281868. JSTOR 2281868.
     """
 
     event_times: InitVar[np.ndarray]
@@ -37,7 +55,21 @@ class KaplanMeier:
     cumulative_dens: np.ndarray = field(init=False)
     probability_dens: np.ndarray = field(init=False)
 
-    def __post_init__(self, event_times, event_indicators):
+    def __post_init__(
+        self,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+    ) -> None:
+        """
+        Fit the KaplanMeier estimator from the supplied observations.
+
+        Parameters
+        ----------
+        event_times : ndarray
+            Observed event or censoring times, one per sample.
+        event_indicators : ndarray
+            Binary event indicators: 1 denotes an observed event and 0 denotes censoring.
+        """
         self.survival_times, self.population_count, self.events = _compute_event_counts(
             event_times, event_indicators
         )
@@ -77,21 +109,29 @@ class KaplanMeier:
         *,
         side: Literal["left", "right"] = "right",
     ) -> float | np.ndarray:
-        """Predict survival probabilities, optionally before each time's update.
+        """
+        Predict survival probabilities, optionally before each time's update.
 
-        Args:
-            prediction_times: Non-negative time(s) at which to predict survival.
-            side: "right" includes the update at an observed time; "left"
-                excludes it. In reverse mode these return G(t) and G(t-),
-                respectively. Both use the existing linear extrapolation beyond
-                the final fitted time, bounded below by zero.
+        Parameters
+        ----------
+        prediction_times : float | ndarray
+            Non-negative time(s) at which to predict survival.
+        side : Literal['left', 'right']
+            "right" includes the update at an observed time; "left"
+            excludes it. In reverse mode these return G(t) and G(t-),
+            respectively. Both use the existing linear extrapolation beyond
+            the final fitted time, bounded below by zero.
 
-        Returns:
+        Returns
+        -------
+        float | ndarray
             Survival probabilities with the same shape as prediction_times,
             or a float for a scalar query. Before the first update, survival is 1.
 
-        Raises:
-            ValueError: If times are negative or NaN, or side is invalid.
+        Raises
+        ------
+        ValueError
+            If times are negative or NaN, or side is invalid.
         """
         prediction_times = np.asarray(prediction_times, dtype=float)
         original_shape = prediction_times.shape
@@ -122,22 +162,30 @@ class KaplanMeier:
         *,
         side: Literal["left", "right"] = "right",
     ) -> float | np.ndarray:
-        """Predict Greenwood variance of the fitted Kaplan–Meier step estimate.
+        """
+        Predict Greenwood variance of the fitted Kaplan–Meier step estimate.
 
-        Args:
-            prediction_times: Non-negative times, including positive infinity.
-            side: "right" (default) includes updates at the query time; "left"
-                excludes them. Uses the fitted risk sets, including reverse-KM
-                events-first risk sets when reverse=True.
+        Parameters
+        ----------
+        prediction_times : float | ndarray
+            Non-negative times, including positive infinity.
+        side : Literal['left', 'right']
+            "right" (default) includes updates at the query time; "left"
+            excludes them. Uses the fitted risk sets, including reverse-KM
+            events-first risk sets when reverse=True.
 
-        Returns:
+        Returns
+        -------
+        float | ndarray
             Variances with the query shape, or a float for a scalar query.
             Variance is zero before the first event and stays constant after
             the final observation. Applies to fitted survival S(t) and 1 - S(t);
             it describes the step estimate rather than an extrapolated curve.
 
-        Raises:
-            ValueError: If times are negative or NaN, or side is invalid.
+        Raises
+        ------
+        ValueError
+            If times are negative or NaN, or side is invalid.
         """
         risk = self.population_count.astype(float, copy=False)
         increments = np.divide(
@@ -155,12 +203,40 @@ class KaplanMeier:
 
 @dataclass
 class KaplanMeierArea(KaplanMeier):
+    """
+    Extend Kaplan-Meier with a piecewise-linear area and conditional mean event times.
+
+    Areas use trapezoidal integration, with a linear tail extending to zero survival.
+
+    Parameters
+    ----------
+    event_times : ndarray, shape (n_samples,)
+        Non-negative observed event or censoring times.
+    event_indicators : ndarray, shape (n_samples,)
+        Binary indicators: 1 for observed events and 0 for censoring.
+    reverse : bool, default=False
+        Whether to fit the reverse Kaplan-Meier curve.
+    """
     area_times: np.ndarray = field(init=False)
     area_probabilities: np.ndarray = field(init=False)
     area: np.ndarray = field(init=False)
     km_linear_zero: float = field(init=False)
 
-    def __post_init__(self, event_times, event_indicators):
+    def __post_init__(
+        self,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+    ) -> None:
+        """
+        Fit the KaplanMeierArea estimator from the supplied observations.
+
+        Parameters
+        ----------
+        event_times : ndarray
+            Observed event or censoring times, one per sample.
+        event_indicators : ndarray
+            Binary event indicators: 1 denotes an observed event and 0 denotes censoring.
+        """
         super().__post_init__(event_times, event_indicators)
         area_probabilities = self.survival_probabilities.copy()
         area_times = self.survival_times.copy()
@@ -182,11 +258,32 @@ class KaplanMeierArea(KaplanMeier):
         self.area = np.append(area, 0)
 
     @property
-    def mean(self):
+    def mean(self) -> float:
+        """
+        Return the mean survival time under the fitted curve and its linear tail.
+
+        Returns
+        -------
+        float
+            Mean survival time under the fitted curve and its linear tail.
+        """
         return self.best_guess(np.array([0])).item()
 
-    def best_guess(self, censor_times: np.ndarray):
+    def best_guess(self, censor_times: np.ndarray) -> np.ndarray:
         # calculate the slope using the [0, 1] - [max_time, S(t|x)]
+        """
+        Estimate conditional mean event times for censored observations.
+
+        Parameters
+        ----------
+        censor_times : ndarray
+            Censoring times, one per censored sample.
+
+        Returns
+        -------
+        ndarray
+            Conditional mean event times given survival to each censoring time.
+        """
         max_time = self.survival_times[-1]
         slope = (1 - self.survival_probabilities[-1]) / (0 - max_time)
         # if after the last time point, then the best guess is the linear function
@@ -221,7 +318,20 @@ class KaplanMeierArea(KaplanMeier):
         censor_area[~beyond_idx] += self.area[censor_indexes[~beyond_idx]]
         return censor_times + censor_area / surv_prob
 
-    def _km_linear_predict(self, times):
+    def _km_linear_predict(self, times: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the fitted survival curve with a linear tail.
+
+        Parameters
+        ----------
+        times : ndarray
+            Non-negative query times.
+
+        Returns
+        -------
+        ndarray
+            Fitted survival probabilities with a non-negative linear tail beyond the observed times.
+        """
         slope = (1 - min(self.survival_probabilities)) / (0 - max(self.survival_times))
 
         predict_prob = np.empty_like(times)
@@ -237,11 +347,25 @@ class KaplanMeierArea(KaplanMeier):
         #     predict_prob = max(1 + time * slope, 0)
         return predict_prob
 
-    def _compute_best_guess(self, time: float, restricted: bool = False):
+    def _compute_best_guess(self, time: float, restricted: bool = False) -> float:
         """
-        Given a censor time, compute the decensor event time based on the residual mean survival time on KM curves.
-        :param time:
-        :return:
+        Estimate a conditional mean event time by integrating the fitted Kaplan-Meier curve.
+
+        Parameters
+        ----------
+        time : float
+            Censoring time at which to condition the mean survival estimate.
+        restricted : bool
+            Whether to restrict integration to the final observed time instead of the linear-tail endpoint.
+
+        Returns
+        -------
+        float
+            Conditional mean event time estimated by numerical integration.
+
+        Notes
+        -----
+        This method is deprecated; use best_guess instead.
         """
         # Using integrate.quad from Scipy should be more accurate, but also making the program unbearably slow.
         # The compromised method uses numpy.trapz to approximate the integral using composite trapezoidal rule.
@@ -262,7 +386,26 @@ class KaplanMeierArea(KaplanMeier):
 
         return best_guess
 
-    def best_guess_revise(self, censor_times: np.ndarray, restricted: bool = False):
+    def best_guess_revise(
+        self,
+        censor_times: np.ndarray,
+        restricted: bool = False,
+    ) -> np.ndarray:
+        """
+        Estimate conditional mean event times using individual numerical integrals.
+
+        Parameters
+        ----------
+        censor_times : ndarray
+            Censoring times, one per censored sample.
+        restricted : bool
+            Whether to restrict integration to the final observed time instead of the linear-tail endpoint.
+
+        Returns
+        -------
+        ndarray
+            Conditional mean event times estimated individually by numerical integration.
+        """
         warnings.warn(
             "This method is deprecated. Use best_guess instead.", DeprecationWarning
         )

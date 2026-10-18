@@ -1,12 +1,16 @@
 """Aalen–Johansen estimation for right-censored competing risks."""
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from SurvivalEVAL.NonparametricEstimator.util import _predict_step
 
 
 class AalenJohansenCompetingRisks:
-    """Estimate survival and cause-specific cumulative incidence functions.
+    """
+    Estimate survival and cause-specific cumulative incidence functions.
+
+    The estimator follows Aalen and Johansen [1]_.
 
     State 0 is the initial state; states 1 through K are absorbing causes.
     Events and censorings at the same time share the risk set immediately
@@ -30,9 +34,24 @@ class AalenJohansenCompetingRisks:
         Probability of remaining in state 0 after each event time.
     cif_ : ndarray, shape (K, J)
         Cumulative incidence for each cause; row k corresponds to cause k + 1.
+
+    References
+    ----------
+    .. [1] Aalen, O. O.; Johansen, S. (1978). "An Empirical Transition Matrix for
+       Non-Homogeneous Markov Chains Based on Censored Observations".
+       Scandinavian Journal of Statistics, 5(3), 141-150.
+       https://www.jstor.org/stable/4615704
     """
 
-    def __init__(self, n_causes: int | None = None):
+    def __init__(self, n_causes: int | None = None) -> None:
+        """
+        Initialize the AalenJohansenCompetingRisks estimator.
+
+        Parameters
+        ----------
+        n_causes : int | None
+            Positive number of event causes; None infers it from the fitted event labels.
+        """
         if n_causes is not None and (
             isinstance(n_causes, (bool, np.bool_))
             or not isinstance(n_causes, (int, np.integer))
@@ -47,8 +66,9 @@ class AalenJohansenCompetingRisks:
         self._at_risk = None
         self._event_counts = None
 
-    def fit(self, times, events):
-        """Fit from observed times and event labels, returning self.
+    def fit(self, times: ArrayLike, events: ArrayLike) -> "AalenJohansenCompetingRisks":
+        """
+        Fit from observed times and event labels, returning self.
 
         Parameters
         ----------
@@ -56,6 +76,11 @@ class AalenJohansenCompetingRisks:
             Nonempty, finite, non-negative event or censoring times.
         events : array-like, shape (n,)
             Integer labels: 0 for censoring, 1 through K for event causes.
+
+        Returns
+        -------
+        AalenJohansenCompetingRisks
+            This estimator after fitting.
 
         Notes
         -----
@@ -104,31 +129,64 @@ class AalenJohansenCompetingRisks:
         self._event_counts = counts
         return self
 
-    def predict_surv(self, t):
-        """Return survival at scalar or array times, preserving the input shape.
+    def predict_surv(self, t: ArrayLike) -> float | np.ndarray:
+        """
+        Return survival at scalar or array times, preserving the input shape.
 
         Predictions include events at t (right continuity), equal 1 before
         the first event, and remain constant after the last event. Positive
         infinity returns the final estimate; negative times and NaN are invalid.
+
+        Parameters
+        ----------
+        t : array_like
+            Non-negative query times; positive infinity requests the final fitted estimate.
+
+        Returns
+        -------
+        float | ndarray
+            Survival probabilities with the query shape, or a float for a scalar query.
         """
         survival = _predict_step(t, self.unique_times_, self.surv_, 1.0)
         return survival.item() if survival.ndim == 0 else survival
 
-    def predict_cif(self, t):
-        """Return CIFs with shape ``shape(t) + (K,)``.
+    def predict_cif(self, t: ArrayLike) -> np.ndarray:
+        """
+        Return CIFs with shape ``shape(t) + (K,)``.
 
         Uses the same right-continuous step convention as ``predict_surv``;
         all CIFs are zero before the first event.
+
+        Parameters
+        ----------
+        t : array_like
+            Non-negative query times; positive infinity requests the final fitted estimate.
+
+        Returns
+        -------
+        ndarray
+            Cause-specific cumulative incidence probabilities with shape shape(t) + (n_causes,).
         """
         values = None if self.cif_ is None else self.cif_.T
         return _predict_step(t, self.unique_times_, values, 0.0)
 
-    def predict_P(self, t):
-        """Return transition matrices with shape ``shape(t) + (K + 1, K + 1)``.
+    def predict_P(self, t: ArrayLike) -> np.ndarray:
+        """
+        Return transition matrices with shape ``shape(t) + (K + 1, K + 1)``.
 
         Row 0 contains survival and CIFs. Each absorbing state's row is its
         identity row. Before the first event the entire matrix is the identity.
         Matrices are constructed on demand.
+
+        Parameters
+        ----------
+        t : array_like
+            Non-negative query times; positive infinity requests the final fitted estimate.
+
+        Returns
+        -------
+        ndarray
+            Transition probability matrices with the query shape followed by the two state axes.
         """
         survival = self.predict_surv(t)
         n_states = self.n_causes_ + 1
@@ -140,27 +198,40 @@ class AalenJohansenCompetingRisks:
         return matrices
 
     def predict_cif_variance(self, t: float | np.ndarray) -> np.ndarray:
-        """Predict Greenwood-type variances of the fitted cause-specific CIFs.
+        """
+        Predict Greenwood-type variances of the fitted cause-specific CIFs.
 
-        Args:
-            t: Non-negative times, including positive infinity. Queries include
-                events at the given time, with simultaneous updates for tied causes.
+        Parameters
+        ----------
+        t : float | ndarray
+            Non-negative times, including positive infinity. Queries include
+            events at the given time, with simultaneous updates for tied causes.
 
-        Returns:
+        Returns
+        -------
+        ndarray
             Variances with shape shape(t) + (n_causes,), matching predict_cif.
             Values are zero before the first event and stay constant after
             the final event. Calculates marginal variances on demand from the
             fitted counts and risk sets, without refitting. A single cause
             reduces to Kaplan–Meier Greenwood variance.
 
-        Raises:
-            RuntimeError: If fit has not been called.
-            ValueError: If times are negative or NaN.
+        Raises
+        ------
+        RuntimeError
+            If fit has not been called.
+        ValueError
+            If times are negative or NaN.
 
-        References:
-            Allignol, Schumacher and Beyersmann (2010), "A Note on Variance
-            Estimation of the Aalen–Johansen Estimator ...",
-            https://doi.org/10.1002/bimj.200900039.
+        Notes
+        -----
+        The method is described in [1]_.
+
+        References
+        ----------
+        .. [1] Allignol, Schumacher and Beyersmann (2010). "A Note on Variance Estimation
+           of the Aalen-Johansen Estimator ...". Biometrical Journal, 52(1), 126-137.
+           https://doi.org/10.1002/bimj.200900039
         """
         cifs = self.predict_cif(t)
         times = np.asarray(t, dtype=float)

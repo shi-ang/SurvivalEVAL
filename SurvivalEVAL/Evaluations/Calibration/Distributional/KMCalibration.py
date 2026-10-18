@@ -20,12 +20,13 @@ def km_calibration(
 ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
     """
     Calculate the KM calibration score between the average prediction curve and KM curve.
-    The first version of KM calibration [1] is by visual inspection of the KM curve and the average curve.
-    The second version of KM calibration [2] is by calculating the KL divergence between the KM curve and the average.
+
+    The first version of KM calibration [1]_ is by visual inspection of the KM curve and the average curve.
+    The second version of KM calibration [2]_ is by calculating the KL divergence between the KM curve and the average.
     This function actually calculates the (normalized) integrated mean squared error
     between the KM curve and the average prediction curve.
 
-    This version has three benefits over [1] and [2]:
+    This version has three benefits over [1]_ and [2]_:
     1. It is a single number, so it is easier to compare.
     2. This calculation is symmetric (note that KL-divergence is not).
     3. The score is between 0 and 1, where 0 means perfect calibration and 1 means worst calibration.
@@ -33,33 +34,37 @@ def km_calibration(
 
     Parameters
     ----------
-    average_survival_curve: np.ndarray
+    average_survival_curve : ndarray
         The average survival curves.
-    time_coordinates: np.ndarray
+    time_coordinates : ndarray
         The time coordinates of the average survival curves.
-    event_times: np.ndarray
+    event_times : ndarray
         The event time of the test data.
-    event_indicators: np.ndarray
+    event_indicators : ndarray
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    interpolation_method: str, default "Linear"
+    interpolation_method : str, default "Linear"
         Interpolation method for evaluating the average survival curve.
         Options are "Linear" and "Pchip".
-    draw_figure: bool
+    draw_figure : bool
         Whether to visualize the comparison of the KM curve and average curve.
 
     Returns
     -------
-    mse: float
+    mse : float
         The (normalized) integrated mean squared error between the KM curve and the average prediction curve.
-    fig: tuple(plt.Figure, plt.Axes)
+    fig : tuple(plt.Figure, plt.Axes)
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure
         is True.
 
     References
     ----------
-    [1] Chapfuwa et al., Calibration and Uncertainty in Neural Time-to-Event Modeling， TNNLS， 2020
-    [2] Yanagisawa, Proper Scoring Rules for Survival Analysis, ICML, 2023
+    .. [1] Chapfuwa et al. (2020). "Calibration and Uncertainty in Neural
+       Time-to-Event Modeling". IEEE Transactions on Neural Networks and Learning Systems.
+       https://pmc.ncbi.nlm.nih.gov/articles/PMC8439415/
+    .. [2] Yanagisawa (2023). "Proper Scoring Rules for Survival Analysis".
+       Proceedings of Machine Learning Research, 202, 39165-39182.
+       https://proceedings.mlr.press/v202/yanagisawa23a.html
     """
     unique_event_times = np.unique(event_times[event_indicators == 1])
 

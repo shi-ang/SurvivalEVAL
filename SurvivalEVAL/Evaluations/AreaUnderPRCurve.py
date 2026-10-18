@@ -8,11 +8,30 @@ from SurvivalEVAL.Evaluations.util import (
 )
 
 
-def _interp_cdf_row(F_i, t_grid, t_eval, left_fill=None):
+def _interp_cdf_row(
+    F_i: np.ndarray,
+    t_grid: np.ndarray,
+    t_eval: np.ndarray,
+    left_fill: float | None = None,
+) -> np.ndarray:
     """
-    1D interpolation for a single patient's CDF:
-    - left of grid: by default use F(t_min) (or 0.0 if left_fill=0.0 is passed)
-    - right of grid: use 1.0 (CDF tail)
+    Interpolate one sample's CDF with constant values outside the time grid.
+
+    Parameters
+    ----------
+    F_i : ndarray
+        Cumulative event probabilities for one sample at the grid times.
+    t_grid : ndarray
+        One-dimensional time grid corresponding to the predicted probabilities.
+    t_eval : ndarray
+        Times at which to interpolate the cumulative event probability.
+    left_fill : float | None
+        CDF value before the first grid time; None uses the first fitted CDF value.
+
+    Returns
+    -------
+    ndarray
+        Interpolated CDF values with the same shape as t_eval; values beyond the grid equal 1.
     """
     if left_fill is None:
         left_fill = F_i[0]
@@ -27,9 +46,23 @@ def auprc_uncensored_grid(
     n_quad: int = 256,
 ) -> np.ndarray:
     """
-    Per-patient Survival-AUPRC for an uncensored samples:
-        AUPRC(y; F) = ∫_0^1 [ F(y/t) - F(y*t) ] dt
-    Returns: (N,) array of scores in [0, 1].
+    Calculate per-sample survival-AUPRC by integrating F(y / t) - F(y * t) over (0, 1).
+
+    Parameters
+    ----------
+    pred_cdf : ndarray
+        Nondecreasing cumulative event probabilities, with shape (n_times,) or (n_samples, n_times).
+    time_grid : ndarray
+        Increasing time coordinates, with shape (n_times,) or (n_samples, n_times).
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    n_quad : int
+        Number of midpoint quadrature intervals used for numerical integration.
+
+    Returns
+    -------
+    ndarray
+        One survival-AUPRC score per uncensored sample, with shape (n_samples,).
     """
     event_times = np.asarray(event_times, float)
     N = event_times.shape[0]
@@ -69,10 +102,23 @@ def auprc_right_censored_grid(
     n_quad: int = 256,
 ) -> np.ndarray:
     """
-    Per-patient Survival-AUPRC for RIGHT-censored samples:
-        AUPRC([L,∞); F) = ∫_0^1 [ 1 - F(L*t) ] dt
-        (F(t_k) - F(t_k+1))/(t_k+1 - t_k)
-    Returns: (Nc,) array of scores in [0, 1].
+    Calculate per-sample survival-AUPRC by integrating 1 - F(c * t) over (0, 1).
+
+    Parameters
+    ----------
+    pred_cdf : ndarray
+        Nondecreasing cumulative event probabilities, with shape (n_times,) or (n_samples, n_times).
+    time_grid : ndarray
+        Increasing time coordinates, with shape (n_times,) or (n_samples, n_times).
+    censor_times : ndarray
+        Censoring times, one per censored sample.
+    n_quad : int
+        Number of midpoint quadrature intervals used for numerical integration.
+
+    Returns
+    -------
+    ndarray
+        One survival-AUPRC score per right-censored sample, with shape (n_samples,).
     """
     censor_times = np.asarray(censor_times, float)
     Nc = censor_times.shape[0]
@@ -110,36 +156,40 @@ def auprc_right_censor(
     return_details: bool = False,
 ) -> float | tuple[float, np.ndarray]:
     """
-    AUPRC formula for uncensored and right-censored scenarios
+    Calculate survival-AUPRC for uncensored and right-censored observations.
 
-    Proposed in Section 2.3 in
-    Countdown Regression: Sharp and Calibrated Survival Predictions, UAI 2019
-    https://proceedings.mlr.press/v115/avati20a.html
+    The survival scoring rule follows Section 2.3 of [1]_.
 
     Parameters
     ----------
-    pred_cdf: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+    pred_cdf : ndarray, (n_time_points,) or (n_samples, n_time_points)
         Predicted cumulative event probabilities F(t) = 1 - S(t) for the
         testing samples. A 1D array is shared by all samples. Values must be
         nondecreasing over time.
-    time_grid: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+    time_grid : ndarray, (n_time_points,) or (n_samples, n_time_points)
         Time grids corresponding to the predicted CDF values. A 1D array is
         shared by all samples.
-    event_times: np.ndarray, (n_samples,)
+    event_times : ndarray, (n_samples,)
         Observed event or censoring times for the testing samples.
-    event_indicators: np.ndarray, (n_samples,)
+    event_indicators : ndarray, (n_samples,)
         Binary indicators of whether the event occurred (1) or was censored (0).
-    n_quad: int
+    n_quad : int
         Number of quadrature points for numerical integration.
-    return_details: bool
+    return_details : bool
         If True, also return per-patient scores.
 
     Returns
     -------
-    auprc:  float
+    auprc : float
         The mean AUPRC over all samples.
-    scores: np.ndarray, (n_samples,)
-        Per-patient AUPRC scores.
+    scores : ndarray, (n_samples,)
+        Per-sample AUPRC scores, returned with the mean only when return_details is True.
+
+    References
+    ----------
+    .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://proceedings.mlr.press/v115/avati20a.html
     """
     event_times = np.asarray(event_times, float)
     event_indicators = np.asarray(event_indicators, bool)
@@ -186,12 +236,11 @@ def auprc_ic(
     return_details: bool = False,
 ) -> float | tuple[float, np.ndarray]:
     """
-    Per-patient Survival-AUPRC for INTERVAL-censored samples:
+    Calculate survival-AUPRC for interval-censored observations.
+
         AUPRC([left,right]; F) = ∫_0^1 [ F(right/t) - F(left*t) ] dt
 
-    Proposed in Section 2.3 in
-    Countdown Regression: Sharp and Calibrated Survival Predictions, UAI 2019
-    https://proceedings.mlr.press/v115/avati20a.html
+    The survival scoring rule follows Section 2.3 of [1]_.
 
     Handles special cases automatically:
         - exact: left==right → reduces to uncensored AUPRC
@@ -200,32 +249,38 @@ def auprc_ic(
 
     Parameters
     ----------
-    pred_cdf: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+    pred_cdf : ndarray, (n_time_points,) or (n_samples, n_time_points)
         Predicted cumulative event probabilities F(t) = 1 - S(t) for the
         testing samples. A 1D array is shared by all samples. Values must be
         nondecreasing over time.
-    time_grid: np.ndarray, (n_time_points,) or (n_samples, n_time_points)
+    time_grid : ndarray, (n_time_points,) or (n_samples, n_time_points)
         Time grids corresponding to the predicted CDF values. A 1D array is
         shared by all samples.
-    left: np.ndarray, (n_samples,)
+    left : ndarray, (n_samples,)
         Left interval bounds
-    right: np.ndarray, (n_samples,)
+    right : ndarray, (n_samples,)
         Right interval bounds; use np.inf for right-censoring.
-    n_quad: int
+    n_quad : int
         Number of quadrature points for numerical integration.
-    left_extrapolation_value: float, optional
+    left_extrapolation_value : float, optional
         Value to use for CDF evaluations before the first time-grid point.
         When omitted, ``left == 0`` uses ``F(0) = 0`` automatically, while
         other evaluations before the grid use ``F(t_min)``.
-    return_details: bool
+    return_details : bool
         If True, also return per-patient scores.
 
-    Returns:
+    Returns
     -------
-    auprc: float
+    auprc : float
         The mean AUPRC over all samples.
-    scores: np.ndarray, (n_samples,), optional
+    scores : ndarray, (n_samples,), optional
         Per-patient AUPRC scores, returned if return_details=True.
+
+    References
+    ----------
+    .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://proceedings.mlr.press/v115/avati20a.html
     """
     left = np.asarray(left, float)
     right = np.asarray(right, float)

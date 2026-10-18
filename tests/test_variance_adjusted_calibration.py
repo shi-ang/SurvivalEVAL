@@ -40,7 +40,9 @@ def _weighted_cif(
 @pytest.mark.parametrize("target", [0, 3, 7, 20])
 @pytest.mark.parametrize("seed", [12, 29])
 def test_variances_match_independent_influence_derivatives(
-    competing: bool, target: float, seed: int
+    competing: bool,
+    target: float,
+    seed: int,
 ) -> None:
     rng = np.random.default_rng(seed)
     times = rng.integers(0, 12, 40).astype(float)
@@ -109,7 +111,9 @@ def test_aj_variance_matches_r_survival_with_ties() -> None:
     [([1, 1, 2, 2], [1, 2, 1, 2], 0.0625), ([1, 2, 2], [0, 1, 2], 0.125)],
 )
 def test_terminal_all_event_ties_keep_cause_split_variance(
-    times: list, events: list, variance: float
+    times: list,
+    events: list,
+    variance: float,
 ) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -124,7 +128,9 @@ def test_terminal_all_event_ties_keep_cause_split_variance(
 @pytest.mark.parametrize("prediction", [0.0, 0.2, 1.0])
 @pytest.mark.parametrize("event_value", [0, 1])
 def test_zero_variance_is_undefined_without_dropping_groups(
-    competing: bool, prediction: float, event_value: int
+    competing: bool,
+    prediction: float,
+    event_value: int,
 ) -> None:
     metric = one_calibration_cr if competing else one_calibration
     with warnings.catch_warnings():
@@ -214,7 +220,8 @@ def test_unadjusted_statistic_is_original_dn_formula(competing: bool) -> None:
 @pytest.mark.parametrize("kind", ["survival", "single-time", "competing"])
 @pytest.mark.parametrize("adjust", [False, True])
 def test_evaluator_returns_test_metadata_and_curve_details(
-    kind: str, adjust: bool
+    kind: str,
+    adjust: bool,
 ) -> None:
     probabilities = np.repeat([0.6, 0.2], 4)
     times, events = np.tile([1, 1, 2, 4], 2), np.tile([1, 0, 1, 0], 2)
@@ -252,7 +259,7 @@ def test_uncensored_evaluator_shortcut_keeps_variance_adjustment() -> None:
     probabilities = np.repeat([0.6, 0.2], 4)
     times, events = np.tile([1, 2, 3, 4], 2), np.ones(8)
     evaluator = SingleTimeEvaluator(1 - probabilities, times, events, target_time=2)
-    p, obs, exp = evaluator.one_calibration(num_bins=2)
+    p, obs, _ = evaluator.one_calibration(num_bins=2)
     assert obs == [0.5, 0.5]
     statistic = np.sum((0.5 - np.array([0.6, 0.2])) ** 2 / (0.25 / 4))
     assert p == pytest.approx(chi2.sf(statistic, 2))

@@ -23,26 +23,49 @@ def residuals(
     draw_figure: bool = False,
 ) -> np.ndarray:
     """
-    Calculate the residuals based on the predicted probabilities and event times.
-    For details of the residuals, please refer to the Chapter 4 of the book:
-    "Modelling survival data in medical research" By David Collett
+    Calculate survival residuals from probabilities at the observed times.
 
     Parameters
     ----------
-    pred_probs: np.ndarray
+    pred_probs : ndarray
         The predicted survival probabilities at individual's event/censor time.
-    event_indicators: np.ndarray
+    event_indicators : ndarray
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    method: str
-        The method to calculate residuals. Options are "CoxSnell", "Modified CoxSnell-v1", "Modified CoxSnell-v2",
-        "Martingale", "Deviance".
-    draw_figure: bool
+    method : str, default="CoxSnell"
+        Case-insensitive residual definition:
+
+        * ``"CoxSnell"``: fitted cumulative hazard ``-log(S)`` [1]_.
+        * ``"Modified CoxSnell-v1"``: Cox-Snell residual plus 1 for censored
+          observations, using the mean excess of a unit exponential [2]_.
+        * ``"Modified CoxSnell-v2"``: Cox-Snell residual plus ``log(2)`` for
+          censored observations, using the median excess [2]_.
+        * ``"Martingale"``: event indicator minus the fitted cumulative
+          hazard [3]_.
+        * ``"Deviance"``: signed deviance transformation of the martingale
+          residual [4]_.
+    draw_figure : bool
         Whether to visualize the Cox-Snell residuals and draw the cumulative hazard plot.
+
     Returns
     -------
-    np.ndarray
+    ndarray
         The calculated residuals.
+
+    References
+    ----------
+    .. [1] Cox, D. R.; Snell, E. J. (1968). "A General Definition of Residuals".
+       Journal of the Royal Statistical Society: Series B (Methodological),
+       30(2), 248-265. https://doi.org/10.1111/j.2517-6161.1968.tb00724.x
+    .. [2] Collett, D. (2015). "Modelling Survival Data in Medical Research".
+       3rd ed., Chapter 4. Chapman and Hall/CRC.
+       https://doi.org/10.1201/b18041
+    .. [3] Barlow, W. E.; Prentice, R. L. (1988). "Residuals for relative risk
+       regression". Biometrika, 75(1), 65-74.
+       https://doi.org/10.1093/biomet/75.1.65
+    .. [4] Therneau, T. M.; Grambsch, P. M.; Fleming, T. R. (1990).
+       "Martingale-based residuals for survival models". Biometrika, 77(1),
+       147-160. https://doi.org/10.1093/biomet/77.1.147
     """
     cox_residuals = -np.log(pred_probs)
     event_indicators = event_indicators.astype(bool, copy=False)
@@ -61,15 +84,11 @@ def residuals(
     elif method == "martingale":
         residuals = event_indicators - cox_residuals
     elif method == "deviance":
-
-        def safe_log(x):
-            return np.log(x + 1e-8)
-
         martingale_res = event_indicators - cox_residuals
         # get the sign of the martingale residuals
         sign = np.sign(martingale_res)
         residuals = sign * np.sqrt(
-            -2 * (martingale_res + event_indicators * safe_log(cox_residuals))
+            -2 * (martingale_res + event_indicators * np.log(cox_residuals + 1e-8))
         )
     else:
         raise ValueError(f"Unknown method {method}")

@@ -48,12 +48,12 @@ def test_ipcw_brier_uses_left_limit_even_when_right_survival_is_zero(zero_surviv
     train_indicators = np.array(
         [True, False] if zero_survival else [True, False, True, True]
     )
-    args = dict(
-        event_times=np.array([10.0, 12.0]),
-        event_indicators=np.array([True, False]),
-        train_event_times=train_times,
-        train_event_indicators=train_indicators,
-    )
+    args = {
+        "event_times": np.array([10.0, 12.0]),
+        "event_indicators": np.array([True, False]),
+        "train_event_times": train_times,
+        "train_event_indicators": train_indicators,
+    }
     expected = 0.04
     with np.errstate(divide="raise", invalid="raise"):
         multiple = brier_multiple_points(
@@ -287,7 +287,9 @@ def fitted_aft_model(request):
 
 @pytest.mark.parametrize("n_samples", [1, 255, 256, 257, 700])
 def test_paired_aft_predictions_match_full_diagonal(
-    fitted_aft_model, n_samples, monkeypatch
+    fitted_aft_model,
+    n_samples,
+    monkeypatch,
 ):
     model, columns = fitted_aft_model
     rng = np.random.default_rng(94)

@@ -32,7 +32,9 @@ def calibration_data():
     "alpha, expected", [(1, [0.05, 0.15]), (2, [1 / 240, 37 / 1200])]
 )
 def test_hand_computed_scores_with_tied_events_and_censoring(
-    calibration_data, alpha, expected
+    calibration_data,
+    alpha,
+    expected,
 ):
     cifs, times, durations, events = calibration_data
     score, details = aj_calibration(*calibration_data, alpha=alpha, return_details=True)
@@ -140,7 +142,10 @@ def test_aggregation(calibration_data, reduction):
     ],
 )
 def test_at_risk_truncation_includes_ties_and_threshold_equality(
-    calibration_data, threshold, grid, expected
+    calibration_data,
+    threshold,
+    grid,
+    expected,
 ):
     score, details = aj_calibration(
         *calibration_data, min_prop_at_risk=threshold, return_details=True
@@ -288,7 +293,10 @@ def test_per_event_requires_one_cause_matrix(calibration_data):
 @pytest.mark.parametrize("alpha", [1, 2])
 @pytest.mark.parametrize("reduction", ["mean", "sum", "max"])
 def test_evaluator_matches_cause_scores_and_aggregation(
-    calibration_data: tuple, interpolation: str, alpha: float, reduction: str
+    calibration_data: tuple,
+    interpolation: str,
+    alpha: float,
+    reduction: str,
 ) -> None:
     evaluator = CompetingRisksEvaluator(*calibration_data, interpolation=interpolation)
     expected = [0.05, 0.15] if alpha == 1 else [1 / 240, 37 / 1200]
@@ -342,7 +350,8 @@ def test_one_cause_evaluator_matches_km_on_the_same_event_grid() -> None:
 
 @pytest.mark.parametrize("cause", [None, True, np.bool_(True), 0, -1, 1.5, 3])
 def test_evaluator_rejects_invalid_cause(
-    calibration_data: tuple, cause: object
+    calibration_data: tuple,
+    cause: object,
 ) -> None:
     evaluator = CompetingRisksEvaluator(*calibration_data)
     with pytest.raises(ValueError, match="event_of_interest"):
@@ -351,7 +360,8 @@ def test_evaluator_rejects_invalid_cause(
 
 @pytest.mark.parametrize("cause", [1, 2])
 def test_single_cause_pooling_preserves_incidence_for_sparse_labels(
-    calibration_data: tuple, cause: int
+    calibration_data: tuple,
+    cause: int,
 ) -> None:
     cifs, times, durations, events = calibration_data
     labels = np.where(events == cause, 1000000, np.where(events > 0, 500, 0))

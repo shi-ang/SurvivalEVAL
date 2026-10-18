@@ -8,11 +8,23 @@ import torch
 from scipy.interpolate import PchipInterpolator, interp1d
 from sklearn.isotonic import isotonic_regression
 
-from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
+from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 
 
 def _check_control_definition(control_definition: str) -> bool:
-    """Validate the control definition and return whether to include competing events."""
+    """
+    Validate the control definition and return whether to include competing events.
+
+    Parameters
+    ----------
+    control_definition : str
+        "EventFree" excludes competing events from controls; "NotCase" includes them.
+
+    Returns
+    -------
+    bool
+        True when competing events are included as controls.
+    """
     control_definition = control_definition.lower()
     if control_definition not in {"eventfree", "notcase"}:
         raise ValueError("control_definition must be 'EventFree' or 'NotCase'.")
@@ -20,7 +32,19 @@ def _check_control_definition(control_definition: str) -> bool:
 
 
 def _inverse_censoring_weights(probabilities: np.ndarray) -> np.ndarray:
-    """Invert finite positive censoring probabilities for contributing observations."""
+    """
+    Invert finite positive censoring probabilities for contributing observations.
+
+    Parameters
+    ----------
+    probabilities : ndarray
+        Finite, strictly positive censoring survival probabilities to invert.
+
+    Returns
+    -------
+    ndarray
+        Elementwise inverse censoring probabilities.
+    """
     if not np.all(np.isfinite(probabilities)) or np.any(probabilities <= 0):
         raise ValueError(
             "Censoring survival must be finite and positive at every contributing observation or horizon."
@@ -29,7 +53,21 @@ def _inverse_censoring_weights(probabilities: np.ndarray) -> np.ndarray:
 
 
 def _as_numpy_array(values: NumericArrayLike, input_name: str) -> np.ndarray:
-    """Return a NumPy view of a supported array-like input when possible."""
+    """
+    Return a NumPy view of a supported array-like input when possible.
+
+    Parameters
+    ----------
+    values : NumericArrayLike
+        Supported list, tuple, NumPy array, pandas object, or PyTorch tensor.
+    input_name : str
+        Input name included in validation error messages.
+
+    Returns
+    -------
+    ndarray
+        NumPy representation of the input, sharing storage when conversion permits.
+    """
     if isinstance(values, np.ndarray):
         array = values
     elif isinstance(values, (list, tuple)):
@@ -56,7 +94,16 @@ def _as_numpy_array(values: NumericArrayLike, input_name: str) -> np.ndarray:
 
 
 def _validate_numeric_array(array: np.ndarray, input_name: str) -> None:
-    """Validate basic properties shared by all numeric array inputs."""
+    """
+    Validate basic properties shared by all numeric array inputs.
+
+    Parameters
+    ----------
+    array : ndarray
+        Numeric array to validate for nonempty, finite-compatible values.
+    input_name : str
+        Input name included in validation error messages.
+    """
     if array.ndim == 0:
         raise TypeError(f"{input_name} must be an array-like object, not a scalar.")
     if array.size == 0:
@@ -73,9 +120,28 @@ def _validate_numeric_array(array: np.ndarray, input_name: str) -> None:
 
 
 def _as_continuous_array(
-    values: NumericArrayLike, *, copy: bool = False, input_name: str = "input"
+    values: NumericArrayLike,
+    *,
+    copy: bool = False,
+    input_name: str = "input",
 ) -> np.ndarray:
-    """Convert continuous numeric input without copying compatible floats."""
+    """
+    Convert continuous numeric input without copying compatible floats.
+
+    Parameters
+    ----------
+    values : NumericArrayLike
+        Numeric input to convert to a continuous-valued NumPy array.
+    copy : bool
+        Whether to copy the converted array even when its existing dtype is suitable.
+    input_name : str
+        Input name included in validation error messages.
+
+    Returns
+    -------
+    ndarray
+        Continuous numeric array; compatible floating-point storage is reused unless copy is True.
+    """
     array = _as_numpy_array(values, input_name)
     _validate_numeric_array(array, input_name)
     supported_dtypes = (np.dtype(np.float32), np.dtype(np.float64))
@@ -89,8 +155,19 @@ def _as_continuous_array(
 
 
 def _check_matching_shapes(
-    arrays: tuple[np.ndarray, ...], names: tuple[str, ...]
+    arrays: tuple[np.ndarray, ...],
+    names: tuple[str, ...],
 ) -> None:
+    """
+    Require all supplied arrays to have the same shape.
+
+    Parameters
+    ----------
+    arrays : tuple[ndarray, ...]
+        Arrays whose shapes must agree.
+    names : tuple[str, ...]
+        Matching argument names to include in shape-error messages.
+    """
     expected_shape = arrays[0].shape
     for array, name in zip(arrays[1:], names[1:]):
         if array.shape != expected_shape:
@@ -101,9 +178,11 @@ def _check_matching_shapes(
 
 
 def check_and_convert(
-    *args: NumericArrayLike, copy: bool = False
+    *args: NumericArrayLike,
+    copy: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, ...]:
-    """Convert continuous numeric inputs to NumPy arrays with matching shapes.
+    """
+    Convert continuous numeric inputs to NumPy arrays with matching shapes.
 
     Compatible ``float32`` and ``float64`` NumPy inputs are reused, including
     read-only, non-contiguous, and memory-mapped arrays. Other real numeric
@@ -113,14 +192,14 @@ def check_and_convert(
 
     Parameters
     ----------
-    *args
+    *args : NumericArrayLike
         Numeric lists, tuples, NumPy arrays, pandas objects, or Torch tensors.
     copy : bool, default=False
         Force independent NumPy storage for every returned array.
 
     Returns
     -------
-    np.ndarray or tuple[np.ndarray, ...]
+    ndarray or tuple[ndarray, ...]
         One array for one input, otherwise a tuple of same-shaped arrays.
     """
     arrays = tuple(
@@ -143,23 +222,33 @@ def check_and_convert_event_data(
     copy: bool = False,
     competing_risks: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Validate and convert right-censored survival outcomes.
+    """
+    Validate and convert right-censored survival outcomes.
 
-    Args:
-        event_times: A 1D array of finite, non-negative observed times.
-        event_indicators: Matching binary indicators: 1 for events, 0 for censoring.
-        copy: Return independent arrays instead of reusing compatible inputs.
-        competing_risks: Accept non-negative integer cause labels instead of
-            binary indicators. Zero denotes censoring; positive labels denote events.
+    Parameters
+    ----------
+    event_times : NumericArrayLike
+        A 1D array of finite, non-negative observed times.
+    event_indicators : NumericArrayLike
+        Matching binary indicators: 1 for events, 0 for censoring.
+    copy : bool
+        Return independent arrays instead of reusing compatible inputs.
+    competing_risks : bool
+        Accept non-negative integer cause labels instead of
+        binary indicators. Zero denotes censoring; positive labels denote events.
 
-    Returns:
+    Returns
+    -------
+    tuple[ndarray, ndarray]
         Observed times and boolean indicators, or unchanged cause labels when
         competing_risks is True. Compatible input arrays are reused when copy
         is False; inputs are never modified.
 
-    Raises:
-        ValueError: If shapes differ, outcomes are not 1D, times are nonfinite
-            or negative, or indicators contain invalid event labels.
+    Raises
+    ------
+    ValueError
+        If shapes differ, outcomes are not 1D, times are nonfinite
+        or negative, or indicators contain invalid event labels.
     """
     times = _as_continuous_array(event_times, copy=copy, input_name="event_times")
     indicators = check_and_convert_event_indicators(
@@ -179,22 +268,33 @@ def check_and_convert_event_indicators(
     copy: bool = False,
     competing_risks: bool = False,
 ) -> np.ndarray:
-    """Validate event indicators independently of observed times.
+    """
+    Validate event indicators independently of observed times.
 
-    Args:
-        event_indicators: Nonempty 1D binary indicators, or non-negative integer
-            cause labels when competing_risks is True. Zero denotes censoring.
-        copy: Return independent storage instead of reusing compatible inputs.
-        competing_risks: Preserve cause labels instead of converting to booleans.
+    Parameters
+    ----------
+    event_indicators : NumericArrayLike
+        Nonempty 1D binary indicators, or non-negative integer
+        cause labels when competing_risks is True. Zero denotes censoring.
+    copy : bool
+        Return independent storage instead of reusing compatible inputs.
+    competing_risks : bool
+        Preserve cause labels instead of converting to booleans.
 
-    Returns:
+    Returns
+    -------
+    ndarray
         Boolean event indicators, or cause labels with their original dtype.
         Compatible arrays are reused when copy is False; inputs are not modified.
 
-    Raises:
-        TypeError: If inputs are not real numeric arrays.
-        IndexError: If the array is empty.
-        ValueError: If inputs are not 1D or contain invalid labels.
+    Raises
+    ------
+    TypeError
+        If inputs are not real numeric arrays.
+    IndexError
+        If the array is empty.
+    ValueError
+        If inputs are not 1D or contain invalid labels.
     """
     indicators = _as_numpy_array(event_indicators, "event_indicators")
     _validate_numeric_array(indicators, "event_indicators")
@@ -228,21 +328,32 @@ def check_and_convert_probabilities(
     *,
     copy: bool = False,
 ) -> np.ndarray:
-    """Convert a nonempty array of finite probabilities in [0, 1].
+    """
+    Convert a nonempty array of finite probabilities in [0, 1].
 
-    Args:
-        probabilities: Numeric probabilities of any non-scalar shape.
-        input_name: Name used in validation errors.
-        copy: Return independent storage instead of reusing compatible floats.
+    Parameters
+    ----------
+    probabilities : NumericArrayLike
+        Numeric probabilities of any non-scalar shape.
+    input_name : str
+        Name used in validation errors.
+    copy : bool
+        Return independent storage instead of reusing compatible floats.
 
-    Returns:
+    Returns
+    -------
+    ndarray
         A floating-point array with the original shape. Compatible float32 and
         float64 arrays are reused when copy is False; inputs are not modified.
 
-    Raises:
-        TypeError: If inputs are not real numeric arrays.
-        IndexError: If the array is empty.
-        ValueError: If probabilities are nonfinite or outside [0, 1].
+    Raises
+    ------
+    TypeError
+        If inputs are not real numeric arrays.
+    IndexError
+        If the array is empty.
+    ValueError
+        If probabilities are nonfinite or outside [0, 1].
     """
     probabilities = _as_continuous_array(
         probabilities, copy=copy, input_name=input_name
@@ -254,15 +365,16 @@ def check_and_convert_probabilities(
 
 
 def validate_time_point(
-    time_point: float,
+    time_point: Numeric | np.integer | np.floating | np.ndarray,
     input_name: str = "target_time",
 ) -> float:
-    """Validate a nonnegative scalar time input.
+    """
+    Validate a nonnegative scalar time input.
 
     Parameters
     ----------
-    time_point
-        Scalar time point input to validate.
+    time_point : int, float, numpy.integer, numpy.floating, or ndarray
+        Non-negative numeric scalar or zero-dimensional numeric array. Positive infinity is allowed.
     input_name : str, default="target_time"
         Name used in validation error messages.
 
@@ -306,18 +418,19 @@ def validate_time_points(
     time_points: NumericArrayLike,
     input_name: str = "target_times",
 ) -> np.ndarray:
-    """Validate one-dimensional nonnegative time inputs.
+    """
+    Validate one-dimensional nonnegative time inputs.
 
     Parameters
     ----------
-    time_points
+    time_points : NumericArrayLike
         One-dimensional time point input to validate.
     input_name : str, default="target_times"
         Name used in validation error messages.
 
     Returns
     -------
-    np.ndarray
+    ndarray
         One-dimensional array of nonnegative time points.
 
     Raises
@@ -389,34 +502,46 @@ def make_monotonic(
     seed: int | None = None,
     num_bs: int | None = None,
     direction: str = "decreasing",
-):
+) -> np.ndarray:
     """
     Make curves monotonic along the time axis.
 
     Parameters
     ----------
-    survival_curves: np.ndarray
+    survival_curves : ndarray
         One- or two-dimensional probability curves. For a 2-D array, rows are
         samples and columns are time points.
-    times_coordinate: np.ndarray
+    times_coordinate : ndarray
         Time points corresponding to the survival curves. 1-D array of time points.
-    method: str
+    method : str
         Correction method. One of ``"ceil"``, ``"floor"``, ``"bootstrap"``,
-        or ``"isotonic"``. Isotonic regression gives the L2-optimal monotonic
-        approximation. Default: ``"ceil"``.
-    seed: int
+        or ``"isotonic"``. The bootstrap method samples an interpolated inverse
+        curve to construct a monotonic empirical curve, using the rearrangement
+        idea in [1]_. Isotonic regression gives the L2-optimal monotonic
+        approximation using the pool-adjacent-violators algorithm [2]_.
+        Default: ``"ceil"``.
+    seed : int
         Random seed for bootstrapping. Default: None.
-    num_bs: int
+    num_bs : int
         Number of bootstrap samples. Default: None. If None, then
         ``num_bs = max(10 * num_times, 1000)``.
-    direction: {"increasing", "decreasing"}
+    direction : {"increasing", "decreasing"}
         Required monotonic direction. Survival curves are decreasing, while
         cumulative distribution functions are increasing. Default: ``"decreasing"``.
 
     Returns
     -------
-    survival_curves: np.ndarray
+    survival_curves : ndarray
         Monotonic probability curves with the same dimensionality as the input.
+
+    References
+    ----------
+    .. [1] Chernozhukov, V.; Fernandez-Val, I.; Galichon, A. (2010).
+       "Quantile and Probability Curves Without Crossing". Econometrica,
+       78(3), 1093-1125. https://doi.org/10.3982/ECTA7880
+    .. [2] Best, M. J.; Chakravarti, N. (1990). "Active set algorithms for
+       isotonic regression; A unifying framework". Mathematical Programming,
+       47, 425-439. https://doi.org/10.1007/BF01580873
     """
     method = method.lower()
     direction = direction.lower()
@@ -510,8 +635,27 @@ def make_monotonic(
 
 
 def interpolated_curve(
-    times_coordinate: np.ndarray, curve: np.ndarray, interpolation: str = "Linear"
+    times_coordinate: np.ndarray,
+    curve: np.ndarray,
+    interpolation: str = "Linear",
 ) -> interp1d | PchipInterpolator:
+    """
+    Construct a linear or shape-preserving cubic curve interpolator.
+
+    Parameters
+    ----------
+    times_coordinate : ndarray
+        Strictly increasing time coordinates for the curve.
+    curve : ndarray
+        Curve values corresponding to the time coordinates.
+    interpolation : str
+        Curve interpolation method, "Linear" or "Pchip".
+
+    Returns
+    -------
+    interp1d | PchipInterpolator
+        Callable interpolator fitted to the supplied time coordinates and curve values.
+    """
     interpolation = interpolation.lower()
     if interpolation == "linear":
         spline = interp1d(
@@ -531,7 +675,9 @@ def predict_prob_from_curve(
     interpolation: str = "Linear",
 ) -> float:
     """
-    Predict the probability of survival at a given time point from the survival curve. The survival curve is
+    Predict the probability of survival at a given time point from the survival curve.
+
+    The survival curve is
     interpolated using the specified interpolation method ('Linear' or 'Pchip').
     If the input time grid does not start at 0, a time-zero point with survival
     probability 1 is prepended before interpolation.
@@ -541,22 +687,22 @@ def predict_prob_from_curve(
 
     Parameters
     ----------
-    survival_curve: np.ndarray
+    survival_curve : ndarray
         Survival curve. 1-D array of survival probabilities.
-    times_coordinate: np.ndarray
+    times_coordinate : ndarray
         Time points corresponding to the survival curve. 1-D array of time
         points. Values must be non-negative. If the first value is greater than
         0, `(0, 1)` is prepended to the curve.
-    target_time: int or float
+    target_time : int or float
         Non-negative time point at which to predict the probability of survival.
-    interpolation: str
+    interpolation : str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
 
     Returns
     -------
-    predict_probability: float
+    predict_probability : float
         Predicted probability of survival at the target time point.
     """
     target_time = validate_time_point(target_time, input_name="target_time")
@@ -574,7 +720,9 @@ def predict_multi_probs_from_curve(
     interpolation: str = "Linear",
 ) -> np.ndarray:
     """
-    Predict the probability of survival at multiple time points from the survival curve. The survival curve is
+    Predict the probability of survival at multiple time points from the survival curve.
+
+    The survival curve is
     interpolated using the specified interpolation method ('Linear' or 'Pchip').
     If the input time grid does not start at 0, a time-zero point with survival
     probability 1 is prepended before interpolation.
@@ -584,22 +732,22 @@ def predict_multi_probs_from_curve(
 
     Parameters
     ----------
-    survival_curve: np.ndarray
+    survival_curve : ndarray
         Survival curve. 1-D array of survival probabilities.
-    times_coordinate: np.ndarray
+    times_coordinate : ndarray
         Time points corresponding to the survival curve. 1-D array of time
         points. Values must be non-negative. If the first value is greater than
         0, `(0, 1)` is prepended to the curve.
-    target_times: NumericArrayLike
+    target_times : NumericArrayLike
         Non-negative time points at which to predict the probability of survival.
-    interpolation: str
+    interpolation : str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
 
     Returns
     -------
-    predict_probabilities: np.ndarray
+    predict_probabilities : ndarray
         Predicted probabilities of survival at the target time points.
     """
     survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
@@ -635,21 +783,21 @@ def align_curve_and_time_coordinates(
 
     Parameters
     ----------
-    curves: NumericArrayLike
+    curves : NumericArrayLike
         Curve values with shape ``(n_time_points,)`` or
         ``(n_samples, n_time_points)``.
-    time_coordinates: NumericArrayLike
+    time_coordinates : NumericArrayLike
         Time coordinates with shape ``(n_time_points,)`` or
         ``(n_samples, n_time_points)``.
-    n_samples: int, optional
+    n_samples : int, optional
         Expected number of samples. This is useful when both curve inputs are
         shared and the sample count comes from a separate outcome array.
 
     Returns
     -------
-    aligned_curves: np.ndarray, shape = (n_samples, n_time_points)
+    aligned_curves : ndarray, shape = (n_samples, n_time_points)
         Curve values with shared rows broadcast across samples.
-    aligned_time_coordinates: np.ndarray, shape = (n_samples, n_time_points)
+    aligned_time_coordinates : ndarray, shape = (n_samples, n_time_points)
         Time coordinates with shared rows broadcast across samples.
     """
     curves = _as_continuous_array(curves, input_name="curves")
@@ -692,19 +840,20 @@ def predict_rmst(
 ) -> float | np.ndarray:
     """
     Get the restricted mean survival time (RMST) from the survival curve.
+
     The restricted mean survival time is defined as the area under the survival curve up to a certain time point.
 
     Parameters
     ----------
-    survival_curves: np.ndarray
+    survival_curves : ndarray
         The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
         number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         survival curve of a single sample.
-    times_coordinates: np.ndarray
+    times_coordinates : ndarray
         The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
         is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         time coordinate shared by all survival curves.
-    interpolation: str
+    interpolation : str
         The integration method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'None', no interpolation is applied. Treat the survival curve as a left-continuous step function.
         If 'Linear', use the interp1d method (trapezoidal integration) from scipy.interpolate.
@@ -712,7 +861,7 @@ def predict_rmst(
 
     Returns
     -------
-    restricted_mean_survival_times: float or np.ndarray
+    restricted_mean_survival_times : float or ndarray
         A float when both inputs are 1-D, otherwise one restricted mean
         survival time per survival curve or time coordinate row.
     """
@@ -750,26 +899,27 @@ def predict_mean_st(
 ) -> float | np.ndarray:
     """
     Get the mean survival time(s) from the survival curve for a group of samples.
+
     The mean survival time is calculated as the area under the survival curve, which is the RMST + residual area.
 
     Parameters
     ----------
-    survival_curves: np.ndarray
+    survival_curves : ndarray
         The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
         number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         survival curve of a single sample.
-    times_coordinates: np.ndarray
+    times_coordinates : ndarray
         The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
         is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         time coordinate of the survival curve of a single sample.
-    interpolation: str
+    interpolation : str
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
 
     Returns
     -------
-    mean_survival_times: float or np.ndarray
+    mean_survival_times : float or ndarray
         A float when both inputs are 1-D, otherwise one mean survival
         time per survival curve or time coordinate row.
     """
@@ -800,27 +950,28 @@ def predict_median_st(
 ) -> float | np.ndarray:
     """
     Get the median survival time(s) from the survival curve for a group of samples.
+
     The median survival time is defined as the time point where the survival curve crosses 0.5.
 
     Parameters
     ----------
-    survival_curves: np.ndarray
+    survival_curves : ndarray
         The survival curve of samples. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension is the
         number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         survival curve of a single sample.
-    times_coordinates: np.ndarray
+    times_coordinates : ndarray
         The time coordinate of the survival curve. It is a 2-D or 1-D array. If it is a 2-D array, the first dimension
         is the number of samples, and the second dimension is the number of time points. If it is a 1-D array, it is the
         time coordinate of the survival curve of a single sample.
-    interpolation: str
+    interpolation : str
         The monotonic cubic interpolation method. One of ['None', 'Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
 
     Returns
     -------
-    median_survival_time: float
-        The median survival time(s).
+    median_survival_time : float or ndarray
+        Predicted median survival time for a single curve, or one value per curve for multiple samples.
     """
     ndim_surv = survival_curves.ndim
     ndim_time = times_coordinates.ndim
@@ -844,6 +995,7 @@ def predict_median_st_ind(
 ) -> float:
     """
     Get the median survival time from the survival curve for 1 individual.
+
     The median survival time is defined as the time point where the survival curve crosses 0.5.
     The curve is first interpolated by the given monotonic cubic interpolation method (Linear or Pchip).
     Then the curve gets extrapolated by the linear function of (0, 1) and the last time point. The
@@ -851,21 +1003,21 @@ def predict_median_st_ind(
 
     Parameters
     ----------
-    survival_curve: np.ndarray
+    survival_curve : ndarray
         The survival curve of the sample. 1-D array.
-    times_coordinate: np.ndarray
+    times_coordinate : ndarray
         The time coordinate of the survival curve. 1-D array.
-    interpolation: str
+    interpolation : str
         The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
         If 'Linear', use the interp1d method from scipy.interpolate.
         If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-    discretize_num: int
+    discretize_num : int
         The number of points to discretize the time range for interpolation. Default: 1000.
         This is used only when interpolation is 'Pchip'.
 
     Returns
     -------
-    median_st: float
+    median_st : float
         The median survival time.
     """
     # If all the predicted probabilities are 1 the integral will be infinite.
@@ -917,8 +1069,30 @@ def predict_median_st_ind(
 
 
 def quantile_to_survival(
-    quantile_levels, quantile_predictions, time_coordinates, interpolate="Pchip"
-):
+    quantile_levels: np.ndarray,
+    quantile_predictions: np.ndarray,
+    time_coordinates: np.ndarray,
+    interpolate: str = "Pchip",
+) -> np.ndarray:
+    """
+    Convert predicted event-time quantiles to survival probabilities on a time grid.
+
+    Parameters
+    ----------
+    quantile_levels : ndarray
+        Increasing cumulative event-probability levels, with shape (n_quantiles,).
+    quantile_predictions : ndarray
+        Predicted event-time quantiles, with shape (n_samples, n_quantiles).
+    time_coordinates : ndarray
+        Time coordinates matching the last axis of the predicted curves.
+    interpolate : str
+        Curve interpolation method, "Linear" or "Pchip".
+
+    Returns
+    -------
+    ndarray
+        Survival probabilities with shape (n_samples, n_times), using a linear tail beyond the last quantile.
+    """
     survival_level = 1 - quantile_levels
     slope = -quantile_levels[-1] / quantile_predictions[:, -1]
     surv_pred = np.empty((quantile_predictions.shape[0], time_coordinates.shape[0]))
@@ -965,7 +1139,7 @@ def survival_to_quantile(
 
     Returns
     -------
-    quantile_predictions : (n_samples, n_quantiles) np.ndarray
+    quantile_predictions : (n_samples, n_quantiles) ndarray
         Estimated quantile times for each sample.
 
     Notes
@@ -1078,14 +1252,15 @@ def get_prob_at_zero(times: np.ndarray, survival_probabilities: np.ndarray) -> f
 
     Parameters
     ----------
-    times: np.ndarray, shape = (n_samples, )
+    times : ndarray, shape = (n_samples, )
         Survival times for KM curve of the testing samples
-    survival_probabilities: np.ndarray, shape = (n_samples, )
+    survival_probabilities : ndarray, shape = (n_samples, )
         Survival probabilities for KM curve of the testing samples
 
     Returns
     -------
-    The survival probability at time 0.
+    float
+        Survival probability at time zero, using 1 before the first fitted observation.
     """
     probability_index = np.digitize(0, times)
     probability = np.append(1, survival_probabilities)[probability_index]
@@ -1099,14 +1274,15 @@ def zero_padding(
     *,
     initial_value: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Prepend time zero and an initial probability along the last axis.
+    """
+    Prepend time zero and an initial probability along the last axis.
 
     Parameters
     ----------
-    pred_curves : np.ndarray
+    pred_curves : ndarray
         Real numeric predictions of shape (n_time_points,),
         (n_samples, n_time_points), or (n_samples, n_causes, n_time_points).
-    time_coordinates : np.ndarray
+    time_coordinates : ndarray
         Real numeric shared 1D or sample-specific 2D time grids. Times must be
         finite and non-negative, with the same last-axis length as pred_curves.
         All rows must either start at exactly zero or all require padding.
@@ -1116,7 +1292,7 @@ def zero_padding(
 
     Returns
     -------
-    padded_curves, padded_times : tuple of np.ndarray
+    padded_curves, padded_times : tuple of ndarray
         Arrays with their ranks and dtypes preserved. If every grid starts at
         zero, return the original arrays unchanged. Inputs are never modified.
 
@@ -1186,25 +1362,31 @@ def zero_padding(
     )
 
 
-def fit_least_squares(x, y, left_anchor=True, right_anchor=True) -> tuple[float, float]:
+def fit_least_squares(
+    x: np.ndarray,
+    y: np.ndarray,
+    left_anchor: bool = True,
+    right_anchor: bool = True,
+) -> tuple[float, float]:
     """
     Fit a least squares line to the given data.
+
     Parameters
     ----------
-    x: np.ndarray, shape = (n_bins, )
+    x : ndarray, shape = (n_bins, )
         The x-coordinates of the data points.
-    y: np.ndarray, shape = (n_bins, )
+    y : ndarray, shape = (n_bins, )
         The y-coordinates of the data points.
-    left_anchor: bool
+    left_anchor : bool
         Whether to anchor the leftmost point. Default: True.
-    right_anchor: bool
+    right_anchor : bool
         Whether to anchor the rightmost point. Default: True.
 
     Returns
     -------
-    slope: float
+    slope : float
         The slope of the fitted line.
-    intercept: float
+    intercept : float
         The intercept of the fitted line.
     """
     n_bins = len(y) - 1

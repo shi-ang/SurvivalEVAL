@@ -16,16 +16,17 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
 
 def _cloglog(probabilities: np.ndarray) -> np.ndarray:
-    """Apply the complementary log-log transform with finite boundaries.
+    """
+    Apply the complementary log-log transform with finite boundaries.
 
     Parameters
     ----------
-    probabilities : np.ndarray
+    probabilities : ndarray
         Event probabilities in [0, 1].
 
     Returns
     -------
-    np.ndarray
+    ndarray
         Float64 values of log(-log(1 - p)), with the input shape preserved.
         Probabilities are clipped to [1e-10, 1 - 1e-10] after conversion to
         float64 so both boundaries remain finite for float32 inputs too.
@@ -46,7 +47,8 @@ def integrated_calibration_index(
 ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
     """
     Compute the Integrated Calibration Index (ICI) for a given set of predictions and true event times.
-    The method is presented in [1]. The implementation is based on the R code available in Appendix A of [1].
+
+    The method is presented in [1]_. The implementation is based on the R code available in Appendix A of [1]_.
 
     Constant predictions use the Kaplan-Meier event probability at the target
     time. Other predictions use a spline and Cox model, clipping probabilities
@@ -54,36 +56,39 @@ def integrated_calibration_index(
 
     Parameters
     ----------
-    preds: NumericArrayLike
+    preds : NumericArrayLike
         The predicted probabilities of experiencing the event at the time of interest.
-    event_time: NumericArrayLike
+    event_time : NumericArrayLike
         The true event times.
-    event_indicator: NumericArrayLike
+    event_indicator : NumericArrayLike
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    target_time: Numeric
+    target_time : Numeric
         The time of interest for calibration.
-    knots: int
+    knots : int
         The number of knots to use for the spline basis. Default is 3.
-        Austin et al. (2020) [1] compared 3-5 knots and found that 3 knots is best.
-    draw_figure: bool
+        Austin et al. (2020) [1]_ compared 3-5 knots and found that 3 knots is best.
+    draw_figure : bool
         Whether to plot the graphical calibration curve and return the plot. Default is False.
-    figure_range: tuple
+    figure_range : tuple
         The range of the x-axis and y-axis for the plot.
         It should be a tuple of the form (x_min, x_max, y_min, y_max).
         If None, it will be set to the range of predicted event probabilities.
         Default is None.
+
     Returns
     -------
-    summary: dict
-        A dictionary containing the integrated calibration index (ICI), E50, E90, E_max, and the information about the calibration curve.
-    fig: tuple[plt.Figure, plt.Axes]
+    summary : dict
+            A dictionary containing the integrated calibration index (ICI), E50, E90, E_max, and the information about
+        the calibration curve.
+    fig : tuple[plt.Figure, plt.Axes]
         The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure is True.
 
     References
     ----------
-    [1] Austin et al., Graphical calibration curves and the integrated calibration index (ICI) for survival models.
-    Stat Med. 2020
+    .. [1] Austin et al. (2020). "Graphical calibration curves and the integrated
+       calibration index (ICI) for survival models". Statistics in Medicine, 39(21),
+       2714-2742. https://doi.org/10.1002/sim.8570
     """
     preds = check_and_convert_probabilities(preds, "preds")
     event_time, event_indicator = check_and_convert_event_data(

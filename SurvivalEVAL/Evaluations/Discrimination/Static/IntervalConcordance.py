@@ -110,6 +110,19 @@ def _pairwise_w(
     S_rmin = np.maximum(S_Rj, S_Ri)  # (n,n)
 
     def pos(x: np.ndarray) -> np.ndarray:
+        """
+        Return the elementwise positive part of an array.
+
+        Parameters
+        ----------
+        x : ndarray
+            Array whose positive part is required.
+
+        Returns
+        -------
+        ndarray
+            Elementwise positive part, with negative entries replaced by zero.
+        """
         return np.clip(x, 0.0, None)
 
     # Base denominator and J terms
@@ -175,17 +188,20 @@ def concordance_ic(
     """
     Concordance index for interval-censored outcomes using closed-form pair weights.
 
+    For ``method="probability"``, pair-ordering probabilities follow the approach
+    of Tsouprou [1]_, with survival probabilities estimated by the Turnbull estimator.
+
     Parameters
     ----------
-    eta : np.ndarray of shape (n_sample,)
+    eta : ndarray of shape (n_sample,)
         Predicted risk scores  (higher = riskier).
-    left : np.ndarray of shape (n_sample,)
+    left : ndarray of shape (n_sample,)
         Left endpoints l_i (can be -inf).
-    right : np.ndarray of shape (n_sample,)
+    right : ndarray of shape (n_sample,)
         Right endpoints r_i (can be +inf to represent right censoring).
-    left_train : np.ndarray | None = None, shape (n_train_sample,)
+    left_train : ndarray | None = None, shape (n_train_sample,)
         Left endpoints of training data for Turnbull estimator.
-    right_train : np.ndarray | None = None, shape (n_train_sample,)
+    right_train : ndarray | None = None, shape (n_train_sample,)
         Right endpoints of training data for Turnbull estimator.
     method : {"comparable", "probability"}, default="comparable"
         Method for forming pair weights:
@@ -203,10 +219,16 @@ def concordance_ic(
     c_index : float
         The interval-censored concordance index as in Eq. (cindex_ic).
         Returns np.nan if the total weight denominator is 0.
-    num_matrix : np.ndarray of shape (n_sample, n_sample)
+    num_matrix : ndarray of shape (n_sample, n_sample)
         per-pair contributions to numerator,
-    den_matrix : np.ndarray of shape (n_sample, n_sample)
+    den_matrix : ndarray of shape (n_sample, n_sample)
         per-pair weights (same as weights) in denominator.
+
+    References
+    ----------
+    .. [1] Tsouprou, Sofia (2015). "Measures of discrimination and predictive
+       accuracy for interval censored survival data". Master's thesis,
+       Leiden University. https://math.leidenuniv.nl/scripties/MasterTsouprou.pdf
     """
     eta = np.asarray(eta, dtype=float)
     left = np.asarray(left, dtype=float)
@@ -272,24 +294,21 @@ def impute_times_midpoint(
     right: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Construct (t, delta) from (left, right] intervals using endpoint/midpoint
-    imputation.
-
-    Rules:
-      - Interval censoring: both L and R finite => t = (L+R)/2, delta=1
-      - Right censor: L finite, R non-finite => t = L, delta= 0
+    Impute observed times and event indicators from observation intervals.
 
     Parameters
     ----------
-    left, right : np.ndarray
+    left, right : ndarray
         Left and right interval endpoints. Left endpoints must be finite and
         non-negative. Use a left endpoint of 0 for left-censored observations
         and a right endpoint of ``np.inf`` for right-censored observations.
 
     Returns
     -------
-    t : observed/imputed time
-    delta : event indicator (1=event, 0=censor)
+    t : ndarray, shape (n_samples,)
+        Midpoint of each finite interval, or its left endpoint for right-censored observations.
+    delta : ndarray, shape (n_samples,)
+        Event indicators: 1 for finite right bounds and 0 for right censoring.
     """
     left = np.asarray(left, dtype=float)
     right = np.asarray(right, dtype=float)

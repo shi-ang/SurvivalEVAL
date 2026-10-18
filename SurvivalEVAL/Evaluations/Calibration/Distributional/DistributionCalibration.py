@@ -20,28 +20,40 @@ from .util import discrepancy_to_uniform, ks_pvalue
 
 
 def d_calibration(
-    pred_probs: np.ndarray, event_indicators: np.ndarray, num_bins: int = 10
+    pred_probs: np.ndarray,
+    event_indicators: np.ndarray,
+    num_bins: int = 10,
 ) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score.
+
+    Implements the distributional calibration test described in [1]_.
+
     Parameters
     ----------
-    pred_probs: np.ndarray
+    pred_probs : ndarray
         The predicted survival probabilities at individual's event/censor time.
-    event_indicators: np.ndarray
+    event_indicators : ndarray
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    num_bins: int
+    num_bins : int
         The number of bins to use for the D-Calibration score.
 
     Returns
     -------
-    statistic: float
+    statistic : float
         The test statistic of the D-Calibration test.
-    pvalue: float
+    pvalue : float
         The p-value of the D-Calibration test.
-    combine_hist: np.ndarray
+    combine_hist : ndarray
         The binning histogram of the D-Calibration test.
+
+    References
+    ----------
+    .. [1] Haider, H.; Hoehn, B.; Davis, S.; Greiner, R. (2020).
+       "Effective Ways to Build and Evaluate Individual Survival Distributions".
+       Journal of Machine Learning Research, 21(85), 1-63.
+       https://www.jmlr.org/papers/v21/18-772.html
     """
     quantile = np.linspace(1, 0, num_bins + 1)
     event_indicators = event_indicators.astype(bool, copy=False)
@@ -86,23 +98,20 @@ def d_calibration(
 
 
 def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
-    """Create the binning histogram for a right censored instance.
+    """
+    Distribute a right-censored observation over survival-probability bins.
 
-    The bins are defined as follows:
-    [b_0, b_1), [b_1, b_2), ..., [b_{num_bins-1}, b_num_bins] (note that the last bin is closed on both side).
+    Parameters
+    ----------
+    prob : float
+        Predicted survival probability at the observed censoring time.
+    num_bins : int
+        Positive number of probability bins.
 
-    For censoring instance,
-    b2 will be the infimum probability of the bin that contains S(c),
-    for the bin of [b2, b3) which contains S(c), probability = (S(c) - b2) / S(c)
-    for the rest of the bins, [b0, b1), [b1, b2), etc., probability = 1 / (B * S(c)), where B is the number of bins.
-    :param prob: float
-
-        The predicted probability at the censored time of a censoring instance.
-    :param num_bins: int
-        The number of bins to use for the D-Calibration score.
-    :return:
-    final_binning: np.ndarray
-        The "split" histogram of this censored subject.
+    Returns
+    -------
+    ndarray
+        Fractional probability mass in each descending survival-probability bin.
     """
     quantile = np.linspace(1, 0, num_bins + 1)
     censor_binning = np.zeros(num_bins)
@@ -121,27 +130,41 @@ def create_censor_hist(prob: float, num_bins: int) -> np.ndarray:
 
 
 def d_cal_ic(
-    pred_probs_left: np.ndarray, pred_probs_right: np.ndarray, num_bins: int = 10
+    pred_probs_left: np.ndarray,
+    pred_probs_right: np.ndarray,
+    num_bins: int = 10,
 ) -> tuple[float, float, np.ndarray]:
     """
     Calculate the D-Calibration score for interval censored data.
+
+    Extends the D-calibration test in [1]_ to interval-censored observations
+    using fractional contributions to probability bins.
+
     Parameters
     ----------
-    pred_probs_left: np.ndarray
+    pred_probs_left : ndarray
         The predicted survival probabilities at individual's left censor time.
-    pred_probs_right: np.ndarray
+    pred_probs_right : ndarray
         The predicted survival probabilities at individual's right censor time.
         For right-censored instances, the right event/censor time is infinity, so the predicted probability is 0.
-    num_bins: int
+    num_bins : int
         The number of bins to use for the D-Calibration score.
+
     Returns
     -------
-    statistic: float
+    statistic : float
         The test statistic of the D-Calibration test.
-    pvalue: float
+    pvalue : float
         The p-value of the D-Calibration test.
-    binning: np.ndarray
+    binning : ndarray
         The binning histogram of the D-Calibration test.
+
+    References
+    ----------
+    .. [1] Haider, H.; Hoehn, B.; Davis, S.; Greiner, R. (2020).
+       "Effective Ways to Build and Evaluate Individual Survival Distributions".
+       Journal of Machine Learning Research, 21(85), 1-63.
+       https://www.jmlr.org/papers/v21/18-772.html
     """
     assert len(pred_probs_left) == len(
         pred_probs_right
@@ -172,13 +195,30 @@ def d_cal_ic(
 
 
 def create_interval_c_hist(
-    prob_left: float, prob_right: float, num_bins: int
+    prob_left: float,
+    prob_right: float,
+    num_bins: int,
 ) -> np.ndarray:
-    """Distribute one observation's mass over descending probability bins.
+    """
+    Distribute one observation's mass over descending probability bins.
 
     A nonzero interval contributes its fractional overlap with each bin.
     Equal endpoints contribute all mass to their containing bin, including
     the boundary probabilities 0 and 1. Reversed endpoints are reordered.
+
+    Parameters
+    ----------
+    prob_left : float
+        Predicted survival probability at the left interval bound.
+    prob_right : float
+        Predicted survival probability at the right interval bound.
+    num_bins : int
+        Positive number of probability bins.
+
+    Returns
+    -------
+    ndarray
+        Fractional probability mass in each descending survival-probability bin.
     """
     prob_left, prob_right = max(prob_left, prob_right), min(prob_left, prob_right)
     edges = np.linspace(1.0, 0.0, num_bins + 1)
@@ -200,23 +240,24 @@ def _check_cr_d_inputs(
     pred_event_probs: np.ndarray,
     pred_survs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Convert and validate inputs shared by the CR-D-calibration metrics.
+    """
+    Convert and validate inputs shared by the CR-D-calibration metrics.
 
     Parameters
     ----------
-    pred_cifs : np.ndarray, shape (n_samples,) or (n_samples, n_causes)
+    pred_cifs : ndarray, shape (n_samples,) or (n_samples, n_causes)
         One cause's CIFs or all causes' CIFs at each subject's observed time.
         For multiple causes, column k - 1 represents cause k.
-    event_indicators : np.ndarray, shape (n_samples,)
+    event_indicators : ndarray, shape (n_samples,)
         Non-negative integer-valued labels: 0 for censoring and k for cause k.
-    pred_event_probs : np.ndarray, same shape as pred_cifs
+    pred_event_probs : ndarray, same shape as pred_cifs
         Eventual cause probabilities, no smaller than the observed-time CIFs.
-    pred_survs : np.ndarray, shape (n_samples,)
+    pred_survs : ndarray, shape (n_samples,)
         Overall survival at each observed time, positive for censored subjects.
 
     Returns
     -------
-    cifs, events, event_probs, survs : tuple of np.ndarray
+    cifs, events, event_probs, survs : tuple of ndarray
         Validated numeric arrays in this order. Compatible arrays may share
         input storage; this function does not modify them.
 
@@ -283,27 +324,28 @@ def _cr_d_curve(
     cause: int,
     rho: np.ndarray,
 ) -> np.ndarray:
-    """Compute one cause's empirical CR-D-calibration curve on a uniform grid.
+    """
+    Compute one cause's empirical CR-D-calibration curve on a uniform grid.
 
     Parameters
     ----------
-    cifs : np.ndarray, shape (n_samples,)
+    cifs : ndarray, shape (n_samples,)
         Selected cause's CIFs at each subject's observed time.
-    events : np.ndarray, shape (n_samples,)
+    events : ndarray, shape (n_samples,)
         Cause labels, with 0 denoting censoring.
-    event_probs : np.ndarray, shape (n_samples,)
+    event_probs : ndarray, shape (n_samples,)
         Selected cause's eventual probabilities F_k(infinity).
-    survs : np.ndarray, shape (n_samples,)
+    survs : ndarray, shape (n_samples,)
         Overall survival at each observed time.
     cause : int
         Positive cause label to evaluate.
-    rho : np.ndarray, shape (num_bins + 1,)
+    rho : ndarray, shape (num_bins + 1,)
         Uniformly spaced thresholds from 0 to 1, including both endpoints.
         Must contain at least two points.
 
     Returns
     -------
-    curve : np.ndarray, same shape as rho
+    curve : ndarray, same shape as rho
         Cumulative observed and imputed event mass divided by the sum of
         eventual cause probabilities. The endpoint is not forced to one.
 
@@ -367,7 +409,13 @@ def cr_d_calibration_per_event(
     method: str = "integral",
     return_details: bool = False,
 ) -> float | tuple[float, dict]:
-    """Measure CR-D-calibration for one competing cause (lower is better).
+    """
+    Measure CR-D-calibration for one competing cause (lower is better).
+
+    Uses the paper's L_alpha norm. The hazardous implementation [2]_ instead
+    divides the integrated powered deviation by alpha and omits [0, 1/num_bins]
+    from its numerical integral; its scalar scores therefore differ.
+    The method is described in [1]_.
 
     Parameters
     ----------
@@ -411,23 +459,16 @@ def cr_d_calibration_per_event(
     details : dict, optional
         Calibration curve and, for KS, approximate test information.
 
-    Notes
-    -----
-    The curve is normalized by the sum of predicted terminal event probabilities,
-    not its observed endpoint. Its endpoint can differ from one, revealing
-    marginal miscalibration. Censored subjects contribute
-    ``max(rho * F_k(infinity) - F_k(T), 0) / S(T)``; other observed causes
-    contribute zero. Conditional non-informative censoring is assumed.
-
-    Uses the paper's L_alpha norm. The referenced hazardous implementation instead
-    divides the integrated powered deviation by alpha and omits [0, 1/num_bins]
-    from its numerical integral; its scalar scores therefore differ.
 
     References
     ----------
-    Alberge, Haugomat, Varoquaux and Abecassis (2026), "On the Calibration of
-    Survival Models with Competing Risks", https://proceedings.mlr.press/v300/alberge26a.html
-    https://github.com/soda-inria/hazardous/blob/dcal/hazardous/metrics/_d_calibration.py
+    .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
+       "On the Calibration of Survival Models with Competing Risks".
+       Proceedings of the 29th International Conference on Artificial Intelligence
+       and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
+       https://proceedings.mlr.press/v300/alberge26a.html
+    .. [2] Hazardous reference implementation.
+       https://github.com/soda-inria/hazardous/blob/dcal/hazardous/metrics/_d_calibration.py
     """
     cifs, events, event_probs, survs = _check_cr_d_inputs(
         pred_cifs, event_indicators, pred_event_probs, pred_survs
@@ -491,7 +532,10 @@ def cr_d_calibration(
     reduction: str = "sum",
     return_details: bool = False,
 ) -> float | tuple[float, dict]:
-    """Aggregate CR-D-calibration over all predicted competing causes.
+    """
+    Aggregate CR-D-calibration over all predicted competing causes.
+
+    The competing-risks distributional calibration measure is described in [1]_.
 
     Parameters
     ----------
@@ -505,14 +549,15 @@ def cr_d_calibration(
         including those absent from the observed event labels.
     pred_survs : array-like, shape (n_samples,)
         Overall survival at each observed time; this and CIFs must sum to one.
-    num_bins, alpha, method
-        See ``cr_d_calibration_per_event``. The default sums the paper's L_alpha
-        scores; ``method="ks"`` instead aggregates maximum grid deviations.
+    num_bins : int, default=100
+        Number of intervals in the risk grid, which contains num_bins + 1 points.
     alpha : float, default=2
         Finite exponent at least 1 for the integral norm. `alpha=1`: area under
         the absolute-error curve; errors contribute linearly.
         `alpha=2` (default): root integrated squared error;
         Ignored for KS.
+    method : {"integral", "ks"}, default="integral"
+        Integrate deviations using the L_alpha norm or take the maximum grid deviation.
     reduction : {"sum", "mean", "max"}, default="sum"
         Reduction of per-cause scores. Sum follows the paper's definition.
     return_details : bool, default=False
@@ -532,6 +577,14 @@ def cr_d_calibration(
     See Also
     --------
     cr_d_calibration_per_event : Definition, assumptions and references.
+
+    References
+    ----------
+    .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
+       "On the Calibration of Survival Models with Competing Risks".
+       Proceedings of the 29th International Conference on Artificial Intelligence
+       and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
+       https://proceedings.mlr.press/v300/alberge26a.html
     """
     cifs, events, event_probs, survs = _check_cr_d_inputs(
         pred_cifs, event_indicators, pred_event_probs, pred_survs
@@ -585,28 +638,33 @@ def ksd_calibration(
     """
     Calculate the K-S D-Calibration score.
 
+    The KS metric is motivated by the work in [1]_. Here, the
+    distribution of predicted probabilities is estimated with Kaplan-Meier.
+
     Parameters
     ----------
-    pred_probs: np.ndarray
+    pred_probs : ndarray
         The predicted survival probabilities at individual's event/censor time.
-    event_indicators: np.ndarray
+    event_indicators : ndarray
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    return_details: bool
+    return_details : bool
         Whether to return the detailed information including the empirical distribution and the figure.
 
     Returns
     -------
-    pvalue: float
-        The p-value of the K-S D-Calibration test.
-    statistic: float
-        The test statistic of the K-S D-Calibration test.
-    details: dict
-        The detailed information including the empirical distribution and the figure.
-        - statistics: float
-        - p_value: float
-        - empirical_distribution: tuple (x_support, cdf_values)
-        - figure: tuple (fig, ax)
+    p_value : float
+        Asymptotic Kolmogorov-Smirnov calibration p-value.
+    statistic_or_details : float or dict
+        Kolmogorov-Smirnov statistic when return_details is False. Otherwise, a dictionary
+        containing statistics, p_value, empirical_distribution, and figure.
+
+    References
+    ----------
+    .. [1] Park, J.; Kim, D.; Kim, C.; Park, H.; Kang, S.; Kim, G. (2025).
+       "KSP: Kolmogorov-Smirnov metric-based Post-Hoc Calibration for
+       Survival Analysis". Advances in Neural Information Processing Systems, 38.
+       https://doi.org/10.52202/085713-0827
     """
     assert len(pred_probs) == len(
         event_indicators
@@ -655,31 +713,36 @@ def ksd_cal_ic(
     pred_probs_left: np.ndarray,
     pred_probs_right: np.ndarray,
     return_details: bool = False,
-):
+) -> tuple[float, float | dict]:
     """
     Calculate the K-S D-Calibration score for interval censored data.
 
+    The KS metric is motivated by the work in [1]_. This interval-censored
+    variant estimates the distribution of predicted probabilities with Turnbull.
+
     Parameters
     ----------
-    pred_probs_left: np.ndarray
+    pred_probs_left : ndarray
         The predicted survival probabilities at individual's left censor time.
-    pred_probs_right: np.ndarray
+    pred_probs_right : ndarray
         The predicted survival probabilities at individual's right censor time.
-    return_details: bool
+    return_details : bool
         Whether to return the detailed information including the empirical distribution and the figure.
 
     Returns
     -------
-    pvalue: float
-        The p-value of the K-S D-Calibration test.
-    statistic: float
-        The test statistic of the K-S D-Calibration test.
-    details: dict
-        The detailed information including the empirical distribution and the figure.
-        - statistics: float
-        - p_value: float
-        - empirical_distribution: tuple (x_support, cdf_values)
-        - figure: tuple (fig, ax)
+    p_value : float
+        Asymptotic Kolmogorov-Smirnov calibration p-value.
+    statistic_or_details : float or dict
+        Kolmogorov-Smirnov statistic when return_details is False. Otherwise, a dictionary
+        containing statistics, p_value, empirical_distribution, and figure.
+
+    References
+    ----------
+    .. [1] Park, J.; Kim, D.; Kim, C.; Park, H.; Kang, S.; Kim, G. (2025).
+       "KSP: Kolmogorov-Smirnov metric-based Post-Hoc Calibration for
+       Survival Analysis". Advances in Neural Information Processing Systems, 38.
+       https://doi.org/10.52202/085713-0827
     """
     assert len(pred_probs_left) == len(
         pred_probs_right

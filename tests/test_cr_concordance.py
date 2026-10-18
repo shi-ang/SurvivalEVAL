@@ -119,7 +119,9 @@ def test_eventfree_ipcw_uses_only_squared_anchor_weights() -> None:
 @pytest.mark.parametrize("competing_time", [1, 2, 3])
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_competing_controls_are_defined_at_each_anchor_time(
-    method: str, competing_time: int, control_definition: str
+    method: str,
+    competing_time: int,
+    control_definition: str,
 ) -> None:
     result = concordance_cr_per_event(
         [0.8, 0.9, 0.1],
@@ -175,7 +177,10 @@ def test_tau_only_truncates_anchors_and_keeps_later_comparators(method):
 )
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_same_time_controls_and_selected_cause_ties(
-    ties, notcase_expected, eventfree_expected, control_definition
+    ties,
+    notcase_expected,
+    eventfree_expected,
+    control_definition,
 ):
     actual = concordance_cr_per_event(
         [4, 3, 2, 1],
@@ -225,7 +230,9 @@ def test_float32_risk_rounding_does_not_widen_tie_tolerance(events):
 @pytest.mark.parametrize("ties", ["None", "Risk", "Time", "All"])
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_no_competing_events_reduces_to_existing_concordance(
-    method, ties, control_definition
+    method,
+    ties,
+    control_definition,
 ):
     risks = np.array([2, 1, 3, 0, 4], dtype=float)
     times = np.array([1, 2, 2, 3, 4], dtype=float)
@@ -292,14 +299,14 @@ def test_final_anchor_with_earlier_competitor_requires_positive_censoring_surviv
 def test_eventfree_ignores_zero_survival_for_excluded_controls_and_final_anchors(
     anchor_time: int,
 ) -> None:
-    kwargs = dict(
-        predicted_risks=[3, 2, 1],
-        event_times=[1, anchor_time, 3],
-        event_indicators=[1, 1, 2],
-        train_event_times=[1, 2],
-        train_event_indicators=[1, 0],
-        method="IPCW",
-    )
+    kwargs = {
+        "predicted_risks": [3, 2, 1],
+        "event_times": [1, anchor_time, 3],
+        "event_indicators": [1, 1, 2],
+        "train_event_times": [1, 2],
+        "train_event_indicators": [1, 0],
+        "method": "IPCW",
+    }
     np.testing.assert_allclose(
         concordance_cr_per_event(**kwargs, control_definition="EventFree"), (1, 2, 2)
     )
@@ -322,15 +329,15 @@ def test_eventfree_requires_positive_survival_for_same_time_censoring() -> None:
 
 @pytest.mark.parametrize("ties", ["Risk", "None", "Time", "All"])
 def test_zero_survival_for_ignored_final_selected_cause_time_ties(ties):
-    kwargs = dict(
-        predicted_risks=[3, 2, 1],
-        event_times=[1, 3, 3],
-        event_indicators=[1, 1, 1],
-        train_event_times=[1, 2],
-        train_event_indicators=[1, 0],
-        method="IPCW",
-        ties=ties,
-    )
+    kwargs = {
+        "predicted_risks": [3, 2, 1],
+        "event_times": [1, 3, 3],
+        "event_indicators": [1, 1, 1],
+        "train_event_times": [1, 2],
+        "train_event_indicators": [1, 0],
+        "method": "IPCW",
+        "ties": ties,
+    }
     if ties in ("Time", "All"):
         with pytest.raises(ValueError, match="Censoring survival"):
             concordance_cr_per_event(**kwargs)
@@ -377,9 +384,11 @@ def test_training_outcomes_are_required():
     ],
 )
 def test_invalid_inputs(name, value, message):
-    kwargs = dict(
-        predicted_risks=[0.8, 0.2], event_times=[1, 2], event_indicators=[1, 2]
-    )
+    kwargs = {
+        "predicted_risks": [0.8, 0.2],
+        "event_times": [1, 2],
+        "event_indicators": [1, 2],
+    }
     kwargs[name] = value
     with pytest.raises(ValueError, match=message):
         concordance_cr_per_event(**kwargs)
@@ -394,14 +403,14 @@ def test_invalid_inputs(name, value, message):
     ],
 )
 def test_invalid_training_outcomes(name, value):
-    kwargs = dict(
-        predicted_risks=[0.8, 0.2],
-        event_times=[1, 2],
-        event_indicators=[1, 2],
-        train_event_times=[1, 3],
-        train_event_indicators=[0, 2],
-        method="IPCW",
-    )
+    kwargs = {
+        "predicted_risks": [0.8, 0.2],
+        "event_times": [1, 2],
+        "event_indicators": [1, 2],
+        "train_event_times": [1, 3],
+        "train_event_indicators": [0, 2],
+        "method": "IPCW",
+    }
     kwargs[name] = value
     with pytest.raises(ValueError):
         concordance_cr_per_event(**kwargs)
@@ -433,7 +442,12 @@ def test_noncontiguous_readonly_scores_and_monotone_transformations():
     ],
 )
 def test_hand_computed_aggregate_scores(
-    method, control_definition, reduction, expected, concordant, total
+    method,
+    control_definition,
+    reduction,
+    expected,
+    concordant,
+    total,
 ):
     risks = [[0.7, 0.3], [0.8, 0.1], [0.9, 0.4], [0.2, 0.2]]
     score, details = concordance_cr(
@@ -460,7 +474,12 @@ def test_hand_computed_aggregate_scores(
 @pytest.mark.parametrize("reduction", ["mean", "pooled"])
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_aggregate_matches_per_event_results(
-    dtype, method, ties, tau, reduction, control_definition
+    dtype,
+    method,
+    ties,
+    tau,
+    reduction,
+    control_definition,
 ):
     rng = np.random.default_rng(73)
     # Use non-contiguous read-only columns to cover NumPy views and float32 risks.
@@ -553,7 +572,7 @@ def test_aggregate_ipcw_fits_one_censoring_model(control_definition: str) -> Non
 
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_control_definition_is_case_insensitive(control_definition: str) -> None:
-    kwargs = dict(event_times=[1, 2, 3], event_indicators=[2, 1, 0])
+    kwargs = {"event_times": [1, 2, 3], "event_indicators": [2, 1, 0]}
     risks = np.array([[0.1, 0.9], [0.9, 0.2], [0.2, 0.1]])
     np.testing.assert_equal(
         concordance_cr(
@@ -657,11 +676,11 @@ def test_aggregate_with_one_cause_matches_per_event(reduction):
     ],
 )
 def test_invalid_aggregate_inputs(name, value, message):
-    kwargs = dict(
-        predicted_risks=[[0.8, 0.2], [0.2, 0.8]],
-        event_times=[1, 2],
-        event_indicators=[1, 2],
-    )
+    kwargs = {
+        "predicted_risks": [[0.8, 0.2], [0.2, 0.8]],
+        "event_times": [1, 2],
+        "event_indicators": [1, 2],
+    }
     kwargs[name] = value
     with pytest.raises(ValueError, match=message):
         concordance_cr(**kwargs)

@@ -27,7 +27,8 @@ def predictions():
 
 @pytest.mark.parametrize("training", [False, True])
 def test_default_target_time_reflects_current_outcomes(
-    predictions, training: bool
+    predictions,
+    training: bool,
 ) -> None:
     options = (
         {"train_event_times": [1, 2, 6], "train_event_indicators": [1, 0, 2]}
@@ -55,7 +56,13 @@ def test_default_target_time_reflects_current_outcomes(
     ],
 )
 def test_curve_calibration_matches_observed_time_metric(
-    predictions, interpolation, dtype, method, reduction, alpha, return_details
+    predictions,
+    interpolation,
+    dtype,
+    method,
+    reduction,
+    alpha,
+    return_details,
 ):
     cifs, times, observed, events = predictions
     cifs = cifs.astype(dtype)
@@ -70,13 +77,13 @@ def test_curve_calibration_matches_observed_time_metric(
                 at_observed[i, k] = np.interp(time, times, cifs[i, k])
             else:
                 at_observed[i, k] = PchipInterpolator(times, cifs[i, k])(time)
-    options = dict(
-        num_bins=8,
-        alpha=alpha,
-        method=method,
-        reduction=reduction,
-        return_details=return_details,
-    )
+    options = {
+        "num_bins": 8,
+        "alpha": alpha,
+        "method": method,
+        "reduction": reduction,
+        "return_details": return_details,
+    }
     expected = cr_d_calibration(
         at_observed, events, cifs[:, :, -1], 1 - at_observed.sum(axis=1), **options
     )
@@ -88,7 +95,8 @@ def test_curve_calibration_matches_observed_time_metric(
 
 @pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
 def test_positive_start_grid_is_padded_without_mutating_inputs(
-    predictions, interpolation
+    predictions,
+    interpolation,
 ):
     cifs, times, _, events = predictions
     observed = np.array([0, 1, 3])
@@ -291,17 +299,17 @@ def test_concordance_matches_standalone(
         if predict_risk_method == "RMTL"
         else predictions[0][..., 1]
     )
-    risk_options = dict(
-        predict_risk_method=predict_risk_method,
-        target_time=2 if predict_risk_method == "CIF" else None,
-    )
-    options = dict(
-        method=method,
-        control_definition=control_definition,
-        ties=ties,
-        train_event_times=train_times,
-        train_event_indicators=train_events,
-    )
+    risk_options = {
+        "predict_risk_method": predict_risk_method,
+        "target_time": 2 if predict_risk_method == "CIF" else None,
+    }
+    options = {
+        "method": method,
+        "control_definition": control_definition,
+        "ties": ties,
+        "train_event_times": train_times,
+        "train_event_indicators": train_events,
+    }
     expected = concordance_cr(
         risks,
         predictions[2],
@@ -345,7 +353,10 @@ def test_concordance_matches_standalone(
 @pytest.mark.parametrize("risk_method", ["RMTL", "CIF"])
 @pytest.mark.parametrize("n_samples", [1, 3])
 def test_selected_cause_risks_are_vectors(
-    predictions, interpolation: str, risk_method: str, n_samples: int
+    predictions,
+    interpolation: str,
+    risk_method: str,
+    n_samples: int,
 ) -> None:
     cifs, times, observed, events = predictions
     evaluator = CompetingRisksEvaluator(
@@ -402,7 +413,11 @@ def test_invalid_rmtl_horizons(predictions, tau):
 
 @pytest.mark.parametrize("cause", [None, 0, 3, 1.5, True, np.bool_(True)])
 @pytest.mark.parametrize("metric", ["auc_per_event", "concordance_per_event"])
-def test_invalid_per_event_cause(predictions: tuple, cause: object, metric: str) -> None:
+def test_invalid_per_event_cause(
+    predictions: tuple,
+    cause: object,
+    metric: str,
+) -> None:
     evaluator = CompetingRisksEvaluator(*predictions)
     with pytest.raises(ValueError, match="event_of_interest"):
         getattr(evaluator, metric)(cause)
@@ -455,12 +470,15 @@ def test_invalid_training_outcomes(predictions, times, events, match):
     ],
 )
 def test_per_call_risk_choices_match_standalone(
-    predictions, interpolation, risk_method, time
+    predictions,
+    interpolation,
+    risk_method,
+    time,
 ):
     evaluator = CompetingRisksEvaluator(*predictions, interpolation=interpolation)
     if risk_method == "RMTL":
         risks = evaluator.predict_rmtl(time)
-        options = dict(predict_risk_method=risk_method, tau=time)
+        options = {"predict_risk_method": risk_method, "tau": time}
     else:
         risks = np.array(
             [
@@ -475,7 +493,7 @@ def test_per_call_risk_choices_match_standalone(
                 for curves in predictions[0]
             ]
         )
-        options = dict(predict_risk_method=risk_method, target_time=time)
+        options = {"predict_risk_method": risk_method, "target_time": time}
     tau = options.get("tau")
     np.testing.assert_equal(
         evaluator.concordance(return_details=True, **options),
@@ -517,28 +535,36 @@ def test_risk_choice_and_horizon_do_not_persist_between_calls():
 @pytest.mark.parametrize(
     "options, error, match",
     [
-        (dict(control_definition="unknown"), ValueError, "control_definition"),
-        (dict(predict_risk_method="Median"), ValueError, "predict_risk_method"),
-        (dict(predict_risk_method=None), ValueError, "predict_risk_method"),
-        (dict(predict_risk_method="CIF"), ValueError, "target_time is required"),
-        (dict(target_time=2), ValueError, "target_time is only used"),
-        (dict(predict_risk_method="CIF", target_time=-1), ValueError, "target_time"),
-        (dict(predict_risk_method="CIF", target_time=5), ValueError, "target_time"),
+        ({"control_definition": "unknown"}, ValueError, "control_definition"),
+        ({"predict_risk_method": "Median"}, ValueError, "predict_risk_method"),
+        ({"predict_risk_method": None}, ValueError, "predict_risk_method"),
+        ({"predict_risk_method": "CIF"}, ValueError, "target_time is required"),
+        ({"target_time": 2}, ValueError, "target_time is only used"),
+        ({"predict_risk_method": "CIF", "target_time": -1}, ValueError, "target_time"),
+        ({"predict_risk_method": "CIF", "target_time": 5}, ValueError, "target_time"),
         (
-            dict(predict_risk_method="CIF", target_time=np.nan),
+            {"predict_risk_method": "CIF", "target_time": np.nan},
             ValueError,
             "target_time",
         ),
         (
-            dict(predict_risk_method="CIF", target_time=np.inf),
+            {"predict_risk_method": "CIF", "target_time": np.inf},
             ValueError,
             "target_time",
         ),
-        (dict(predict_risk_method="CIF", target_time=[2]), TypeError, "numeric scalar"),
+        (
+            {"predict_risk_method": "CIF", "target_time": [2]},
+            TypeError,
+            "numeric scalar",
+        ),
     ],
 )
 def test_invalid_risk_choices_and_target_times(
-    predictions, method_name, options, error, match
+    predictions,
+    method_name,
+    options,
+    error,
+    match,
 ):
     evaluator = CompetingRisksEvaluator(*predictions)
     with pytest.raises(error, match=match):
@@ -547,7 +573,7 @@ def test_invalid_risk_choices_and_target_times(
 
 def test_cif_target_time_is_independent_of_pair_cutoff(predictions):
     evaluator = CompetingRisksEvaluator(*predictions)
-    options = dict(predict_risk_method="cIf", target_time=3)
+    options = {"predict_risk_method": "cIf", "target_time": 3}
     assert evaluator.concordance(**options, tau=5) == evaluator.concordance(**options)
     assert evaluator.concordance_per_event(
         1, **options, tau=5

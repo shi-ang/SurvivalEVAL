@@ -84,7 +84,12 @@ def _brute_harrell_counts(
 
 
 def _brute_margin_counts(
-    event_indicators, event_times, risks, bg_event_times, partial_weights, tau=None
+    event_indicators,
+    event_times,
+    risks,
+    bg_event_times,
+    partial_weights,
+    tau=None,
 ):
     counts = _brute_harrell_counts(
         np.ones_like(event_indicators, dtype=bool),

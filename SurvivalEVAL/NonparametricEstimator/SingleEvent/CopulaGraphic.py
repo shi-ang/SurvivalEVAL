@@ -13,22 +13,32 @@ from SurvivalEVAL.NonparametricEstimator.util import (
 @dataclass
 class CopulaGraphic:
     """
-    Implementation of the Copula Graphic estimator for survival function, under the dependent censoring assumption.
+    Estimate survival with a copula model for dependent censoring.
 
-    This implementation supports three types of copulas:
-    - Clayton
-    - Gumbel
-    - Frank
-    The estimator is based on the R code in the package 'compound.Cox' by Takeshi Emura.
-    To see the original R code, visit:
-    https://github.com/cran/compound.Cox/tree/master/R/CG.Clayton.R
-    https://github.com/cran/compound.Cox/tree/master/R/CG.Gumbel.R
-    https://github.com/cran/compound.Cox/tree/master/R/CG.Frank.R
+    The Clayton, Gumbel, and Frank estimators follow the compound.Cox implementations
+    in [1]_, [2]_, and [3]_, with tie handling based on [4]_.
 
-    However, the original R code (and also the math derivation) cannot handle ties --
-    e.g., when a censored instance and an event instance have the same time point.
-    This implementation correctly handling ties.
-    based on the derivation in paper: https://arxiv.org/abs/2502.19460
+    Parameters
+    ----------
+    event_times : ndarray, shape (n_samples,)
+        Non-negative observed event or censoring times.
+    event_indicators : ndarray, shape (n_samples,)
+        Binary indicators: 1 for observed events and 0 for censoring.
+    alpha : float
+        Copula dependence parameter, bounded below by 1e-9 during fitting.
+    type : {"Clayton", "Gumbel", "Frank"}, default="Clayton"
+        Copula family, case-insensitive.
+
+    References
+    ----------
+    .. [1] Emura, Takeshi. compound.Cox Clayton copula implementation.
+       https://github.com/cran/compound.Cox/tree/master/R/CG.Clayton.R
+    .. [2] Emura, Takeshi. compound.Cox Gumbel copula implementation.
+       https://github.com/cran/compound.Cox/tree/master/R/CG.Gumbel.R
+    .. [3] Emura, Takeshi. compound.Cox Frank copula implementation.
+       https://github.com/cran/compound.Cox/tree/master/R/CG.Frank.R
+    .. [4] Copula-graphic tie-handling derivation.
+       https://arxiv.org/abs/2502.19460
     """
 
     event_times: InitVar[np.ndarray]
@@ -41,7 +51,27 @@ class CopulaGraphic:
     events: np.ndarray = field(init=False)
     survival_probabilities: np.ndarray = field(init=False)
 
-    def __post_init__(self, event_times, event_indicators, alpha, type):
+    def __post_init__(
+        self,
+        event_times: np.ndarray,
+        event_indicators: np.ndarray,
+        alpha: float,
+        type: str,
+    ) -> None:
+        """
+        Fit the CopulaGraphic estimator from the supplied observations.
+
+        Parameters
+        ----------
+        event_times : ndarray
+            Observed event or censoring times, one per sample.
+        event_indicators : ndarray
+            Binary event indicators: 1 denotes an observed event and 0 denotes censoring.
+        alpha : float
+            Copula dependence parameter, bounded below by 1e-9 during fitting.
+        type : str
+            Copula family, "Clayton", "Gumbel", or "Frank", case-insensitive.
+        """
         alpha = max(alpha, 1e-9)
         self.n_samples = len(event_times)
         self.survival_times, self.population_count, self.events = _compute_event_counts(
@@ -101,13 +131,15 @@ class CopulaGraphic:
     def predict(self, prediction_times: float | np.ndarray) -> float | np.ndarray:
         """
         Predict the survival probabilities at the given prediction times.
+
         Parameters
         ----------
-        prediction_times: float | np.ndarray
+        prediction_times : float | ndarray
             Time(s) at which to predict the survival probabilities.
+
         Returns
         -------
-        probabilities: float | np.ndarray
+        probabilities : float | ndarray
             Predicted survival probabilities at the given time(s).
         """
         prediction_times = np.asarray(prediction_times, dtype=float)
@@ -131,8 +163,10 @@ class CopulaGraphic:
     def predict_median(self) -> float:
         """
         Predict the median survival time based on the survival probabilities.
+
         It is calculated as the first time point where the survival probability is less than or equal to 0.5.
         No interpolation is performed, as we are strictly following the implementation of the CG estimator in R.
+
         Returns
         -------
         float

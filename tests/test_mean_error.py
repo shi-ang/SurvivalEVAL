@@ -53,7 +53,11 @@ def test_ipcw_d_requires_training_data():
 @pytest.mark.parametrize("truncation_time", [None, 6.0])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_ipcw_t_matches_direct_surrogate_means(
-    error_type, weighted, log_scale, truncation_time, dtype
+    error_type,
+    weighted,
+    log_scale,
+    truncation_time,
+    dtype,
 ):
     rng = np.random.default_rng(31)
     train_times = rng.integers(1, 12, size=80).astype(dtype)

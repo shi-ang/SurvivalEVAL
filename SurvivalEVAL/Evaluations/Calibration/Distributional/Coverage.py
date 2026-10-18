@@ -20,33 +20,35 @@ def coverage_ic(
 ) -> tuple[float, float, float]:
     """
     Compute the Interval-Censor Coverage (IC) metric.
+
     The coverage is the proportion of instances where the predicted interval [t_li, t_ui]
     contains the true event time.
     Since the true event time is interval-censored between [L_i, U_i], we consider the event time to be contained
     - 100% if the predicted interval fully covers the censoring interval [L_i, U_i]
     - 0% if there is no overlap between the predicted interval and the censoring interval [L_i, U_i]
-    - partial coverage if there is a partial overlap between the predicted interval and the censoring interval [L_i, U_i]
+    - partial coverage if the predicted interval partially overlaps the censoring interval [L_i, U_i]
 
     The partial coverage is estimated using the empirical distribution of censoring intervals from the training data.
     Like what we did for the partial weights for concordance_ic().
-    That means we estimate the empirical CDF of censoring intervals [L_j, U_j] from the training data using Turnbull estimator,
+    That means we estimate the empirical CDF of censoring intervals [L_j, U_j] from the training data
+    using the Turnbull estimator,
     and use it to compute S(L_i), S(U_i), S(t_li), S(t_ui) for each test instance.
     The partial coverage is then calculated as:
         partial_coverage = (S(max(L_i, t_li)) - S(min(U_i, t_ui))) / (S(L_i) - S(U_i))
 
     Parameters
     ----------
-    pred_l : np.ndarray, shape (n_samples,)
+    pred_l : ndarray, shape (n_samples,)
         The lower bounds of the predicted intervals.
-    pred_r : np.ndarray, shape (n_samples,)
+    pred_r : ndarray, shape (n_samples,)
         The upper bounds of the predicted intervals.
-    obs_l : np.ndarray, shape (n_samples,)
+    obs_l : ndarray, shape (n_samples,)
         The lower bounds of the observed censoring intervals.
-    obs_r : np.ndarray, shape (n_samples,)
+    obs_r : ndarray, shape (n_samples,)
         The upper bounds of the observed censoring intervals.
-    obs_l_train : np.ndarray, shape (n_train_samples,)
+    obs_l_train : ndarray, shape (n_train_samples,)
         The lower bounds of the observed censoring intervals in the training data.
-    obs_r_train : np.ndarray, shape (n_train_samples,)
+    obs_r_train : ndarray, shape (n_train_samples,)
         The upper bounds of the observed censoring intervals in the training data.
     cov_level : float, default 0.95
         Target coverage level for calibration reference.

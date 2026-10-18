@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
-"""
-Test cases for IBS hinge loss implementation for interval-censored survival data.
-"""
+"""Test cases for IBS hinge loss implementation for interval-censored survival data."""
 
 from __future__ import annotations
 
@@ -81,15 +78,12 @@ def ibs_hinge_ic(
 
 
 def test_case_1_simple_interval_censoring():
-    """
-    Test Case 1: Simple interval censoring with known ground truth
-    """
+    """Test Case 1: Simple interval censoring with known ground truth"""
     print("=" * 60)
     print("Test Case 1: Simple interval censoring")
     print("=" * 60)
 
     # Create simple test data
-    n_samples = 5
     n_time_points = 10
     time_coordinates = np.linspace(0, 10, n_time_points)
 
@@ -117,46 +111,37 @@ def test_case_1_simple_interval_censoring():
     print(f"Right limits: {right_limits}")
     print(f"Prediction shape: {pred_survs.shape}")
 
-    try:
-        # Test IBS hinge with uncensored method
-        ibs_uncensored = ibs_hinge_ic(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            method="uncensored",
-        )
-        print(f"IBS Hinge (uncensored): {ibs_uncensored:.4f}")
+    # Test IBS hinge with uncensored method
+    ibs_uncensored = ibs_hinge_ic(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        method="uncensored",
+    )
+    print(f"IBS Hinge (uncensored): {ibs_uncensored:.4f}")
 
-        # Test IBS hinge with Tsouprou-marginal method
-        ibs_tsouprou = ibs_hinge_ic(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            train_left_limits=train_left_limits,
-            train_right_limits=train_right_limits,
-            method="Tsouprou-marginal",
-        )
-        print(f"IBS Hinge (Tsouprou-marginal): {ibs_tsouprou:.4f}")
+    # Test IBS hinge with Tsouprou-marginal method
+    ibs_tsouprou = ibs_hinge_ic(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+        method="Tsouprou-marginal",
+    )
+    print(f"IBS Hinge (Tsouprou-marginal): {ibs_tsouprou:.4f}")
 
-        # Test ignore uncertain version (now integrated into main function)
-        # Note: The uncensored method already ignores uncertain areas
-        print(f"IBS Hinge (method already ignores uncertain): {ibs_tsouprou:.4f}")
+    # Test ignore uncertain version (now integrated into main function)
+    # Note: The uncensored method already ignores uncertain areas
+    print(f"IBS Hinge (method already ignores uncertain): {ibs_tsouprou:.4f}")
 
-        print("✓ Test Case 1 passed")
-
-    except Exception as e:
-        print(f"✗ Test Case 1 failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+    print("✓ Test Case 1 passed")
 
 
 def test_case_2_evaluator_integration():
-    """
-    Test Case 2: Test integration with IntervalCenEvaluator
-    """
+    """Test Case 2: Test integration with IntervalCenEvaluator"""
     print("\n" + "=" * 60)
     print("Test Case 2: IntervalCenEvaluator integration")
     print("=" * 60)
@@ -194,50 +179,40 @@ def test_case_2_evaluator_integration():
     print(f"Left limits: {left_limits}")
     print(f"Right limits: {right_limits}")
 
-    try:
-        # Create evaluator
-        evaluator = IntervalCenEvaluator(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            train_left_limits=train_left_limits,
-            train_right_limits=train_right_limits,
-        )
+    # Create evaluator
+    evaluator = IntervalCenEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+    )
 
-        # Test IBS hinge method
-        ibs_result = evaluator.integrated_brier_score(method="Tsouprou-marginal")
-        print(f"IBS Hinge via evaluator: {ibs_result:.4f}")
+    # Test IBS hinge method
+    ibs_result = evaluator.integrated_brier_score(method="Tsouprou-marginal")
+    print(f"IBS Hinge via evaluator: {ibs_result:.4f}")
 
-        # Test with different integration method
-        ibs_simpson = evaluator.integrated_brier_score(
-            method="Tsouprou-marginal", integration_method="simpson"
-        )
-        print(f"IBS Hinge (Simpson): {ibs_simpson:.4f}")
+    # Test with different integration method
+    ibs_simpson = evaluator.integrated_brier_score(
+        method="Tsouprou-marginal", integration_method="simpson"
+    )
+    print(f"IBS Hinge (Simpson): {ibs_simpson:.4f}")
 
-        # Compare with regular Brier score at a specific time
-        brier_at_5 = evaluator.brier_score(target_time=5.0, method="Tsouprou-marginal")
-        print(f"Brier score at t=5.0: {brier_at_5:.4f}")
+    # Compare with regular Brier score at a specific time
+    brier_at_5 = evaluator.brier_score(target_time=5.0, method="Tsouprou-marginal")
+    print(f"Brier score at t=5.0: {brier_at_5:.4f}")
 
-        print("✓ Test Case 2 passed")
-
-    except Exception as e:
-        print(f"✗ Test Case 2 failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+    print("✓ Test Case 2 passed")
 
 
 def test_case_3_edge_cases():
-    """
-    Test Case 3: Edge cases and error handling
-    """
+    """Test Case 3: Edge cases and error handling"""
     print("\n" + "=" * 60)
     print("Test Case 3: Edge cases and error handling")
     print("=" * 60)
 
     # Test case with point observations (no censoring)
-    n_samples = 3
     n_time_points = 8
     time_coordinates = np.linspace(0, 8, n_time_points)
 
@@ -259,51 +234,41 @@ def test_case_3_edge_cases():
 
     print("Testing point observations (no censoring)...")
 
-    try:
-        evaluator = IntervalCenEvaluator(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            train_left_limits=train_left_limits,
-            train_right_limits=train_right_limits,
-        )
+    evaluator = IntervalCenEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+    )
 
-        # Should automatically use uncensored method
-        ibs_point = evaluator.integrated_brier_score()
-        print(f"IBS for point observations: {ibs_point:.4f}")
+    # Should automatically use uncensored method
+    ibs_point = evaluator.integrated_brier_score()
+    print(f"IBS for point observations: {ibs_point:.4f}")
 
-        print("✓ Point observations test passed")
-
-    except Exception as e:
-        print(f"✗ Point observations test failed: {e}")
+    print("✓ Point observations test passed")
 
     # Test case with very few time points
     print("\nTesting with minimal time points...")
-    try:
-        minimal_time = np.array([0, 5])
-        minimal_pred = np.array([[1.0, 0.5], [1.0, 0.3]])
-        minimal_left = np.array([2.0, 3.0])
-        minimal_right = np.array([4.0, 6.0])
+    minimal_time = np.array([0, 5])
+    minimal_pred = np.array([[1.0, 0.5], [1.0, 0.3]])
+    minimal_left = np.array([2.0, 3.0])
+    minimal_right = np.array([4.0, 6.0])
 
-        ibs_minimal = ibs_hinge_ic(
-            pred_survs=minimal_pred,
-            time_coordinates=minimal_time,
-            left_limits=minimal_left,
-            right_limits=minimal_right,
-            method="uncensored",
-        )
-        print(f"IBS with minimal time points: {ibs_minimal:.4f}")
-        print("✓ Minimal time points test passed")
-
-    except Exception as e:
-        print(f"✗ Minimal time points test failed: {e}")
+    ibs_minimal = ibs_hinge_ic(
+        pred_survs=minimal_pred,
+        time_coordinates=minimal_time,
+        left_limits=minimal_left,
+        right_limits=minimal_right,
+        method="uncensored",
+    )
+    print(f"IBS with minimal time points: {ibs_minimal:.4f}")
+    print("✓ Minimal time points test passed")
 
 
 def test_case_4_comparison_with_paper():
-    """
-    Test Case 4: Simulate scenario similar to the paper
-    """
+    """Test Case 4: Simulate scenario similar to the paper"""
     print("\n" + "=" * 60)
     print("Test Case 4: Paper-like scenario simulation")
     print("=" * 60)
@@ -355,61 +320,54 @@ def test_case_4_comparison_with_paper():
         f"Average interval width: {np.mean(right_limits[np.isfinite(right_limits)] - left_limits[np.isfinite(right_limits)]):.2f}"
     )
 
-    try:
-        # Test both IBS implementations
-        ibs_standard = ibs_hinge_ic(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            train_left_limits=train_left_limits,
-            train_right_limits=train_right_limits,
-            method="Tsouprou-marginal",
-        )
+    # Test both IBS implementations
+    ibs_standard = ibs_hinge_ic(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+        method="Tsouprou-marginal",
+    )
 
-        # Test with different method (uncensored ignores uncertain areas)
-        ibs_uncensored = ibs_hinge_ic(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            method="uncensored",
-        )
+    # Test with different method (uncensored ignores uncertain areas)
+    ibs_uncensored = ibs_hinge_ic(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        method="uncensored",
+    )
 
-        print(f"IBS Hinge (Tsouprou-marginal): {ibs_standard:.4f}")
-        print(f"IBS Hinge (uncensored - ignores uncertain): {ibs_uncensored:.4f}")
-        print(f"Difference: {abs(ibs_standard - ibs_uncensored):.4f}")
+    print(f"IBS Hinge (Tsouprou-marginal): {ibs_standard:.4f}")
+    print(f"IBS Hinge (uncensored - ignores uncertain): {ibs_uncensored:.4f}")
+    print(f"Difference: {abs(ibs_standard - ibs_uncensored):.4f}")
 
-        # Test with evaluator
-        evaluator = IntervalCenEvaluator(
-            pred_survs=pred_survs,
-            time_coordinates=time_coordinates,
-            left_limits=left_limits,
-            right_limits=right_limits,
-            train_left_limits=train_left_limits,
-            train_right_limits=train_right_limits,
-        )
+    # Test with evaluator
+    evaluator = IntervalCenEvaluator(
+        pred_survs=pred_survs,
+        time_coordinates=time_coordinates,
+        left_limits=left_limits,
+        right_limits=right_limits,
+        train_left_limits=train_left_limits,
+        train_right_limits=train_right_limits,
+    )
 
-        ibs_evaluator = evaluator.integrated_brier_score(method="Tsouprou-marginal")
-        print(f"IBS Hinge (via evaluator): {ibs_evaluator:.4f}")
+    ibs_evaluator = evaluator.integrated_brier_score(method="Tsouprou-marginal")
+    print(f"IBS Hinge (via evaluator): {ibs_evaluator:.4f}")
 
-        # Calculate some reference Brier scores at specific times
-        brier_early = evaluator.brier_score(target_time=5, method="Tsouprou-marginal")
-        brier_mid = evaluator.brier_score(target_time=10, method="Tsouprou-marginal")
-        brier_late = evaluator.brier_score(target_time=15, method="Tsouprou-marginal")
+    # Calculate some reference Brier scores at specific times
+    brier_early = evaluator.brier_score(target_time=5, method="Tsouprou-marginal")
+    brier_mid = evaluator.brier_score(target_time=10, method="Tsouprou-marginal")
+    brier_late = evaluator.brier_score(target_time=15, method="Tsouprou-marginal")
 
-        print(f"\nReference Brier scores:")
-        print(f"  t=5:  {brier_early:.4f}")
-        print(f"  t=10: {brier_mid:.4f}")
-        print(f"  t=15: {brier_late:.4f}")
+    print("\nReference Brier scores:")
+    print(f"  t=5:  {brier_early:.4f}")
+    print(f"  t=10: {brier_mid:.4f}")
+    print(f"  t=15: {brier_late:.4f}")
 
-        print("✓ Test Case 4 passed")
-
-    except Exception as e:
-        print(f"✗ Test Case 4 failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+    print("✓ Test Case 4 passed")
 
 
 if __name__ == "__main__":

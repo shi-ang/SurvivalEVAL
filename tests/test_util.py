@@ -125,7 +125,9 @@ def test_check_and_convert_reuses_cpu_torch_storage():
 @pytest.mark.parametrize("shape", [(8,), (2, 4), (2, 2, 2)])
 @pytest.mark.parametrize("copy", [False, True])
 def test_probability_validation_preserves_shape_and_storage(
-    dtype: type, shape: tuple[int, ...], copy: bool
+    dtype: type,
+    shape: tuple[int, ...],
+    copy: bool,
 ) -> None:
     values = np.linspace(0, 1, 16, dtype=dtype)[::2].reshape(shape)
     values.flags.writeable = False
@@ -145,7 +147,8 @@ def test_probability_validation_rejects_invalid_values(value: float) -> None:
 @pytest.mark.parametrize("competing_risks", [False, True])
 @pytest.mark.parametrize("copy", [False, True])
 def test_event_indicator_validation_without_times(
-    competing_risks: bool, copy: bool
+    competing_risks: bool,
+    copy: bool,
 ) -> None:
     values = np.array([0, 1, 2] if competing_risks else [0, 1, 1], dtype=np.int64)
     values.flags.writeable = False
@@ -163,7 +166,8 @@ def test_event_indicator_validation_without_times(
     "labels", [[-1, 0], [0, 0.5], [0, np.inf], [0, np.nan], [[0, 1]]]
 )
 def test_event_indicator_validation_rejects_invalid_labels(
-    labels: list, competing_risks: bool
+    labels: list,
+    competing_risks: bool,
 ) -> None:
     with pytest.raises(ValueError):
         check_and_convert_event_indicators(labels, competing_risks=competing_risks)
@@ -252,7 +256,10 @@ def test_predict_rmst_accumulates_float32_inputs_in_float64(interpolation):
     ],
 )
 def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
-    curves, time_coordinates, expected_curves, expected_times
+    curves,
+    time_coordinates,
+    expected_curves,
+    expected_times,
 ):
     aligned_curves, aligned_times = align_curve_and_time_coordinates(
         curves, time_coordinates
@@ -273,7 +280,9 @@ def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
     ],
 )
 def test_check_and_convert_event_data_validates_observed_times(
-    times, indicators, message
+    times,
+    indicators,
+    message,
 ):
     with pytest.raises(ValueError, match=message):
         check_and_convert_event_data(times, indicators)
@@ -338,7 +347,9 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     ],
 )
 def test_zero_padding_rejects_invalid_input_datatypes(
-    pred_curves, time_coordinates, message
+    pred_curves,
+    time_coordinates,
+    message,
 ):
     with pytest.raises(TypeError, match=message):
         zero_padding(pred_curves, time_coordinates)
@@ -410,7 +421,10 @@ def test_zero_padding_rejects_mixed_2d_grid_starts():
 @pytest.mark.parametrize("shared_grid", [True, False])
 @pytest.mark.parametrize("initial_value", [0.0, 1.0])
 def test_zero_padding_preserves_ranks_dtypes_and_readonly_inputs(
-    shape, dtype, shared_grid, initial_value
+    shape,
+    dtype,
+    shared_grid,
+    initial_value,
 ):
     # Noncontiguous inputs must also remain unchanged.
     curves = np.arange(np.prod(shape) * 2, dtype=dtype).reshape(*shape[:-1], 6)[
@@ -508,7 +522,10 @@ def test_zero_padding_rejects_fractional_initial_value_for_integer_curves():
     ],
 )
 def test_zero_padding_rejects_invalid_shapes_and_complex_arrays(
-    curves, times, error, match
+    curves,
+    times,
+    error,
+    match,
 ):
     with pytest.raises(error, match=match):
         zero_padding(curves, times)

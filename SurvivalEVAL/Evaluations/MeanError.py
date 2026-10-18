@@ -1,3 +1,4 @@
+# ruff: noqa: N999  # Public module name follows the package's naming convention.
 from __future__ import annotations
 
 import numpy as np
@@ -6,7 +7,6 @@ from tqdm import trange
 from SurvivalEVAL.Evaluations.util import (
     _inverse_censoring_weights,
     check_and_convert_event_data,
-    predict_rmst,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
@@ -26,47 +26,65 @@ def mean_error(
     weighted: bool = True,
     log_scale: bool = False,
     verbose: bool = False,
-    truncation_time=None,
+    truncation_time: float | None = None,
 ) -> float:
     """
     Calculate the mean absolute/squared error score for the predicted survival times.
 
     Parameters
     ----------
-    predicted_times: np.ndarray, shape = (n_samples, )
+    predicted_times : ndarray, shape = (n_samples, )
         Predicted survival times for the testing samples
-    event_times: np.ndarray, shape = (n_samples, )
+    event_times : ndarray, shape = (n_samples, )
         Actual event/censor time for the testing samples.
-    event_indicators: np.ndarray, shape = (n_samples, )
+    event_indicators : ndarray, shape = (n_samples, )
         Binary event indicators for the testing samples: 1 denotes an observed
         event and 0 denotes a censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples, )
+    train_event_times : ndarray, shape = (n_train_samples, )
         Actual event/censor time for the training samples.
-    train_event_indicators: np.ndarray, shape = (n_train_samples, )
+    train_event_indicators : ndarray, shape = (n_train_samples, )
         Binary event indicators for the training samples: 1 denotes an observed
         event and 0 denotes a censored observation.
-    error_type: string, default: "absolute"
+    error_type : str, default="absolute"
         Type of mean error to use. Options are "absolute" and "squared".
-    method: string, default: "Hinge"
+    method : str, default="Hinge"
         Method of handling censorship.
         Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
+        The MAE formulations of "IPCW-D", "IPCW-T", and "Pseudo_obs" are described
+        in Sections 3.4, 3.5, and 3.6 of [1]_, respectively.
         IPCW-D weights observed-event errors by 1/G(event_time-) from reverse KM
         fitted on training outcomes, with linear extrapolation beyond follow-up.
         Nonpositive or nonfinite contributing probabilities raise ValueError.
-    weighted: boolean, default: True
+    weighted : bool, default=True
         Whether to use weighting scheme for MAE.
         If true, each censored sample has confidence weight
         1 - S_KM(censoring time).
-    log_scale: boolean, default: False
+    log_scale : bool, default=False
         Whether to use log scale for the loss function.
-    verbose: boolean, default: False
+    verbose : bool, default=False
         Whether to show the progress bar.
-    truncated_time: float, default: None
-        the truncated time.
+    truncation_time : float | None
+        Optional upper limit for event-time errors in Margin, IPCW-T, IPCW-D, and Pseudo_obs calculations.
+        For the Margin method, see the L1-margin-truncated metric in [2]_.
 
     Returns
     -------
-    Value for the calculated mean error.
+    float
+        Mean absolute or squared prediction error under the selected censoring method.
+
+    References
+    ----------
+    .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+       Ranganath, R.; Henao, R.; Greiner, R. (2023).
+       "An Effective Meaningful Way to Evaluate Survival Models".
+       Proceedings of the 40th International Conference on Machine Learning,
+       Proceedings of Machine Learning Research, 202, 28244-28276.
+       https://proceedings.mlr.press/v202/qi23b.html
+    .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+       Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+       Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+       Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+       2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
     """
     error_type = error_type.lower()
     method = method.lower()
@@ -80,11 +98,12 @@ def mean_error(
             train_event_indicators = train_event_indicators.astype(bool, copy=False)
     n_test = event_times.size
 
-    if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"]:
-        if train_event_times is None or train_event_indicators is None:
-            raise ValueError(
-                f"If method is '{method}', training set values must be included."
-            )
+    if method in ["margin", "ipcw-t", "ipcw-d", "pseudo_obs"] and (
+        train_event_times is None or train_event_indicators is None
+    ):
+        raise ValueError(
+            f"If method is '{method}', training set values must be included."
+        )
 
     # IPCW-D only needs censoring survival, not event-survival areas or weights.
     if method in ["margin", "ipcw-t", "pseudo_obs"]:
@@ -300,371 +319,28 @@ def mean_error(
         )
 
 
-def mean_error_truncated(
-    pred_rmst: np.ndarray,
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-    train_event_times: np.ndarray | None = None,
-    train_event_indicators: np.ndarray | None = None,
-    truncation_time: float | None = None,
-    error_type: str = "squared",
-    method: str = "Pseudo_obs",
-    log_scale: bool = False,
-    interpolation: str = "None",
-    verbose: bool = False,
-) -> float:
-    """
-    Truncated mean error.
-    It is calculated as the mean error between the predicted RMST and the true RMST up to the truncation time.
-    The true RMST is calculated using Pseudo-observation method.
-
-    Parameters
-    ----------
-    pred_rmst: np.ndarray, (n_samples,)
-        Predicted RMST values for each sample.
-    event_times: np.ndarray, (n_samples,)
-        Actual event/censor time for each sample.
-    event_indicators: np.ndarray, (n_samples,)
-        Binary indicators of censoring for each sample.
-    train_event_times: np.ndarray, shape = (n_train_samples, )
-        Actual event/censor time for the training samples.
-    train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples.
-    truncation_time: float = None
-        The truncation time up to which RMST is calculated.
-        If None, use the maximum event time in the training set.
-    error_type: string, default: "absolute"
-        Type of mean error to use. Options are "absolute" and "squared".
-    method: string, default: "Pseudo_obs"
-        Method of handling censorship. Only "Pseudo_obs" is supported for truncated mean error for now.
-    log_scale: boolean, default: False
-        Whether to use log scale for the mean error.
-    interpolation: str, default: "None"
-        The monotonic cubic interpolation method for RMST calculation. One of ['None', 'Linear', 'Pchip']. Default: 'None'.
-        If 'None', no interpolation is applied. Use step function to calculate the area under the curve.
-        If 'Linear', use the interp1d method from scipy.interpolate.
-        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-    verbose: boolean, default: False
-        Whether to print detailed logs during the computation.
-
-    Returns
-    -------
-    mean_error: float
-        Mean error value.
-    """
-    event_indicators = event_indicators.astype(bool, copy=False)
-    n_test = event_times.size
-    if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool, copy=False)
-        n_train = train_event_times.size
-
-    if truncation_time is None:
-        truncation_time = max(train_event_times)
-    assert (
-        0 < truncation_time <= max(train_event_times)
-    ), "truncation_time must be in (0, max training event time]"
-
-    # set the error function
-    if error_type == "absolute":
-        error_func = np.abs
-    elif error_type == "squared":
-        error_func = np.square
-    else:
-        raise TypeError(
-            "Please enter one of 'absolute' or 'squared' for calculating error."
-        )
-
-    # this is more like the estimated "true" RMST for each test sample
-    true_rmst = np.empty(shape=n_test)
-
-    if method in ["Pseudo_obs"]:
-        if train_event_times is None or train_event_indicators is None:
-            raise ValueError(
-                f"If method is '{method}', training set values must be included."
-            )
-
-        km_model = KaplanMeier(train_event_times, train_event_indicators)
-
-        event_counts, population_counts = (
-            km_model.events.copy(),
-            km_model.population_count.copy(),
-        )
-        times = km_model.survival_times.copy()
-        probs = km_model.survival_probabilities.copy()
-
-        # if the first time point is not 0, we need to add a time point at 0 with survival probability 1
-        if times[0] > 0:
-            times = np.insert(times, 0, 0.0)
-            probs = np.insert(probs, 0, 1.0)
-            population_counts = np.insert(population_counts, 0, population_counts[0])
-            event_counts = np.insert(event_counts, 0, 0)
-
-        # if truncation_time < times[-1], we need to stop at truncation_time, so that the last time point is truncation_time (and two arrays stop at the truncation time)
-        if truncation_time < times[-1]:
-            # index of the last time <= truncation_time
-            trunc_idx = np.searchsorted(times, truncation_time, side="right")
-            if np.isclose(times[trunc_idx - 1], truncation_time):
-                times = times[:trunc_idx]
-                probs = probs[:trunc_idx]
-                population_counts = population_counts[:trunc_idx]
-                event_counts = event_counts[:trunc_idx]
-            else:
-                times = np.insert(times[:trunc_idx], trunc_idx, truncation_time)
-                probs = np.insert(probs[:trunc_idx], trunc_idx, probs[trunc_idx - 1])
-                population_counts = np.insert(
-                    population_counts[:trunc_idx],
-                    trunc_idx,
-                    population_counts[trunc_idx - 1],
-                )
-                event_counts = np.insert(event_counts[:trunc_idx], trunc_idx, 0)
-        sub_rmst = predict_rmst(probs.copy(), times.copy(), interpolation=interpolation)
-
-        # use the idea of dynamic programming to calculate the multiplier of the KM estimator in advances.
-        # if we add a new time point to the KM curve,
-        # the multiplier before the new time point will be 1 - event_counts / (population_counts + 1),
-        # the multiplier at the new time point will be 1 - 1 / population_counts[insert_index - 1],
-        # and the multiplier after the new time point will be the same as before.
-        multiplier = 1 - event_counts / population_counts
-        multiplier_total = 1 - event_counts / (population_counts + 1)
-
-        for i in trange(
-            n_test,
-            desc="Calculating surrogate 'true' RMST for Pseudo_obs",
-            disable=not verbose,
-        ):
-            total_multiplier = multiplier.copy()
-            ti = event_times[i]
-            ei = event_indicators[i]
-            insert_idx = np.searchsorted(times, ti, side="right")
-            total_multiplier[:insert_idx] = multiplier_total[:insert_idx]
-
-            # if the event time is before truncation time, we need to add the new time point to the KM curve
-            has_existing_time = insert_idx > 0 and np.isclose(times[insert_idx - 1], ti)
-
-            if has_existing_time:
-                # case 1: event time already exists in the grid
-                total_times = times.copy()
-                insert_idx -= 1  # index of the existing time ti, because we use side="right" in searchsorted
-
-                n_events = event_counts[insert_idx] + (1 if ei else 0)
-                # Risk set at this time gets +1 subject
-                denom = population_counts[insert_idx] + 1
-                total_multiplier[insert_idx] = 1 - n_events / denom
-            elif insert_idx < len(times):
-                # Case 2: new time point strictly inside the existing time range
-                # (t is strictly between times[insert_index-1] and times[insert_index])
-                total_times = np.insert(times, insert_idx, ti)
-
-                n_events = 1 if ei else 0
-                denom = population_counts[insert_idx] + 1
-                new_factor = 1 - n_events / denom
-                total_multiplier = np.insert(total_multiplier, insert_idx, new_factor)
-                # total_multiplier = np.insert(total_multiplier, insert_index, 1 - n_events / (population_counts[insert_index] + 1))
-            else:
-                # Case 3: insert_index == len(times)
-                if np.isclose(ti, times[-1]):
-                    # Treat as an event at the last existing time
-                    total_times = times.copy()
-                    idx = len(times) - 1
-                    n_events = event_counts[idx] + (1 if ei else 0)
-                    denom = population_counts[idx] + 1
-                    total_multiplier[idx] = 1 - n_events / denom
-                else:
-                    # ignoring these events > truncation_time
-                    total_times = times.copy()
-
-            total_surv_prob = np.cumprod(total_multiplier)
-            total_rmst = predict_rmst(
-                total_surv_prob, total_times, interpolation=interpolation
-            )
-            true_rmst[i] = (n_train + 1) * total_rmst - n_train * sub_rmst
-    else:
-        raise ValueError(
-            "Method must be 'Pseudo_obs' for truncated mean error. "
-            f"Got '{method}' instead."
-        )
-
-    # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
-    # TODO: get a sense of how often this happens in real data. And decide whether we need to handle this case by clipping the values.
-    # THIS MUST BE REMOVED BEFORE THE FINAL PUBLIC RELEASE.
-    # if true_rmst.min() < 0 or true_rmst.max() > truncation_time:
-    #     invalid_idx = np.where((true_rmst < 0) | (true_rmst > truncation_time))[0]
-    #     for trunc_idx in invalid_idx:
-    #         print(f"Warning: Surrogate RMST out of bounds at index {trunc_idx}: true RMST = {true_rmst[trunc_idx]}, truncation_time = {truncation_time}")
-    true_rmst = np.clip(true_rmst, a_min=0.0, a_max=truncation_time)
-
-    if log_scale:
-        errors = np.log(true_rmst) - np.log(pred_rmst)
-    else:
-        errors = true_rmst - pred_rmst
-
-    return float(np.mean(error_func(errors), dtype=float))
-
-
-def mean_error_truncated_slow(
-    pred_rmst: np.ndarray,
-    event_times: np.ndarray,
-    event_indicators: np.ndarray,
-    train_event_times: np.ndarray | None = None,
-    train_event_indicators: np.ndarray | None = None,
-    truncation_time: float | None = None,
-    error_type: str = "squared",
-    method: str = "Pseudo_obs",
-    log_scale: bool = False,
-    interpolation: str = "None",
-    verbose: bool = False,
-) -> float:
-    """
-    Truncated mean error.
-    It is calculated as the mean error between the predicted RMST and the true RMST up to the truncation time.
-    The true RMST is calculated using Pseudo-observation method.
-
-    Parameters
-    ----------
-    pred_rmst: np.ndarray, (n_samples,)
-        Predicted RMST values for each sample.
-    event_times: np.ndarray, (n_samples,)
-        Actual event/censor time for each sample.
-    event_indicators: np.ndarray, (n_samples,)
-        Binary indicators of censoring for each sample.
-    train_event_times: np.ndarray, shape = (n_train_samples, )
-        Actual event/censor time for the training samples.
-    train_event_indicators: np.ndarray, shape = (n_train_samples, )
-        Binary indicators of censoring for the training samples.
-    truncation_time: float = None
-        The truncation time up to which RMST is calculated.
-        If None, use the maximum event time in the training set.
-    error_type: string, default: "absolute"
-        Type of mean error to use. Options are "absolute" and "squared".
-    method: string, default: "Pseudo_obs"
-        Method of handling censorship. Only "Pseudo_obs" is supported for truncated mean error for now.
-    log_scale: boolean, default: False
-        Whether to use log scale for the mean error.
-    interpolation: str, default: "None"
-        The monotonic cubic interpolation method for RMST calculation. One of ['None', 'Linear', 'Pchip']. Default: 'None'.
-        If 'None', no interpolation is applied. Use step function to calculate the area under the curve.
-        If 'Linear', use the interp1d method from scipy.interpolate.
-        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
-    verbose: boolean, default: False
-        Whether to print detailed logs during the computation.
-
-    Returns
-    -------
-    mean_error: float
-        Mean error value.
-    """
-    event_indicators = event_indicators.astype(bool, copy=False)
-    n_test = event_times.size
-    if train_event_indicators is not None:
-        train_event_indicators = train_event_indicators.astype(bool, copy=False)
-        n_train = train_event_times.size
-
-    if truncation_time is None:
-        truncation_time = max(train_event_times)
-
-    # set the error function
-    if error_type == "absolute":
-        error_func = np.abs
-    elif error_type == "squared":
-        error_func = np.square
-    else:
-        raise TypeError(
-            "Please enter one of 'absolute' or 'squared' for calculating error."
-        )
-
-    # this is more like the estimated "true" RMST for each test sample
-    true_rmst = np.empty(shape=n_test)
-
-    if method in ["Pseudo_obs"]:
-        if train_event_times is None or train_event_indicators is None:
-            raise ValueError(
-                f"If method is '{method}', training set values must be included."
-            )
-
-        km_model = KaplanMeier(train_event_times, train_event_indicators)
-
-        times = km_model.survival_times.copy()
-        probs = km_model.survival_probabilities.copy()
-
-        # if the first time point is not 0, we need to add a time point at 0 with survival probability 1
-        if times[0] > 0:
-            times = np.insert(times, 0, 0.0)
-            probs = np.insert(probs, 0, 1.0)
-
-        # if truncation_time < times[-1], we need to stop at truncation_time, so that the last time point is truncation_time (and two arrays stop at the truncation time)
-        if truncation_time < times[-1]:
-            trunc_idx = np.searchsorted(times, truncation_time, side="right")
-            if np.isclose(times[trunc_idx - 1], truncation_time):
-                times = times[:trunc_idx]
-                probs = probs[:trunc_idx]
-            else:
-                times = np.insert(times[:trunc_idx], trunc_idx, truncation_time)
-                probs = np.insert(probs[:trunc_idx], trunc_idx, probs[trunc_idx - 1])
-        sub_rmst = predict_rmst(probs.copy(), times.copy(), interpolation=interpolation)
-
-        for i in trange(
-            n_test,
-            desc="Calculating surrogate 'true' RMST for Pseudo_obs",
-            disable=not verbose,
-        ):
-            added_event_times = np.append(train_event_times, event_times[i])
-            added_event_indicators = np.append(
-                train_event_indicators, event_indicators[i]
-            )
-            total_km_model = KaplanMeier(added_event_times, added_event_indicators)
-            total_surv_prob = total_km_model.survival_probabilities.copy()
-            total_times = total_km_model.survival_times.copy()
-
-            if total_times[0] > 0:
-                total_times = np.insert(total_times, 0, 0.0)
-                total_surv_prob = np.insert(total_surv_prob, 0, 1.0)
-
-            if truncation_time < total_times[-1]:
-                trunc_idx = np.searchsorted(total_times, truncation_time, side="right")
-                if np.isclose(total_times[trunc_idx - 1], truncation_time):
-                    total_times = total_times[:trunc_idx]
-                    total_surv_prob = total_surv_prob[:trunc_idx]
-                else:
-                    total_times = np.insert(
-                        total_times[:trunc_idx], trunc_idx, truncation_time
-                    )
-                    total_surv_prob = np.insert(
-                        total_surv_prob[:trunc_idx],
-                        trunc_idx,
-                        total_surv_prob[trunc_idx - 1],
-                    )
-            total_rmst = predict_rmst(
-                total_surv_prob, total_times, interpolation=interpolation
-            )
-            true_rmst[i] = (n_train + 1) * total_rmst - n_train * sub_rmst
-    else:
-        raise ValueError(
-            "Method must be 'Pseudo_obs' for truncated mean error. "
-            f"Got '{method}' instead."
-        )
-
-    # For experimental purpose, I want to print if the surrogate RMST is outside the possible range [0, truncation_time], print the index and the values.
-    # TODO: get a sense of how often this happens in real data. And decide whether we need to handle this case by clipping the values.
-    # THIS MUST BE REMOVED BEFORE THE FINAL PUBLIC RELEASE.
-    # if true_rmst.min() < 0 or true_rmst.max() > truncation_time:
-    #     invalid_idx = np.where((true_rmst < 0) | (true_rmst > truncation_time))[0]
-    #     for idx in invalid_idx:
-    #         print(f"Warning: Surrogate RMST out of bounds at index {idx}: true RMST = {true_rmst[idx]}, truncation_time = {truncation_time}")
-    true_rmst = np.clip(true_rmst, a_min=0.0, a_max=truncation_time)
-
-    if log_scale:
-        errors = np.log(true_rmst) - np.log(pred_rmst)
-    else:
-        errors = true_rmst - pred_rmst
-
-    return float(np.mean(error_func(errors), dtype=float))
-
-
 def _prepare_interval_arrays(
     left_bounds: np.ndarray,
     right_bounds: np.ndarray,
     predicted_times: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convert interval bounds and point predictions to matching floating-point arrays.
+
+    Parameters
+    ----------
+    left_bounds : ndarray
+        Left observation bounds, one per sample.
+    right_bounds : ndarray
+        Right observation bounds, using positive infinity for right censoring.
+    predicted_times : ndarray
+        Predicted event times, one per sample.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray, ndarray]
+        Floating-point left bounds, right bounds, and predictions with identical shapes.
+    """
     L = np.asarray(left_bounds, float)
     R = np.asarray(right_bounds, float)
     t_hat = np.asarray(predicted_times, float)
@@ -679,27 +355,28 @@ def _compute_inside_mask(
     predicted: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute mask for predictions inside their intervals. Also return mask for right-censored intervals.
-    Parameters
+    Identify point predictions inside their observation intervals.
 
-    Inside test:
-    - general finite-interval: (L, R]  -> (t_hat > L) & (t_hat <= R)
-    - right-censored:          (L, +inf) -> t_hat > L
-    - exact-interval (L==R): treat as {R}: |t_hat - R| <= atol
+    Parameters
     ----------
-    left: np.ndarray, (n_samples,)
-        Left limits of the interval-censored data.
-    right: np.ndarray, (n_samples,)
-        Right limits of the interval-censored data (use np.inf for right-censor).
-    predicted: np.ndarray, (n_samples,)
-        Your point predictions (e.g., median predicted times, mean predicted times, etc).
+    left : ndarray, shape (n_samples,)
+        Left observation bounds.
+    right : ndarray, shape (n_samples,)
+        Right observation bounds; use infinity for right censoring.
+    predicted : ndarray, shape (n_samples,)
+        Predicted event times.
 
     Returns
     -------
-    inside: np.ndarray, (n_samples,)
+    inside : ndarray, (n_samples,)
         Boolean mask for predictions inside their intervals.
-    is_right_cens: np.ndarray, (n_samples,)
+    is_right_cens : ndarray, (n_samples,)
         Boolean mask for right-censored intervals.
+
+    Notes
+    -----
+    Finite intervals use (left, right]; right-censored intervals use (left, infinity).
+    Exact events (left == right) use equality within the function's absolute tolerance.
     """
     is_right_cens = np.isinf(right)
     is_exact = (~is_right_cens) & (left == right)
@@ -721,24 +398,27 @@ def inclusion_rate(
     Inclusion rate for interval-censored data: proportion of predictions inside their intervals.
 
     This is similar to p_out but reports the complement (1 - p_out).
-    p_out is proposed in [1].
+    p_out is proposed in [1]_.
 
     Parameters
     ----------
-    left_bounds: np.ndarray, (n_samples,)
+    left_bounds : ndarray, (n_samples,)
         Left limits of the interval-censored data.
-    right_bounds: np.ndarray, (n_samples,)
+    right_bounds : ndarray, (n_samples,)
         Right limits of the interval-censored data (use np.inf for right-censor).
-    predicted_times: np.ndarray, (n_samples,)
+    predicted_times : ndarray, (n_samples,)
         Your point predictions (e.g., median predicted times, mean predicted times, etc).
 
     Returns
     -------
-    inclusion_rate: float
+    inclusion_rate : float
         Proportion of samples with predicted times inside their intervals.
+
     References
     ----------
-    [1] Avati et al., "Countdown regression: sharp and calibrated survival predictions", UAI 2020.
+    .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://proceedings.mlr.press/v115/avati20a.html
     """
     L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
     inside, _ = _compute_inside_mask(L, R, t_hat)
@@ -753,34 +433,36 @@ def mean_error_ic(
     log_scale: bool = False,
 ) -> float:
     """
-    Mean error for interval-censored data. It is a one-sided mean error that only penalizes predictions
-    outside the interval-censored data.
-    This is proposed in [1] as the hinge loss for interval-censored data.
-    This is later reporposed by [2] as the `d_out` metric.
+    Calculate mean prediction error outside interval-censored observation bounds.
+
+    The hinge loss for interval-censored targets follows [1]_; [2]_ uses this as the d_out metric.
 
     Parameters
     ----------
-    left_bounds: np.ndarray, (n_samples,)
+    left_bounds : ndarray, (n_samples,)
         Left limits of the interval-censored data.
-    right_bounds: np.ndarray, (n_samples,)
+    right_bounds : ndarray, (n_samples,)
         Right limits of the interval-censored data (use np.inf for right-censor).
-    predicted_times: np.ndarray, (n_samples,)
+    predicted_times : ndarray, (n_samples,)
         Your point predictions (e.g., median predicted times, mean predicted times, etc).
-    error_type: string, default: "absolute"
+    error_type : str, default="absolute"
         Type of mean error to use. Options are "absolute" and "squared".
-    log_scale: boolean, default: False
+    log_scale : bool, default=False
         Whether to use log scale for the loss function.
 
     Returns
     -------
-    mean_error: float
+    mean_error : float
         Mean error value.
 
     References
     ----------
-    [1] Shivaswamy et al., "A support vector approach to censored targets", ICDM 2007.
-    [2] Avati et al., "Countdown regression: sharp and calibrated survival predictions", UAI 2020.
-
+    .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+       Targets". ICDM, 655-660.
+       https://research.google/pubs/a-support-vector-approach-to-censored-targets/
+    .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://proceedings.mlr.press/v115/avati20a.html
     """
     L, R, t_hat = _prepare_interval_arrays(left_bounds, right_bounds, predicted_times)
 
@@ -814,367 +496,3 @@ def mean_error_ic(
     distances = np.minimum(np.abs(t_hat[outside] - L[outside]), np.abs(error_to_right))
     errors[outside] = error_func(distances)
     return float(np.mean(errors, dtype=float))
-
-
-if __name__ == "__main__":
-    # Test the functions
-    train_t = np.array(
-        [
-            1,
-            2,
-            3,
-            4,
-            5,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            18,
-            19,
-            20,
-            21,
-            22,
-            26,
-            27,
-            28,
-            29,
-            30,
-            31,
-            32,
-            33,
-            34,
-            60,
-            61,
-            62,
-            63,
-            64,
-            65,
-            66,
-            67,
-            74,
-            75,
-            79,
-            80,
-            81,
-            82,
-            83,
-            84,
-            85,
-            86,
-            87,
-            88,
-            89,
-            90,
-            91,
-            92,
-            93,
-            98,
-            99,
-            100,
-            101,
-            102,
-            103,
-            104,
-            105,
-            106,
-            107,
-            108,
-            109,
-            110,
-            111,
-            117,
-            118,
-            119,
-            120,
-            120,
-            120,
-            121,
-            121,
-            124,
-            125,
-            126,
-            127,
-            128,
-            129,
-            136,
-            137,
-            138,
-            139,
-            140,
-            141,
-            142,
-            143,
-            144,
-            145,
-            146,
-            147,
-            148,
-            149,
-            155,
-            156,
-            157,
-            158,
-            159,
-            161,
-            182,
-            183,
-            186,
-            190,
-            191,
-            192,
-            192,
-            192,
-            193,
-            194,
-            195,
-            196,
-            197,
-            198,
-            199,
-            200,
-            201,
-            202,
-            203,
-            204,
-            202,
-            203,
-            204,
-            202,
-            203,
-            204,
-            212,
-            213,
-            214,
-            215,
-            216,
-            217,
-            222,
-            223,
-            224,
-        ]
-    )
-    train_e = np.array(
-        [
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            1,
-            0,
-            1,
-            1,
-            0,
-            0,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            1,
-            0,
-            0,
-            1,
-            1,
-            0,
-            1,
-            1,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ]
-    )
-    train_t = np.array([20, 97, 150, 200, 210])
-    train_e = np.array([1, 1, 0, 1, 1])
-    t = np.array(
-        [
-            5,
-            10,
-            19,
-            31,
-            43,
-            59,
-            63,
-            75,
-            97,
-            113,
-            134,
-            150,
-            163,
-            176,
-            182,
-            195,
-            200,
-            210,
-            220,
-        ]
-    )
-    e = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0])
-    predict_time = np.array(
-        [
-            18,
-            19,
-            5,
-            12,
-            75,
-            100,
-            120,
-            85,
-            36,
-            95,
-            170,
-            41,
-            200,
-            210,
-            260,
-            86,
-            100,
-            120,
-            140,
-        ]
-    )
-    # "Margin", "IPCW-T", "IPCW-D", "Pseudo_obs"
-    # score = mean_error(
-    #     predict_time,
-    #     t,
-    #     e,
-    #     train_t,
-    #     train_e,
-    #     method="Pseudo_obs",
-    #     verbose=True,
-    #     truncation_time=100,
-    # )
-    score_1 = mean_error_truncated(
-        predict_time,
-        t,
-        e,
-        train_t,
-        train_e,
-        truncation_time=200,
-        method="Pseudo_obs",
-        verbose=True,
-    )
-    score_2 = mean_error_truncated_slow(
-        predict_time,
-        t,
-        e,
-        train_t,
-        train_e,
-        truncation_time=200,
-        method="Pseudo_obs",
-        verbose=True,
-    )
-    print(np.sqrt(score_1))
-    print(np.sqrt(score_2))

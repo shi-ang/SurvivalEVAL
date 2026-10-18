@@ -7,24 +7,29 @@ from scipy.stats import kstwobign
 
 
 def discrepancy_to_uniform(
-    x: np.ndarray, cdf: np.ndarray, x_support: tuple[float, float] | None = None
+    x: np.ndarray,
+    cdf: np.ndarray,
+    x_support: tuple[float, float] | None = None,
 ) -> float:
     """
     Compute the Kolmogorov-Smirnov (KS) statistic for one-sample test against uniform distribution.
+
     The KS statistic is defined as:
         D_n = max|F_n(x) - F(x)|,
     where F_n(x) is the empirical CDF and F(x) is the CDF of the uniform distribution.
+
     Parameters
     ----------
-    x: np.ndarray
+    x : ndarray
         The support points of the empirical CDF.
-    cdf: np.ndarray
+    cdf : ndarray
         The values of the empirical CDF at the support points.
-    x_support: tuple[float, float] | None
+    x_support : tuple[float, float] | None
         The support points of the uniform distribution. If None, it is assumed to be [0, 1].
+
     Returns
     -------
-    D_n: float
+    D_n : float
         The KS statistic.
     """
     # sanity check
@@ -55,6 +60,7 @@ def discrepancy_to_uniform(
 def ks_pvalue(D_n: float, n: int) -> float:
     """
     Compute asymptotic KS one-sample p-value using SciPy's Kolmogorov distribution.
+
     This function has the same behavior as the last half part of
     scipy.stats.kstest(method='asymp') for one-sample KS test.
 
@@ -62,6 +68,18 @@ def ks_pvalue(D_n: float, n: int) -> float:
 
     The reason we do not use 'exact' method from scipy.stats.kstest is that it assumes continuous distribution,
     while in our case, the distribution estimated by empirical estimator is discrete.
+
+    Parameters
+    ----------
+    D_n : float
+        Non-negative Kolmogorov-Smirnov discrepancy statistic.
+    n : int
+        Number of observations used to compute the discrepancy.
+
+    Returns
+    -------
+    float
+        Asymptotic one-sample Kolmogorov-Smirnov p-value.
     """
     lambda_n = np.sqrt(n) * D_n
     # Survival function (1 - CDF) gives the p-value directly

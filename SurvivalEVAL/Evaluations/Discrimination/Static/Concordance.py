@@ -45,37 +45,37 @@ def concordance(
 
     Parameters
     ----------
-    predicted_times: np.ndarray, shape = (n_samples,)
+    predicted_times : ndarray, shape = (n_samples,)
         One predicted time per subject. Infinite predictions are allowed to
         represent survival beyond the model horizon; NaN is invalid.
-    event_times: np.ndarray, shape = (n_samples,)
+    event_times : ndarray, shape = (n_samples,)
         Finite, non-negative observed event or censoring times.
-    event_indicators: np.ndarray, shape = (n_samples,)
+    event_indicators : ndarray, shape = (n_samples,)
         Binary event indicators: 1 denotes an observed event and 0 denotes a
         censored observation.
-    train_event_times: np.ndarray, shape = (n_train_samples,), optional
+    train_event_times : ndarray, shape = (n_train_samples,), optional
         The true survival times of the training set. Required for "Uno",
         "IPCW", and "Margin".
-    train_event_indicators: np.ndarray, shape = (n_train_samples,), optional
+    train_event_indicators : ndarray, shape = (n_train_samples,), optional
         Binary training-set event indicators: 1 denotes an observed event and
         0 denotes a censored observation. Required for "Uno", "IPCW", and
         "Margin".
-    method: str, optional (default="Harrell")
+    method : str, optional, default="Harrell"
         A string indicating the method for constructing the pairs of samples.
         Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
         "Harrell": comparable pairs are anchored by samples with observed
         events. If sample i has an observed event at time t_i, it is compared
-        with samples whose observed event/censoring time is greater than t_i.
+        with samples whose observed event/censoring time is greater than t_i [1]_.
         "Naive": alias of "Harrell".
         "Uno": Harrell-style comparable pairs weighted by inverse probability
-        of censoring weights from the training data, using 1/G(anchor_time-)^2.
+        of censoring weights from the training data, using 1/G(anchor_time-)^2 [2]_.
         Reverse KM retains its linear tail beyond training follow-up; required
         censoring probabilities must be finite and positive.
         "IPCW": alias of "Uno".
         "Margin": the pairs are constructed between all samples. A best-guess
         time for the censored samples will be calculated and used to construct
-        the pairs.
-    ties: str, optional (default="Risk")
+        the pairs; see Appendix B.3.1 of [3]_.
+    ties : str, optional, default="Risk"
         A string indicating the way ties should be handled.
         Options: "None", "Time", "Risk" (default), or "All"
         "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -84,19 +84,35 @@ def concordance(
         "All" includes all ties.
         Note the concordance calculation is given by
         (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-    tau: float, optional (default=None)
+    tau : float, optional, default=None
         Finite, non-negative truncation time. If provided, only pairs whose effective earlier or
         anchor time is strictly before ``tau`` are counted. If None, no
-        truncation is applied.
+        truncation is applied. For truncated IPCW concordance, see [2]_.
 
     Returns
     -------
-    c_index: float
+    c_index : float
         The concordance index.
-    num_concordant_pairs: float
+    num_concordant_pairs : float
         The number of concordant pairs.
-    num_total_pairs: float
+    num_total_pairs : float
         The number of total pairs.
+
+    References
+    ----------
+    .. [1] Harrell, F. E., Jr.; Lee, K. L.; Mark, D. B. (1996).
+       "Multivariable prognostic models: issues in developing models, evaluating
+       assumptions and adequacy, and measuring and reducing errors".
+       Statistics in Medicine, 15(4), 361-387.
+       https://doi.org/10.1002/(SICI)1097-0258(19960229)15:4%3C361::AID-SIM168%3E3.0.CO;2-4
+    .. [2] Uno, H.; Cai, T.; Pencina, M. J.; D'Agostino, R. B.; Wei, L. J. (2011).
+       "On the C-statistics for evaluating overall adequacy of risk prediction
+       procedures with censored survival data". Statistics in Medicine,
+       30(10), 1105-1117. https://doi.org/10.1002/sim.4154
+    .. [3] Kumar, N.; Qi, S.-A.; Kuan, L.-H.; Sun, W.; Zhang, J.; Greiner, R. (2022).
+       "Learning accurate personalized survival models for predicting hospital
+       discharge and mortality of COVID-19 patients". Scientific Reports,
+       12, 4472. https://doi.org/10.1038/s41598-022-08601-6
     """
     predicted_times = check_and_convert(predicted_times)
     event_times, event_indicators = check_and_convert_event_data(
@@ -189,7 +205,8 @@ def concordance_cr_per_event(
     tau: float | None = None,
     event_of_interest: int = 1,
 ) -> tuple[float, float, float]:
-    """Calculate concordance for one cause in the presence of competing risks.
+    """
+    Calculate concordance for one cause in the presence of competing risks.
 
     Parameters
     ----------
@@ -209,7 +226,7 @@ def concordance_cr_per_event(
     method : {"Naive", "IPCW"}, default="Naive"
         Naive uses unit pair weights. IPCW uses reverse Kaplan-Meier
         censoring survival G from the training data: weight 1/G(T_i-)^2 for
-        type A pairs and 1/(G(T_i-) G(T_j-)) for type B pairs.
+        type A pairs and 1/(G(T_i-) G(T_j-)) for type B pairs [1]_.
     control_definition : {"NotCase", "EventFree"}, default="NotCase"
         NotCase includes competing events before or at each anchor time as
         controls. EventFree excludes them. Both include subjects observed
@@ -245,7 +262,7 @@ def concordance_cr_per_event(
     of the prediction horizon used to compute the supplied risks.
 
     NotCase uses the Wolbers pair definition implemented in hazardous. EventFree
-    uses the alternative definition in Section 2.2 of Wolbers et al. (2014).
+    uses the alternative definition in Section 2.2 of [1]_.
     The array API accepts precomputed scores rather than interpolating CIF
     curves. Truncation is strict (< tau), whereas hazardous includes anchors
     at tau. Time/All additionally support selected-cause time ties according
@@ -254,13 +271,16 @@ def concordance_cr_per_event(
     IPCW assumes independent censoring for the marginal censoring estimator.
     As in ``concordance``, evaluate left-limit G(t-) with the events-first
     convention for training ties, retaining linear tail extrapolation beyond follow-up.
-    Nonpositive or nonfinite G at a contributing observation raises ValueError; excluded anchors and unused comparators do not require G.
+    Nonpositive or nonfinite G at a contributing observation raises ValueError;
+    excluded anchors and unused comparators do not require G.
     Counting takes O(n log n) time and O(n) memory without constructing pairs.
+    The method is described in [1]_.
 
     References
     ----------
-    Wolbers et al. (2014), "Concordance for prognostic models with competing
-    risks", https://doi.org/10.1093/biostatistics/kxt059
+    .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
+       Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
+       Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
     """
     risks = check_and_convert(predicted_risks)
     times, events = check_and_convert_event_data(
@@ -310,7 +330,10 @@ def concordance_cr(
     reduction: str = "mean",
     return_details: bool = False,
 ) -> float | tuple[float, dict]:
-    """Summarize competing-risks concordance across all predicted causes.
+    """
+    Summarize competing-risks concordance across all predicted causes.
+
+    The per-cause concordance measures are defined in [1]_.
 
     Parameters
     ----------
@@ -351,6 +374,10 @@ def concordance_cr(
     details : dict, optional
         Per-cause scores and counts after applying the tie policy.
 
+    See Also
+    --------
+    concordance_cr_per_event : Pair definition, weighting and assumptions.
+
     Notes
     -----
     This is a summary of the event-specific C-indexes. The mean is NaN
@@ -360,9 +387,11 @@ def concordance_cr(
     Every predicted cause is included in the details, even if unobserved or
     excluded by tau. The IPCW censoring model is fitted once for all causes.
 
-    See Also
-    --------
-    concordance_cr_per_event : Pair definition, weighting and assumptions.
+    References
+    ----------
+    .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
+       Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
+       Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
     """
     risks = check_and_convert(predicted_risks)
     times, events = check_and_convert_event_data(
@@ -420,11 +449,28 @@ def _cr_censoring_survival(
     train_event_indicators: np.ndarray | None,
     method: str,
 ) -> np.ndarray | None:
-    """Validate the method and return G(t-) for IPCW, or None for Naive.
+    """
+    Validate the method and return G(t-) for IPCW, or None for Naive.
 
     Fit reverse Kaplan-Meier on validated training outcomes, treating all
     positive cause labels as observed events. Return censoring survival at
     each test event time; the counter checks positivity only where needed.
+
+    Parameters
+    ----------
+    event_times : ndarray
+        Observed event or censoring times, one per sample.
+    train_event_times : ndarray | None
+        Training event or censoring times used to estimate the censoring distribution.
+    train_event_indicators : ndarray | None
+        Training status labels, with 0 for censoring and positive labels for observed events.
+    method : str
+        Scoring method, "Naive" or "IPCW", case-insensitive; single-event AUROC also accepts "Uno".
+
+    Returns
+    -------
+    ndarray | None
+        Censoring survival just before each observed time, or None for the naive method.
     """
     method = method.lower()
     if method not in {"naive", "ipcw"}:
@@ -451,7 +497,8 @@ def _competing_risk_counts(
     ties: str = "risk",
     tau: float | None = None,
 ) -> _ConcordanceCounts:
-    """Count validated competing-risk pairs in O(n log n) time and O(n) memory.
+    """
+    Count validated competing-risk pairs in O(n log n) time and O(n) memory.
 
     Parameters
     ----------
@@ -546,31 +593,32 @@ def _right_censored_risk_counts(
     tied_tol: float = 1e-8,
     same_time_comparators: np.ndarray | None = None,
 ) -> _ConcordanceCounts:
-    """Count right-censored comparable pairs for a risk score.
+    """
+    Count right-censored comparable pairs for a risk score.
 
     Candidate risks are maintained in a Fenwick tree, giving ``O(n log n)``
     time and ``O(n)`` memory without materializing individual pairs.
 
     Parameters
     ----------
-    event_indicator: np.ndarray, shape = (n_samples,)
+    event_indicator : ndarray, shape = (n_samples,)
         Boolean indicators of observed events eligible to anchor pairs.
-    event_time: np.ndarray, shape = (n_samples,)
+    event_time : ndarray, shape = (n_samples,)
         Observed event or censoring times.
-    estimate: np.ndarray, shape = (n_samples,)
+    estimate : ndarray, shape = (n_samples,)
         Risk scores. Higher scores indicate higher risk.
-    sample_weights: np.ndarray, shape = (n_samples,), optional
+    sample_weights : ndarray, shape = (n_samples,), optional
         Optional symmetric sample weights. Pair weights are products of anchor
         and candidate sample weights unless ``anchor_pair_weights`` is provided.
-    anchor_pair_weights: np.ndarray, shape = (n_samples,), optional
+    anchor_pair_weights : ndarray, shape = (n_samples,), optional
         Optional per-anchor pair weights. If provided, every comparable pair
         anchored by sample ``i`` receives ``anchor_pair_weights[i]``.
-    tau: float, optional (default=None)
+    tau : float, optional, default=None
         Truncation time. If provided, only event anchors whose observed time is
         strictly before ``tau`` are counted. If None, no truncation is applied.
-    tied_tol: float, optional (default=1e-8)
+    tied_tol : float, optional, default=1e-8
         Absolute tolerance for risk-score ties.
-    same_time_comparators: np.ndarray, shape = (n_samples,), optional
+    same_time_comparators : ndarray, shape = (n_samples,), optional
         Boolean mask of subjects comparable to an anchor at the same time.
         Defaults to non-anchors, matching ordinary right-censored concordance.
         Other subjects become comparators only for strictly earlier anchors.
@@ -655,7 +703,8 @@ def _margin_counts(
     tau: float | None = None,
     tied_tol: float = 1e-8,
 ) -> _ConcordanceCounts:
-    """Count Margin concordance pairs from best-guess times.
+    """
+    Count Margin concordance pairs from best-guess times.
 
     Margin first scores all samples as events at their best-guess event times
     with partial weights. Harrell-comparable observed pairs are then restored
@@ -663,22 +712,22 @@ def _margin_counts(
 
     Parameters
     ----------
-    event_indicator: np.ndarray, shape = (n_samples,)
+    event_indicator : ndarray, shape = (n_samples,)
         Boolean event indicators, where True denotes an observed event.
-    event_time: np.ndarray, shape = (n_samples,)
+    event_time : ndarray, shape = (n_samples,)
         Observed event or censoring times.
-    estimate: np.ndarray, shape = (n_samples,)
+    estimate : ndarray, shape = (n_samples,)
         Risk scores. Higher scores indicate higher risk.
-    bg_event_time: np.ndarray, shape = (n_samples,)
+    bg_event_time : ndarray, shape = (n_samples,)
         Best-guess event times for all samples.
-    partial_weights: np.ndarray, shape = (n_samples,)
+    partial_weights : ndarray, shape = (n_samples,)
         Per-sample weights used for the best-guess baseline.
-    tau: float, optional (default=None)
+    tau : float, optional, default=None
         Truncation time. Best-guess baseline pairs use the best-guess earlier
         time, while observed-pair replacements use the observed event anchor
         time. In both cases the effective time must be strictly before ``tau``.
         If None, no truncation is applied.
-    tied_tol: float, optional (default=1e-8)
+    tied_tol : float, optional, default=1e-8
         Absolute tolerance for risk-score ties.
 
     Returns
@@ -747,20 +796,21 @@ def _iter_comparable_event_pairs(
     event_indicator: np.ndarray,
     event_time: np.ndarray,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Yield directed comparable event pairs in sample-index coordinates.
+    """
+    Yield directed comparable event pairs in sample-index coordinates.
 
     Parameters
     ----------
-    event_indicator: np.ndarray, shape = (n_samples,)
+    event_indicator : ndarray, shape = (n_samples,)
         Boolean event indicators, where True denotes an observed event.
-    event_time: np.ndarray, shape = (n_samples,)
+    event_time : ndarray, shape = (n_samples,)
         Observed event or censoring times.
 
-    Yields
+    Returns
     ------
-    anchor_indices: np.ndarray, shape = (n_pairs,)
+    anchor_indices : ndarray, shape = (n_pairs,)
         Repeated sample indices for the observed-event anchor side of each pair.
-    candidate_indices: np.ndarray, shape = (n_pairs,)
+    candidate_indices : ndarray, shape = (n_pairs,)
         Sample indices that are either later in observed time or censored at
         the same observed time as the anchor.
     """

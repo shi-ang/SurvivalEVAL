@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import is_color_like
@@ -14,10 +16,27 @@ def _validate_plot_indices(
     *,
     one_based: bool = False,
 ) -> np.ndarray:
-    """Validate a nonempty 1D selection, preserving its order and repetitions.
+    """
+    Validate a nonempty 1D selection, preserving its order and repetitions.
 
     Return integer indices using the caller's zero-based sample or one-based
     cause convention. Reject noninteger selections and out-of-range entries.
+
+    Parameters
+    ----------
+    indices : int | list[int]
+        Requested sample or cause indices; order and repetitions are preserved.
+    size : int
+        Number of indexed positions.
+    input_name : str
+        Input name included in validation error messages.
+    one_based : bool
+        Whether valid indices range from 1 through size rather than 0 through size - 1.
+
+    Returns
+    -------
+    ndarray
+        Validated integer indices in the supplied order and indexing convention.
     """
     indices = np.atleast_1d(np.asarray(indices))
     if (
@@ -49,15 +68,48 @@ def _plot_curves(
     y_lim: float | tuple[float, float] | None = None,
     ax: plt.Axes | None = None,
     line_styles: list[str] | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Draw selected curves in one Matplotlib call with a consistent local style.
+    """
+    Draw selected curves in one Matplotlib call with a consistent local style.
 
     Time/curve values have their point axis last; a 1D array may be shared by
     all lines. Colors may be shared or specified per line. Optional line styles
     distinguish samples in CIF plots unless kwargs supplies linestyle or ls.
     Reuse ax when supplied, and return its figure and axes without showing them.
     Other kwargs are passed to Axes.plot; label overrides the generated labels.
+
+    Parameters
+    ----------
+    x : ndarray
+        Curve coordinates with the point axis last; a one-dimensional array is shared across curves.
+    y : ndarray
+        Curve coordinates with the point axis last; a one-dimensional array is shared across curves.
+    labels : list[str]
+        One legend label per selected curve.
+    title : str
+        Plot title.
+    x_label : str
+        Horizontal-axis label.
+    y_label : str
+        Vertical-axis label.
+    color : str | list[str] | None
+        Shared line color or one color per selected curve; None uses the Matplotlib color cycle.
+    x_lim : float | tuple[float, float] | None
+        Upper horizontal limit or a pair of lower and upper limits; None uses automatic limits.
+    y_lim : float | tuple[float, float] | None
+        Upper vertical limit or a pair of lower and upper limits; None uses automatic limits.
+    ax : plt.Axes | None
+        Axes to reuse; None creates a new figure and axes.
+    line_styles : list[str] | None
+        One line style per curve; None uses the Matplotlib default.
+    **kwargs : Any
+        Additional keyword arguments forwarded to the underlying plotting or metric function.
+
+    Returns
+    -------
+    tuple[plt.Figure, plt.Axes]
+        Figure and axes containing the selected curves.
     """
     colors = None
     if color is not None and not is_color_like(color):
@@ -114,31 +166,31 @@ def pp_plot(
     xlim: tuple | None = None,
     ylim: tuple | None = None,
     color: str = "blue",
-    **kwargs,
+    **kwargs: Any,
 ) -> tuple[plt.Figure, plt.Axes]:
     """
     Generate a probability-probability (P-P) plot given observed and expected probabilities.
 
     Parameters
     ----------
-    obs: NumericArrayLike
+    obs : NumericArrayLike
         Observed probabilities.
-    exp: NumericArrayLike
+    exp : NumericArrayLike
         Expected probabilities. Generally, you would want the expected probabilities to be sorted in ascending order.
-    xlim: tuple, optional
+    xlim : tuple, optional
         Limits for the x-axis.
-    ylim: tuple, optional
+    ylim : tuple, optional
         Limits for the y-axis.
-    color: str, default: 'blue'
+    color : str, default='blue'
         Color for the prediction line.
-    **kwargs
+    **kwargs : Any
         Additional keyword arguments for customizing the plot axes.
 
     Returns
     -------
-    fig: plt.Figure
+    fig : plt.Figure
         The figure object of the P-P plot.
-    axe: plt.Axes
+    axe : plt.Axes
         The axes object of the P-P plot.
     """
     assert len(obs) == len(

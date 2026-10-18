@@ -10,7 +10,7 @@ Description:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from scipy.optimize import brentq
@@ -20,13 +20,29 @@ from SurvivalEVAL.Evaluations.util import interpolated_curve
 
 # reuse interpolated_survival_curve
 def _invert_from_survival_with_interpolator(
-    S_grid: np.ndarray, t_grid: np.ndarray, ps: Sequence[float], method: str
+    S_grid: np.ndarray,
+    t_grid: np.ndarray,
+    ps: Sequence[float],
+    method: str,
 ) -> np.ndarray:
     """
-    S_grid: Survival Prediction curve matrix
-    t_grid: time grid
-    ps: quantile
-    method: "Linear"|"Pchip"
+    Invert interpolated survival curves at cumulative event-probability levels.
+
+    Parameters
+    ----------
+    S_grid : ndarray
+        Survival probabilities with shape (n_samples, n_times).
+    t_grid : ndarray
+        One-dimensional time grid corresponding to the predicted probabilities.
+    ps : Sequence[float]
+        Cumulative event-probability levels at which to evaluate calibration.
+    method : str
+        Curve interpolation method, "Linear" or "Pchip".
+
+    Returns
+    -------
+    ndarray
+        Event-time quantiles with shape (n_samples, n_quantiles), bounded by the supplied grid.
     """
     S = np.minimum.accumulate(
         np.clip(S_grid, 0.0, 1.0), axis=1
@@ -36,7 +52,28 @@ def _invert_from_survival_with_interpolator(
     t_lo, t_hi = float(t_grid[0]), float(t_grid[-1])
     out = np.empty((N, ps.size), float)
 
-    def gap(t, interpolator, target):
+    def gap(
+        t: float,
+        interpolator: Callable[[float], float | np.ndarray],
+        target: float,
+    ) -> float:
+        """
+        Evaluate the survival-probability discrepancy used for quantile root finding.
+
+        Parameters
+        ----------
+        t : float
+            Time at which to evaluate the interpolated survival curve.
+        interpolator : Callable[[float], float | ndarray]
+            Callable mapping one time to its interpolated survival probability.
+        target : float
+            Target survival probability for quantile inversion.
+
+        Returns
+        -------
+        float
+            Interpolated survival probability minus the target probability.
+        """
         return float(interpolator(t)) - target
 
     for i in range(N):
@@ -66,10 +103,41 @@ def calibration_slope_right_censor(
     through_origin: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """
-    right uncensor (p, obs(p))：
-      - event count=1{t_ip >= y_i}
-      - censor count t_ip <= c_i
-    return：(p_list, obs_list, slope)
+    Calculate calibration proportions and slope for right-censored observations.
+
+    Observed events contribute according to whether their event time precedes the
+    predicted quantile; censorings beyond the quantile contribute non-events.
+    Calibration slopes for survival predictions are discussed in [1]_.
+
+    Parameters
+    ----------
+    event_indicators : ndarray
+        Observed status labels; 0 denotes censoring and positive labels denote observed events.
+    observed_times : ndarray
+        Observed event or censoring times, one per sample.
+    predictions : ndarray
+        Predicted CDF values with shape (n_samples, n_times).
+    time_grid : ndarray
+        Increasing time coordinates, with shape (n_times,) or (n_samples, n_times).
+    ps : Sequence[float]
+        Cumulative event-probability levels at which to evaluate calibration.
+    quantile_method : str
+        Interpolation method for quantile inversion, "Linear" or "Pchip".
+    through_origin : bool
+        Whether to fit the calibration slope with the intercept fixed at zero.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray, float]
+        Requested probability levels, observed event proportions, and the fitted calibration slope.
+
+    References
+    ----------
+    .. [1] Avati, A.; Duan, T.; Zhou, S.; Jung, K.; Shah, N. H.; Ng, A. Y. (2020).
+       "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of the 35th Uncertainty in Artificial Intelligence Conference,
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://arxiv.org/pdf/1806.08324
     """
     e = np.asarray(event_indicators, bool)  # event
     y = np.asarray(observed_times, float)  # observation time
@@ -138,11 +206,44 @@ def calibration_slope_interval_censor(
     clip_p: float = 1e-6,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """
-    Compute calibration points (p, obs(p)) and slope under INTERVAL censoring:
-      - Include as 1 if t_{i,p} >= U_i
-      - Include as 0 if t_{i,p} <= L_i
-      - Skip if L_i < t_{i,p} < U_i
-    Returns (p_list, obs_list, slope).
+    Calculate calibration proportions and slope for interval-censored observations.
+
+    Include an event when its upper bound is at or before the predicted quantile.
+    Include a non-event when the quantile is at or before the lower bound;
+    omit intervals whose interior contains the quantile.
+    Calibration slopes for survival predictions are discussed in [1]_.
+
+    Parameters
+    ----------
+    left_bounds : ndarray
+        Left observation bounds, one per sample.
+    right_bounds : ndarray
+        Right observation bounds, using positive infinity for right censoring.
+    pred_cdf : ndarray
+        Nondecreasing cumulative event probabilities, with shape (n_times,) or (n_samples, n_times).
+    time_grid : ndarray
+        Increasing time coordinates, with shape (n_times,) or (n_samples, n_times).
+    ps : Sequence[float]
+        Cumulative event-probability levels at which to evaluate calibration.
+    quantile_method : str
+        Interpolation method for quantile inversion, "Linear" or "Pchip".
+    through_origin : bool
+        Whether to fit the calibration slope with the intercept fixed at zero.
+    clip_p : float
+        Distance from 0 and 1 used to clip the requested probability levels.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray, float]
+        Requested probability levels, observed event proportions, and the fitted calibration slope.
+
+    References
+    ----------
+    .. [1] Avati, A.; Duan, T.; Zhou, S.; Jung, K.; Shah, N. H.; Ng, A. Y. (2020).
+       "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of the 35th Uncertainty in Artificial Intelligence Conference,
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://arxiv.org/pdf/1806.08324
     """
     L = np.asarray(left_bounds, float)
     U = np.asarray(right_bounds, float)
@@ -201,16 +302,21 @@ def calibration_slope_interval_censor(
 
 
 def cov(
-    cdf: np.ndarray, t_grid: np.ndarray, return_details: bool = False
+    cdf: np.ndarray,
+    t_grid: np.ndarray,
+    return_details: bool = False,
 ) -> float | tuple[float, np.ndarray]:
     """
     Compute the coefficient of variation of event time from a discretized CDF.
 
+    The coefficient of variation, standard deviation divided by mean event time,
+    is used to assess predictive sharpness in [1]_.
+
     Parameters
     ----------
-    cdf : np.ndarray, shape (n_samples, n_timepoints)
+    cdf : ndarray, shape (n_samples, n_timepoints)
         The predicted cumulative distribution functions for each patient.
-    t_grid : np.ndarray, shape (n_timepoints,)
+    t_grid : ndarray, shape (n_timepoints,)
         The time grid corresponding to the CDF values.
     return_details : bool, optional
         If True, also return the per-patient CoV values.
@@ -219,7 +325,7 @@ def cov(
     -------
     float
         The mean event-time CoV across all patients.
-    np.ndarray, optional
+    ndarray, optional
         The per-patient event-time CoV values, returned when
         ``return_details`` is True.
 
@@ -235,6 +341,14 @@ def cov(
     approximates the CoV of the full event-time distribution. Otherwise, it is
     the CoV conditional on the event occurring within the grid interval; mass
     before the first grid point and after the last grid point is excluded.
+
+    References
+    ----------
+    .. [1] Avati, A.; Duan, T.; Zhou, S.; Jung, K.; Shah, N. H.; Ng, A. Y. (2020).
+       "Countdown Regression: Sharp and Calibrated Survival Predictions".
+       Proceedings of the 35th Uncertainty in Artificial Intelligence Conference,
+       Proceedings of Machine Learning Research, 115, 145-155.
+       https://arxiv.org/pdf/1806.08324
     """
     cdf = np.asarray(cdf, dtype=float)
     t_grid = np.asarray(t_grid, dtype=float)

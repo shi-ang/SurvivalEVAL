@@ -22,7 +22,9 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
 )
 @pytest.mark.parametrize("indicator_dtype", [bool, np.int8, np.float32, np.float64])
 def test_estimators_group_tied_times_without_changing_risk_sets(
-    estimator_class, kwargs, indicator_dtype
+    estimator_class,
+    kwargs,
+    indicator_dtype,
 ):
     rng = np.random.default_rng(12)
     for origin in (0.0, 2.0):
@@ -116,7 +118,12 @@ def test_kaplan_meier_does_not_duplicate_observed_time_zero():
     ],
 )
 def test_reverse_kaplan_meier_removes_original_events_before_censorings(
-    times, indicators, risk_sets, censorings, probabilities, indicator_dtype
+    times,
+    indicators,
+    risk_sets,
+    censorings,
+    probabilities,
+    indicator_dtype,
 ):
     times = np.asarray(times, dtype=float)
     indicators = np.asarray(indicators, dtype=indicator_dtype)

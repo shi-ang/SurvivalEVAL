@@ -73,9 +73,11 @@ def cr_data() -> tuple[np.ndarray, ...]:
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("ipcw", [False, True])
 def test_scores_match_independent_formula(
-    cr_data: tuple, dtype: type, ipcw: bool
+    cr_data: tuple,
+    dtype: type,
+    ipcw: bool,
 ) -> None:
-    cifs, grid, times, events, train_times, train_events = cr_data
+    cifs, _, times, events, train_times, train_events = cr_data
     targets = np.array([3.0, 0.0, 2.0, 1.0, 3.0, 5.0], dtype=dtype)
     # Non-contiguous and read-only, with unsorted and repeated evaluation times.
     storage = np.zeros((times.size, 3, targets.size * 2), dtype=dtype)
@@ -121,7 +123,8 @@ def test_scores_match_independent_formula(
 
 @pytest.mark.parametrize("ipcw, expected", [(False, 0.29 / 4), (True, 0.49 / 4)])
 def test_competing_events_and_same_time_censoring_contribute(
-    ipcw: bool, expected: float
+    ipcw: bool,
+    expected: float,
 ) -> None:
     # Reverse KM removes the event at 1 before its censoring update: G(1-)=1,
     # G(2-)=1/2. The fourth subject was censored earlier and contributes zero.
@@ -207,15 +210,15 @@ def test_invalid_inputs(aggregate: bool, changes: dict, message: str) -> None:
     metric = (
         brier_multiple_points_cr if aggregate else brier_multiple_points_cr_per_event
     )
-    kwargs = dict(
-        pred_mat=[[[0.8], [0.1]], [[0.2], [0.4]]] if aggregate else [[0.8], [0.2]],
-        event_times=[1, 2],
-        event_indicators=[1, 0],
-        train_event_times=None,
-        train_event_indicators=None,
-        target_times=[1],
-        ipcw=False,
-    )
+    kwargs = {
+        "pred_mat": [[[0.8], [0.1]], [[0.2], [0.4]]] if aggregate else [[0.8], [0.2]],
+        "event_times": [1, 2],
+        "event_indicators": [1, 0],
+        "train_event_times": None,
+        "train_event_indicators": None,
+        "target_times": [1],
+        "ipcw": False,
+    }
     kwargs.update(changes)
     with pytest.raises(ValueError, match=message):
         metric(**kwargs)
@@ -263,7 +266,9 @@ def test_low_level_ipcw_requires_training_even_without_test_censoring(
 @pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
 @pytest.mark.parametrize("ipcw", [False, True])
 def test_evaluator_matches_direct_calculations(
-    cr_data: tuple, interpolation: str, ipcw: bool
+    cr_data: tuple,
+    interpolation: str,
+    ipcw: bool,
 ) -> None:
     cifs, grid, times, events, train_times, train_events = cr_data
     evaluator = CompetingRisksEvaluator(
@@ -324,7 +329,10 @@ def test_evaluator_matches_direct_calculations(
 @pytest.mark.parametrize("method", ["trapz", "simpson"])
 @pytest.mark.parametrize("grid_option", ["explicit", "generated", "inferred"])
 def test_integrated_scores(
-    cr_data: tuple, ipcw: bool, method: str, grid_option: str
+    cr_data: tuple,
+    ipcw: bool,
+    method: str,
+    grid_option: str,
 ) -> None:
     cifs, grid, times, events, train_times, train_events = cr_data
     evaluator = CompetingRisksEvaluator(
@@ -430,7 +438,8 @@ def test_uncensored_shortcut_and_missing_training(cr_data: tuple) -> None:
 
 
 def test_one_censoring_fit_and_vector_queries(
-    cr_data: tuple, monkeypatch: pytest.MonkeyPatch
+    cr_data: tuple,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = importlib.import_module("SurvivalEVAL.Evaluations.BrierScore")
     original_predict = module.KaplanMeier.predict
@@ -459,7 +468,8 @@ def test_one_censoring_fit_and_vector_queries(
 
 
 def test_multi_time_interpolation_fits_each_selected_curve_once(
-    cr_data: tuple, monkeypatch: pytest.MonkeyPatch
+    cr_data: tuple,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = importlib.import_module("SurvivalEVAL.CompetingRisksEvaluator")
     original = module.interpolated_curve
@@ -499,7 +509,10 @@ def test_survival_and_competing_ibs_share_integration(method: str) -> None:
     times, events, grid = [1, 3], [1, 1], [0, 2, 4]
     survival = SurvivalEvaluator(1 - cifs[:, 0], grid, times, events)
     competing = CompetingRisksEvaluator(cifs, grid, times, events)
-    kwargs = dict(target_times=np.array([1.0, 2.0, 3.0]), integration_method=method)
+    kwargs = {
+        "target_times": np.array([1.0, 2.0, 3.0]),
+        "integration_method": method,
+    }
     assert competing.integrated_brier_score(**kwargs) == pytest.approx(
         survival.integrated_brier_score(**kwargs)
     )
@@ -515,7 +528,9 @@ def test_survival_and_competing_ibs_share_integration(method: str) -> None:
     ],
 )
 def test_evaluator_rejects_invalid_selected_causes(
-    cr_data: tuple, cause: object, metric: str
+    cr_data: tuple,
+    cause: object,
+    metric: str,
 ) -> None:
     evaluator = CompetingRisksEvaluator(*cr_data[:4])
     kwargs = (

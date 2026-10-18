@@ -120,13 +120,13 @@ def test_cr_auc_matches_pairwise_oracle(seed: int, controls: str, method: str) -
             )
             for cause in (1, 2, 3)
         }
-        options = dict(
-            target_time=target,
-            train_event_times=train_times,
-            train_event_indicators=train_events,
-            control_definition=controls,
-            method=method,
-        )
+        options = {
+            "target_time": target,
+            "train_event_times": train_times,
+            "train_event_indicators": train_events,
+            "control_definition": controls,
+            "method": method,
+        }
         mean, details = auc_cr(
             probabilities, times, events, return_details=True, **options
         )
@@ -145,7 +145,9 @@ def test_cr_auc_matches_pairwise_oracle(seed: int, controls: str, method: str) -
 @pytest.mark.parametrize("controls", ["EventFree", "NotCase"])
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 def test_cr_auc_reduces_to_single_event(
-    cr_auc_data: dict[str, np.ndarray], controls: str, method: str
+    cr_auc_data: dict[str, np.ndarray],
+    controls: str,
+    method: str,
 ) -> None:
     data = dict(cr_auc_data)
     data["event_indicators"] = data["event_indicators"] > 0
@@ -168,7 +170,8 @@ def test_cr_auc_reduces_to_single_event(
 
 @pytest.mark.parametrize("controls", ["EventFree", "NotCase"])
 def test_cr_auc_without_training_censoring_equals_naive(
-    cr_auc_data: dict[str, np.ndarray], controls: str
+    cr_auc_data: dict[str, np.ndarray],
+    controls: str,
 ) -> None:
     cr_auc_data["train_event_indicators"] = np.array([1, 2, 1, 3, 2])
     assert auc_cr_per_event(
@@ -281,15 +284,15 @@ def test_cr_auc_rejects_labels_beyond_predicted_causes() -> None:
 )
 def test_cr_auc_rejects_invalid_training(aggregate: bool, changes: dict) -> None:
     function = auc_cr if aggregate else auc_cr_per_event
-    data = dict(
-        predict_probs=[[0.8], [0.2]] if aggregate else [0.8, 0.2],
-        event_times=[1, 3],
-        event_indicators=[1, 0],
-        target_time=2,
-        method="IPCW",
-        train_event_times=[1, 4],
-        train_event_indicators=[2, 0],
-    )
+    data = {
+        "predict_probs": [[0.8], [0.2]] if aggregate else [0.8, 0.2],
+        "event_times": [1, 3],
+        "event_indicators": [1, 0],
+        "target_time": 2,
+        "method": "IPCW",
+        "train_event_times": [1, 4],
+        "train_event_indicators": [2, 0],
+    }
     data.update(changes)
     with pytest.raises(ValueError):
         function(**data)
@@ -298,7 +301,9 @@ def test_cr_auc_rejects_invalid_training(aggregate: bool, changes: dict) -> None
 @pytest.mark.parametrize("controls", ["EventFree", "NotCase"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_cr_auc_default_target_and_readonly_inputs(
-    cr_auc_data: dict[str, np.ndarray], controls: str, dtype: type
+    cr_auc_data: dict[str, np.ndarray],
+    controls: str,
+    dtype: type,
 ) -> None:
     for name, values in cr_auc_data.items():
         cr_auc_data[name] = values.astype(np.int64 if "indicators" in name else dtype)
@@ -340,13 +345,13 @@ def test_cr_auc_fits_one_censoring_model(cr_auc_data: dict[str, np.ndarray]) -> 
 @pytest.mark.parametrize("controls", ["EventFree", "NotCase"])
 @pytest.mark.parametrize("method", ["Naive", "IPCW"])
 def test_cr_auc_retains_undefined_causes(controls: str, method: str) -> None:
-    options = dict(
-        target_time=2,
-        train_event_times=[1, 2, 3],
-        train_event_indicators=[1, 0, 2],
-        method=method,
-        control_definition=controls,
-    )
+    options = {
+        "target_time": 2,
+        "train_event_times": [1, 2, 3],
+        "train_event_indicators": [1, 0, 2],
+        "method": method,
+        "control_definition": controls,
+    }
     score, details = auc_cr(
         [[0.8, 0.1], [0.2, 0.3]], [1, 3], [1, 0], return_details=True, **options
     )
@@ -381,15 +386,17 @@ def test_cr_auc_retains_undefined_causes(controls: str, method: str) -> None:
     ],
 )
 def test_cr_auc_rejects_invalid_inputs(
-    aggregate: bool, changes: dict, match: str
+    aggregate: bool,
+    changes: dict,
+    match: str,
 ) -> None:
     function = auc_cr if aggregate else auc_cr_per_event
-    data = dict(
-        predict_probs=[[0.8, 0.1], [0.2, 0.3]] if aggregate else [0.8, 0.2],
-        event_times=[1, 3],
-        event_indicators=[1, 0],
-        target_time=2,
-    )
+    data = {
+        "predict_probs": [[0.8, 0.1], [0.2, 0.3]] if aggregate else [0.8, 0.2],
+        "event_times": [1, 3],
+        "event_indicators": [1, 0],
+        "target_time": 2,
+    }
     data.update(changes)
     with pytest.raises(ValueError, match=match):
         function(**data)
@@ -398,7 +405,8 @@ def test_cr_auc_rejects_invalid_inputs(
 @pytest.mark.parametrize("aggregate", [False, True])
 @pytest.mark.parametrize("missing", ["both", "times", "indicators"])
 def test_cr_auc_requires_training_even_for_uncensored_test(
-    aggregate: bool, missing: str
+    aggregate: bool,
+    missing: str,
 ) -> None:
     function = auc_cr if aggregate else auc_cr_per_event
     options = {"train_event_times": [1, 3], "train_event_indicators": [2, 0]}
@@ -452,7 +460,7 @@ def test_cr_evaluator_auc_matches_standalone(
         )
     )
     predicted = evaluator.predict_risks("CIF", None, target)
-    options = dict(method=method, control_definition=controls)
+    options = {"method": method, "control_definition": controls}
     call = dict(options, target_time=3) if explicit_target else options
     expected = auc_cr(
         predicted, target_time=target, return_details=True, **outcomes, **options

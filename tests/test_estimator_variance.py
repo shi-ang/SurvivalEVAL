@@ -51,7 +51,9 @@ def test_aj_variances_match_r_survival_for_every_cause() -> None:
 
 
 @pytest.mark.parametrize("events", [[2, 0, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0]])
-def test_aj_variance_batch_preserves_repeated_steps_and_query_order(events: list) -> None:
+def test_aj_variance_batch_preserves_repeated_steps_and_query_order(
+    events: list,
+) -> None:
     aj = AalenJohansenCompetingRisks(3).fit([1, 1, 2, 4], events)
     queries = np.array(
         [[[4, 1, 0], [2, 1.5, np.inf]], [[0.5, 4.5, 2.5], [2, 4, 1]]]
@@ -109,18 +111,20 @@ def test_variance_queries_reuse_fitted_counts() -> None:
     events = np.array([1, 0, 1, 0])
     km = KaplanMeier(times, events)
     aj = AalenJohansenCompetingRisks(2).fit(times, events)
-    with patch(
-        "SurvivalEVAL.NonparametricEstimator.SingleEvent.KaplanMeier._compute_event_counts",
-        side_effect=AssertionError("recount"),
-    ):
-        with patch(
+    with (
+        patch(
+            "SurvivalEVAL.NonparametricEstimator.SingleEvent.KaplanMeier._compute_event_counts",
+            side_effect=AssertionError("recount"),
+        ),
+        patch(
             "SurvivalEVAL.NonparametricEstimator.CompetingRisks.AalenJohansen.np.sort",
             side_effect=AssertionError("resort"),
-        ):
-            np.testing.assert_allclose(km.predict_variance([1, 2]), [3 / 64, 21 / 256])
-            np.testing.assert_allclose(
-                aj.predict_cif_variance([1, 2]), [[3 / 64, 0], [21 / 256, 0]]
-            )
+        ),
+    ):
+        np.testing.assert_allclose(km.predict_variance([1, 2]), [3 / 64, 21 / 256])
+        np.testing.assert_allclose(
+            aj.predict_cif_variance([1, 2]), [[3 / 64, 0], [21 / 256, 0]]
+        )
 
 
 def test_readonly_inputs_and_repeated_queries_are_unchanged() -> None:

@@ -50,7 +50,9 @@ def _make_discrete_targets(durations: np.ndarray, events: np.ndarray, cuts: np.n
 
 
 def _logistic_hazard_loss(
-    logits: torch.Tensor, idx: torch.Tensor, events: torch.Tensor
+    logits: torch.Tensor,
+    idx: torch.Tensor,
+    events: torch.Tensor,
 ) -> torch.Tensor:
     hazards = torch.sigmoid(logits).clamp(1e-6, 1 - 1e-6)
     log_survival = torch.log(1.0 - hazards)
@@ -79,7 +81,12 @@ def _logistic_hazard_loss(
 
 
 def _train_logistic_hazard(
-    x_train, idx_train, events_train, cuts, epochs=40, batch_size=128
+    x_train,
+    idx_train,
+    events_train,
+    cuts,
+    epochs=40,
+    batch_size=128,
 ):
     device = torch.device("cpu")
     torch.manual_seed(123)
@@ -120,7 +127,9 @@ def _train_logistic_hazard(
 
 
 def _predict_survival(
-    model: nn.Module, x: np.ndarray, cuts: np.ndarray
+    model: nn.Module,
+    x: np.ndarray,
+    cuts: np.ndarray,
 ) -> pd.DataFrame:
     device = next(model.parameters()).device
     with torch.no_grad():

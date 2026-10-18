@@ -57,33 +57,33 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
-    ):
+    ) -> None:
         """
-        Initialize the Evaluator
+        Initialize the SurvivalEvaluator with predictions and observed outcomes.
 
         Parameters
         ----------
-        pred_survs: NumericArrayLike,
+        pred_survs : NumericArrayLike
             Accept shapes: (n_time_points,) or (n_samples, n_time_points).
             Predicted survival curves for the testing samples.
             At least one of `pred_survs` or `time_coordinates` must be a 2D array.
-        time_coordinates: NumericArrayLike,
+        time_coordinates : NumericArrayLike
             Accept shapes: (n_time_points,) or (n_samples, n_time_points).
             Time coordinates corresponding to the survival curves.
             At least one of `pred_survs` or `time_coordinates` must be a 2D array.
-        event_times: NumericArrayLike, shape = (n_samples, )
+        event_times : NumericArrayLike, shape = (n_samples, )
             Actual event/censor time for the testing samples.
-        event_indicators: NumericArrayLike, shape = (n_samples, )
+        event_indicators : NumericArrayLike, shape = (n_samples, )
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: NumericArrayLike | None, shape = (n_train_samples, ), default: None
+        train_event_times : NumericArrayLike | None, shape = (n_train_samples, ), default=None
             Actual event/censor time for the training samples.
-        train_event_indicators: NumericArrayLike | None, shape = (n_train_samples, ), default: None
+        train_event_indicators : NumericArrayLike | None, shape = (n_train_samples, ), default=None
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        predict_time_method: str, default = "Median"
+        predict_time_method : str, default="Median"
             Method for calculating predicted survival time. Available options are "Median", "Mean" and "RMST".
-        interpolation: str, default = "Linear"
+        interpolation : str, default="Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
         event_times, event_indicators = check_and_convert_event_data(
@@ -107,7 +107,20 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             interpolation=interpolation,
         )
 
-    def _error_trainset(self, method_name: str):
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
@@ -116,7 +129,14 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
 
     @property
     def default_target_time(self) -> float:
-        """Median observed time across the available training and test outcomes."""
+        """
+        Median observed time across the available training and test outcomes.
+
+        Returns
+        -------
+        float
+            Median observed time in the combined training and test outcomes, or the test outcomes alone.
+        """
         times = self.event_times
         if self.train_event_times is not None:
             times = np.concatenate((times, self.train_event_times))
@@ -131,9 +151,13 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
+        The ``Harrell`` and ``Naive`` methods follow [1]_; ``Uno`` and ``IPCW``
+        use the censoring-weighted approach in [2]_. The ``Margin`` method is
+        described in [3]_.
+
         Parameters
         ----------
-        ties: str, default = "Risk"
+        ties : str, default="Risk"
             A string indicating the way ties should be handled.
             Options: "None", "Time", "Risk" (default), or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -142,7 +166,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        method: str, default = "Harrell"
+        method : str, default="Harrell"
             A string indicating the method for constructing the pairs of samples.
             Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
             "Harrell": comparable pairs are anchored by samples with observed
@@ -156,19 +180,35 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             time for the censored samples will be calculated and used to construct
             the pairs. "Uno", "IPCW", and "Margin" require training set
             information.
-        tau: float, optional (default=None)
+        tau : float, optional, default=None
             Truncation time. If provided, only pairs whose effective earlier or
             anchor time is strictly before ``tau`` are counted. If None, no
             truncation is applied.
 
         Returns
         -------
-        concordance_index: float
+        concordance_index : float
             The concordance index.
-        num_concordant_pairs: float
+        num_concordant_pairs : float
             The number of concordant pairs.
-        num_total_pairs: float
+        num_total_pairs : float
             The number of total pairs.
+
+        References
+        ----------
+        .. [1] Harrell, F. E., Jr.; Lee, K. L.; Mark, D. B. (1996).
+           "Multivariable prognostic models: issues in developing models, evaluating
+           assumptions and adequacy, and measuring and reducing errors".
+           Statistics in Medicine, 15(4), 361-387.
+           https://doi.org/10.1002/(SICI)1097-0258(19960229)15:4%3C361::AID-SIM168%3E3.0.CO;2-4
+        .. [2] Uno, H.; Cai, T.; Pencina, M. J.; D'Agostino, R. B.; Wei, L. J. (2011).
+           "On the C-statistics for evaluating overall adequacy of risk prediction
+           procedures with censored survival data". Statistics in Medicine,
+           30(10), 1105-1117. https://doi.org/10.1002/sim.4154
+        .. [3] Kumar, N.; Qi, S.-A.; Kuan, L.-H.; Sun, W.; Zhang, J.; Greiner, R. (2022).
+           "Learning accurate personalized survival models for predicting hospital
+           discharge and mortality of COVID-19 patients". Scientific Reports,
+           12, 4472. https://doi.org/10.1038/s41598-022-08601-6
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -189,27 +229,50 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
 
     def auc(self, target_time: Numeric | None = None, method: str = "Naive") -> float:
-        """Calculate cumulative/dynamic AUROC from predicted survival curves.
+        """
+        Calculate cumulative/dynamic AUROC from predicted survival curves.
 
         Cases are observed events at or before the target. Controls are
         observations after the target and censorings exactly at the target.
         Earlier censorings are excluded.
 
-        Args:
-            target_time: Evaluation time. If None, use the median observed time
-                of the combined training and test sets, or just the test set
-                when training outcomes are unavailable.
-            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
-                training outcomes, assumes independent censoring, and weights
-                cases by 1/G(event_time-) from reverse Kaplan-Meier.
+        The cumulative/dynamic AUROC definition follows [1]_. For ``IPCW``
+        and its alias ``Uno``, censoring-weighted estimation follows [2]_.
 
-        Returns:
+        Parameters
+        ----------
+        target_time : Numeric | None
+            Evaluation time. If None, use the median observed time
+            of the combined training and test sets, or just the test set
+            when training outcomes are unavailable.
+        method : str
+            "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
+            training outcomes, assumes independent censoring, and weights
+            cases by 1/G(event_time-) from reverse Kaplan-Meier.
+
+        Returns
+        -------
+        float
             AUROC at the target time.
 
-        Raises:
-            TypeError: If IPCW is requested without training outcomes.
-            ValueError: If inputs or the method are invalid, either class is
-                absent, or IPCW cannot be estimated at the target.
+        Raises
+        ------
+        TypeError
+            If IPCW is requested without training outcomes.
+        ValueError
+            If inputs or the method are invalid, either class is
+            absent, or IPCW cannot be estimated at the target.
+
+        References
+        ----------
+        .. [1] Heagerty, P. J.; Lumley, T.; Pepe, M. S. (2000). "Time-dependent ROC
+           curves for censored survival data and a diagnostic marker".
+           Biometrics, 56(2), 337-344.
+           https://doi.org/10.1111/j.0006-341X.2000.00337.x
+        .. [2] Uno, H.; Cai, T.; Tian, L.; Wei, L. J. (2007). "Evaluating prediction
+           rules for t-year survivors with censored regression models".
+           Journal of the American Statistical Association, 102(478), 527-537.
+           https://doi.org/10.1198/016214507000000149
         """
         if method.lower() in {"ipcw", "uno"}:
             self._error_trainset("IPCW AUROC")
@@ -230,15 +293,35 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
 
     def auroc(self, target_time: Numeric | None = None, method: str = "Naive") -> float:
-        """Alias for :meth:`auc`, including its boundary and IPCW conventions.
+        """
+        Alias for :meth:`auc`, including its boundary and IPCW conventions.
 
-        Args:
-            target_time: Evaluation time, defaulting to the median observed
-                time of the available training and test outcomes.
-            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive.
+        The cumulative/dynamic AUROC definition follows [1]_. For ``IPCW``
+        and its alias ``Uno``, censoring-weighted estimation follows [2]_.
 
-        Returns:
+        Parameters
+        ----------
+        target_time : Numeric | None
+            Evaluation time, defaulting to the median observed
+            time of the available training and test outcomes.
+        method : str
+            "Naive" (default), "IPCW", or its alias "Uno", case-insensitive.
+
+        Returns
+        -------
+        float
             AUROC at the target time.
+
+        References
+        ----------
+        .. [1] Heagerty, P. J.; Lumley, T.; Pepe, M. S. (2000). "Time-dependent ROC
+           curves for censored survival data and a diagnostic marker".
+           Biometrics, 56(2), 337-344.
+           https://doi.org/10.1111/j.0006-341X.2000.00337.x
+        .. [2] Uno, H.; Cai, T.; Tian, L.; Wei, L. J. (2007). "Evaluating prediction
+           rules for t-year survivors with censored regression models".
+           Journal of the American Statistical Association, 102(478), 527-537.
+           https://doi.org/10.1198/016214507000000149
         """
         return self.auc(target_time, method=method)
 
@@ -257,9 +340,12 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         most once per sample; observed events tied on time remain separate
         anchors for pair counting.
 
+        The ``Antolini`` and ``Naive`` methods follow [1]_. For ``IPCW``, see
+        the approaches in [2]_ and [3]_.
+
         Parameters
         ----------
-        ties: str, default = "Risk"
+        ties : str, default="Risk"
             A string indicating the way ties should be handled.
             Options: "None", "Time", "Risk" (default), or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -268,7 +354,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        method: str, default = "Antolini"
+        method : str, default="Antolini"
             A string indicating the method for constructing the pairs of samples.
             Options are "Antolini" (default), "Naive", "IPCW".
             "Antolini": comparable pairs are anchored by samples with observed
@@ -277,37 +363,37 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             "Naive": alias of "Antolini".
             "IPCW": Antolini-style comparable pairs weighted by inverse probability
             of censoring weights from the training data.
-        risks: str, default = "Survival"
+        risks : str, default="Survival"
             A string indicating the type of risk scores to be used for concordance calculation.
             Options are "Survival" (default) and "Hazard".
             "Survival": predicted survival probabilities at anchor event times are converted to risk scores
             using -S(t | z).
             "Hazard": predicted hazard rates at anchor event times are used directly as risk scores.
-        tau: float, optional (default=None)
+        tau : float, optional, default=None
             Truncation time. If provided, only pairs whose effective earlier or
             anchor time is strictly before ``tau`` are counted. If None, no
             truncation is applied.
 
         Returns
         -------
-        concordance_index: float
+        concordance_index : float
             The time-dependent concordance index.
-        num_concordant_pairs: float
+        num_concordant_pairs : float
             The number of concordant pairs.
-        num_total_pairs: float
+        num_total_pairs : float
             The number of total pairs.
 
-        Notes
-        -----
-        Event anchors with the same time are sorted by risk, allowing later
-        samples to count concordant and tied pairs with rank queries rather
-        than visiting each anchor. With U contributing distinct event times
-        and at most M anchors at one time, counting uses O(n) working memory
-        and O(n log n + n U log(M + 1)) time. Prediction adds O(k) temporary
-        storage for one curve with k grid points. These bounds exclude the
-        stored input curves and IPCW training data; no dense sample-by-anchor
-        risk matrix is constructed. If all event times are distinct, counting
-        still has quadratic worst-case complexity.
+        References
+        ----------
+        .. [1] Antolini, L.; Boracchi, P.; Biganzoli, E. (2005). "A time-dependent
+           discrimination index for survival data". Statistics in Medicine,
+           24(24), 3927-3944. https://doi.org/10.1002/sim.2427
+        .. [2] Gandy, A.; Matcham, T. J. (2025). "A proper concordance index for
+           models with crossing hazards". Scandinavian Journal of Statistics,
+           52(4), 1479-1504. https://doi.org/10.1111/sjos.70000
+        .. [3] Faruk, A.; Palczewski, J.; Aivaliotis, G. (2025). "A new discrimination
+           measure for assessing predictive performance of non-linear survival models".
+           arXiv preprint, arXiv:2504.05630. https://arxiv.org/abs/2504.05630
         """
         risks = risks.lower()
 
@@ -336,20 +422,43 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
 
     def brier_score(
-        self, target_time: Numeric | None = None, IPCW_weighted: bool = True
+        self,
+        target_time: Numeric | None = None,
+        IPCW_weighted: bool = True,
     ) -> float:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
 
+        The original Brier score is described in [1]_. IPCW estimation for
+        right-censored outcomes follows Graf et al. [2]_ and Gerds and
+        Schumacher [3]_.
+
         Parameters
         ----------
-        target_time: float, int, or None, default = None
+        target_time : float, int, or None, default=None
             Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
             median time of the test event/censor times and, when available, the training event/censor times.
-        IPCW_weighted: bool, default = True
+        IPCW_weighted : bool, default=True
             Whether to use IPCW weighting for the Brier score.
-        :return: float
-            The Brier score at the target time point.
+
+        Returns
+        -------
+        float
+            Brier score at the target time.
+
+        References
+        ----------
+        .. [1] Brier, G. W. (1950). "Verification of forecasts expressed in terms
+           of probability". Monthly Weather Review, 78(1), 1-3.
+           https://doi.org/10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2
+        .. [2] Graf, E.; Schmoor, C.; Sauerbrei, W.; Schumacher, M. (1999).
+           "Assessment and comparison of prognostic classification schemes for
+           survival data". Statistics in Medicine, 18(17-18), 2529-2545.
+           https://doi.org/10.1002/(SICI)1097-0258(19990915/30)18:17/18<2529::AID-SIM274>3.0.CO;2-5
+        .. [3] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
         """
         if target_time is None:
             target_time = self.default_target_time
@@ -368,17 +477,35 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         """
         Calculate multiple Brier scores at multiple specific times.
 
+        The original Brier score is described in [1]_. IPCW estimation for
+        right-censored outcomes follows Graf et al. [2]_ and Gerds and
+        Schumacher [3]_.
+
         Parameters
         ----------
-        target_times: np.ndarray
+        target_times : ndarray
             The specific time points for which to estimate the Brier scores.
-        IPCW_weighted: bool, default = True
+        IPCW_weighted : bool, default=True
             Whether to use IPCW weighting for the Brier score.
 
         Returns
         -------
-        brier_scores: np.ndarray
+        brier_scores : ndarray
             Values of multiple Brier scores, in the same order as `target_times`.
+
+        References
+        ----------
+        .. [1] Brier, G. W. (1950). "Verification of forecasts expressed in terms
+           of probability". Monthly Weather Review, 78(1), 1-3.
+           https://doi.org/10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2
+        .. [2] Graf, E.; Schmoor, C.; Sauerbrei, W.; Schumacher, M. (1999).
+           "Assessment and comparison of prognostic classification schemes for
+           survival data". Statistics in Medicine, 18(17-18), 2529-2545.
+           https://doi.org/10.1002/(SICI)1097-0258(19990915/30)18:17/18<2529::AID-SIM274>3.0.CO;2-5
+        .. [3] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
         """
         # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
@@ -412,9 +539,13 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         """
         Calculate the integrated Brier score (IBS) from the predicted survival curve.
 
+        This averages the time-dependent Brier score over the selected interval,
+        following the integrated prediction-error measure in [1]_. When enabled,
+        IPCW accounts for right-censoring as described in [1]_ and [2]_.
+
         Parameters
         ----------
-        num_points : int, optional (default=None)
+        num_points : int, optional, default=None
             Number of evaluation time points to generate automatically.
             If provided, `target_times` must be None.
             We generate `num_points` linearly spaced times between 0 and max_target_time,
@@ -424,27 +555,38 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             If both `num_points` and `target_times` are None:
             - Infer `target_times` from the unique censoring times in the test set.
 
-        target_times : np.ndarray, shape = (m,), optional (default=None)
+        target_times : ndarray, shape = (m,), optional, default=None
             Explicit time grid at which to evaluate the Brier score.
             If provided, `num_points` must be None. We'll integrate over exactly these times.
             If unsorted, values are sorted ascending with a warning. You are
             responsible for making sure they lie within the support of the model.
 
-        IPCW_weighted: bool, default = True
+        IPCW_weighted : bool, default=True
             Whether to use IPCW weighting.
 
-        integration_method: str, default: "trapz"
+        integration_method : str, default="trapz"
             Numerical integration method. Options: "trapz" (trapezoidal), "simpson".
 
-        draw_figure: bool, default = False
+        draw_figure : bool, default=False
             Whether to draw the figure of the IBS.
 
         Returns
         -------
-        ibs: float
+        ibs : float
             The integrated Brier score when `draw_figure` is False.
-        result: tuple[float, tuple[plt.Figure, plt.Axes]]
+        result : tuple[float, tuple[plt.Figure, plt.Axes]]
             When `draw_figure` is True, returns `(ibs, (fig, ax))`.
+
+        References
+        ----------
+        .. [1] Graf, E.; Schmoor, C.; Sauerbrei, W.; Schumacher, M. (1999).
+           "Assessment and comparison of prognostic classification schemes for
+           survival data". Statistics in Medicine, 18(17-18), 2529-2545.
+           https://doi.org/10.1002/(SICI)1097-0258(19990915/30)18:17/18<2529::AID-SIM274>3.0.CO;2-5
+        .. [2] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
         """
         # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
@@ -490,30 +632,47 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the MAE score for the test set.
 
+        The ``IPCW-D``, ``IPCW-T``, and ``Pseudo_obs`` MAE formulations are
+        described in [1]_. For truncated ``Margin`` error, see [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the MAE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use weighting scheme for MAE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default: False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default: False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        mae_score: float
+        mae_score : float
             The MAE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -542,30 +701,47 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the MSE score for the test set.
 
+        The censoring strategies adapt the MAE formulations in [1]_. The
+        truncated ``Margin`` approach is described for absolute error in [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the MSE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use weighting scheme for MSE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default: False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default: False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        mse_score: float
+        mse_score : float
             The MSE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -594,30 +770,47 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the root mean squared error (RMSE) score for the test set.
 
+        The censoring strategies adapt the MAE formulations in [1]_. The
+        truncated ``Margin`` approach is described for absolute error in [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the RMSE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use weighting scheme for RMSE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default: False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default: False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        rmse_score: float
+        rmse_score : float
             The RMSE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
@@ -632,24 +825,28 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
     ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
+
+        The ``DN`` method follows D'Agostino and Nam [1]_; its Greenwood
+        variance modification is discussed in [2]_.
+
         Parameters
         ----------
-        target_time: Numeric | None, default: None
+        target_time : Numeric | None, default=None
             Evaluation time. None uses default_target_time, the median observed
             time across available training and test outcomes.
-        num_bins: int, default: 10
+        num_bins : int, default=10
             Number of bins used to calculate the one calibration score.
-        binning_strategy: str
+        binning_strategy : str
             The strategy to bin the predictions. The options are: "C" (default), and "H".
             C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
             H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
-        method: string, default: "DN"
+        method : str, default="DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
-        return_details: bool, default: False
+        return_details : bool, default=False
             Whether to return detailed calibration information, including plots and statistics.
 
-        adjust_variance: bool, default: True
+        adjust_variance : bool, default=True
             Use censoring-aware Greenwood variance for DN, or observed binomial
             variance for Uncensored, with G degrees of freedom. False uses
             the original expected binomial variance and HL/DN convention.
@@ -657,13 +854,13 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
 
         Returns
         -------
-        p_value: float
+        p_value : float
             The approximate calibration p-value; NaN for an undefined adjusted test.
-        observed_probabilities: list
+        observed_probabilities : list
             The observed probabilities in each bin.
-        expected_probabilities: list
+        expected_probabilities : list
             The expected probabilities in each bin.
-        details: dict, optional
+        details : dict, optional
             A dictionary containing detailed calibration information, including:
             - p_value: The approximate calibration p-value; NaN for an undefined adjusted test.
             - statistics: The grouped calibration statistic.
@@ -676,6 +873,16 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             - histogram_plot: A tuple containing the figure and axes of the histogram plot.
             - pp_plot: A tuple containing the figure and axes of the P-P plot.
             Only returned when 'return_details' is set to True.
+
+        References
+        ----------
+        .. [1] D'Agostino, R. B.; Nam, B.-H. (2003). "Evaluation of the performance
+           of survival analysis models: discrimination and calibration measures".
+           Handbook of Statistics, 23, 1-25.
+           https://doi.org/10.1016/S0169-7161(03)23001-7
+        .. [2] Demler, Paynter and Cook (2015). "Tests of Calibration and Goodness of Fit
+           in the Survival Setting". Statistics in Medicine, 34(10), 1659-1680.
+           https://doi.org/10.1002/sim.6428
         """
         if target_time is None:
             target_time = self.default_target_time
@@ -715,30 +922,36 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         knots: int = 3,
         draw_figure: bool | None = True,
         figure_range: tuple | None = None,
-    ) -> tuple[dict, plt.Figure]:
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
+        The smoothed calibration curve and integrated calibration index follow [1]_.
+
         Parameters
         ----------
-        target_time: Numeric | None, default: None
+        target_time : Numeric | None, default=None
             Evaluation time. None uses default_target_time, the median observed
             time across available training and test outcomes.
-        knots: int, default: 3
+        knots : int, default=3
             The number of knots to use for the spline fit in the ICI calculation.
-        draw_figure: bool, default: True
+        draw_figure : bool, default=True
             Whether to draw the figure of the ICI.
-        figure_range: tuple, default: None
+        figure_range : tuple, default=None
             The range of the figure to be drawn. If None, the range will be automatically determined based on the
             predicted probabilities and the target time.
 
         Returns
         -------
-        summary: dict
-            The summary of ICI for the target time point,
-            including the ICI value, the E50, E90, and the E_max values.
-        fig: plt.figure
-            A figure showing the graphical calibration curve.
+        dict or tuple[dict, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
+            ICI summary containing ICI, E50, E90, E_max, and curve data. When draw_figure is True
+            return (summary, (figure, axes)); otherwise return the summary alone.
+
+        References
+        ----------
+        .. [1] Austin et al. (2020). "Graphical calibration curves and the integrated
+           calibration index (ICI) for survival models". Statistics in Medicine, 39(21),
+           2714-2742. https://doi.org/10.1002/sim.8570
         """
         if target_time is None:
             target_time = self.default_target_time
@@ -755,24 +968,29 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
 
     def d_calibration(
-        self, num_bins: int = 10, return_details: bool = False
+        self,
+        num_bins: int = 10,
+        return_details: bool = False,
     ) -> tuple[float, np.ndarray] | tuple[float, dict]:
         """
         Calculate the D calibration score from the predicted survival curve.
+
+        D-calibration of individual survival distributions is described in [1]_.
+
         Parameters
         ----------
-        num_bins: int, default: 10
+        num_bins : int, default=10
             Number of bins used to calculate the D calibration score.
-        return_details: bool, default: False
+        return_details : bool, default=False
             Whether to return detailed calibration information, including plots and statistics.
 
         Returns
         -------
-        p_value: float
+        p_value : float
             The p-value of the calibration test.
-        hist: np.ndarray
+        hist : ndarray
             The histogram of the predicted probabilities in each bin.
-        details: dict, optional
+        details : dict, optional
             A dictionary containing detailed calibration information, including:
             - statistics: The D calibration statistics.
             - p_value: The p-value of the calibration test.
@@ -782,6 +1000,13 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             - max_local_slope: The maximum local slope deviation.
             - histogram_plot: A tuple containing the figure and axes of the histogram plot.
             - pp_plot: A tuple containing the figure and axes of the P-P plot.
+
+        References
+        ----------
+        .. [1] Haider, H.; Hoehn, B.; Davis, S.; Greiner, R. (2020).
+           "Effective Ways to Build and Evaluate Individual Survival Distributions".
+           Journal of Machine Learning Research, 21(85), 1-63.
+           https://www.jmlr.org/papers/v21/18-772.html
         """
         predict_probs = self.predict_probability_from_curve(self.event_times)
         statistics, p_value, hist = d_calibration(
@@ -850,26 +1075,34 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         return p_value, hist
 
     def ksd_calibration(
-        self, return_details: bool = False
+        self,
+        return_details: bool = False,
     ) -> tuple[float, float] | tuple[float, dict]:
         """
         Calculate the KSD calibration score from the predicted survival curve.
+
+        The KS calibration metric is motivated by [1]_. Here, the distribution
+        of predicted probabilities is estimated with Kaplan-Meier.
+
         Parameters
         ----------
-        return_details: bool, default: False
+        return_details : bool, default=False
             Whether to return detailed calibration information, including plots and statistics.
+
         Returns
         -------
-        p_value: float
-            The p-value of the calibration test.
-        ksd_statistic: float
-            The KSD calibration statistic.
-        details: dict, optional
-            A dictionary containing detailed calibration information, including:
-            - p_value: The p-value of the calibration test.
-            - ksd_statistic: The KSD calibration statistic.
-            - histogram_plot: A tuple containing the figure and axes of the histogram plot.
-            - pp_plot: A tuple containing the figure and axes of the P-P plot.
+        p_value : float
+            Asymptotic Kolmogorov-Smirnov calibration p-value.
+        statistic_or_details : float or dict
+            Kolmogorov-Smirnov statistic when return_details is False. Otherwise, a dictionary
+            containing statistics, p_value, empirical_distribution, and figure.
+
+        References
+        ----------
+        .. [1] Park, J.; Kim, D.; Kim, C.; Park, H.; Kang, S.; Kim, G. (2025).
+           "KSP: Kolmogorov-Smirnov metric-based Post-Hoc Calibration for
+           Survival Analysis". Advances in Neural Information Processing Systems, 38.
+           https://doi.org/10.52202/085713-0827
         """
         predict_probs = self.predict_probability_from_curve(self.event_times)
         return ksd_calibration(
@@ -886,19 +1119,38 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         """
         Calculate the residuals from the predicted survival (cumulative hazard) function.
 
+        Cox-Snell residuals follow [1]_, and both modified Cox-Snell variants
+        use the adjustments in [2]_. Martingale and deviance residuals are
+        described in [3]_ and [4]_, respectively.
+
         Parameters
         ----------
-        method: str, default: "CoxSnell"
+        method : str, default="CoxSnell"
             The method used to calculate the residuals.
             Options: "CoxSnell" (default), "Modified CoxSnell-v1", "Modified CoxSnell-v2",
             "Martingale", "Deviance".
-        draw_figure: bool, default: False
+        draw_figure : bool, default=False
             Whether to draw the figure of the residuals.
 
         Returns
         -------
-        residuals: np.ndarray
+        residuals : ndarray
             The residuals calculated from the predicted survival curve.
+
+        References
+        ----------
+        .. [1] Cox, D. R.; Snell, E. J. (1968). "A General Definition of Residuals".
+           Journal of the Royal Statistical Society: Series B (Methodological),
+           30(2), 248-265. https://doi.org/10.1111/j.2517-6161.1968.tb00724.x
+        .. [2] Collett, D. (2015). "Modelling Survival Data in Medical Research".
+           3rd ed., Chapter 4. Chapman and Hall/CRC.
+           https://doi.org/10.1201/b18041
+        .. [3] Barlow, W. E.; Prentice, R. L. (1988). "Residuals for relative risk
+           regression". Biometrika, 75(1), 65-74.
+           https://doi.org/10.1093/biomet/75.1.65
+        .. [4] Therneau, T. M.; Grambsch, P. M.; Fleming, T. R. (1990).
+           "Martingale-based residuals for survival models". Biometrika, 77(1),
+           147-160. https://doi.org/10.1093/biomet/77.1.147
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -918,19 +1170,35 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
 
     def km_calibration(
-        self, draw_figure: bool = False
+        self,
+        draw_figure: bool = False,
     ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
+
+        Related marginal-calibration diagnostics compare survival curves
+        visually [1]_ or through KL divergence [2]_. This method uses
+        integrated squared error.
+
         Parameters
         ----------
-        draw_figure: bool, default: False
+        draw_figure : bool, default=False
             Whether to draw the figure of the KM calibration curve.
+
         Returns
         -------
-        km_cal: float
-            Normalized integrated squared error between the average predicted
-            survival curve and the Kaplan-Meier estimate. Lower is better.
+        float or tuple[float, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
+            Normalized integrated squared error between the mean predicted survival curve and the
+            Kaplan-Meier estimate. When draw_figure is True, return (score, (figure, axes)).
+
+        References
+        ----------
+        .. [1] Chapfuwa et al. (2020). "Calibration and Uncertainty in Neural
+           Time-to-Event Modeling". IEEE Transactions on Neural Networks and Learning Systems.
+           https://pmc.ncbi.nlm.nih.gov/articles/PMC8439415/
+        .. [2] Yanagisawa (2023). "Proper Scoring Rules for Survival Analysis".
+           Proceedings of Machine Learning Research, 202, 39165-39182.
+           https://proceedings.mlr.press/v202/yanagisawa23a.html
         """
         if self.ndim_time == 1:
             average_survival_curve = np.mean(self._pred_survs, axis=0, dtype=float)
@@ -964,25 +1232,25 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
 
         Parameters
         ----------
-        weightings: str, optional
-           The weighting method is for weighted log-rank test.
-           Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
-           None means unweighted log-rank test.
-           Wilcoxon uses the number of at-risk population at each time point as the weight.
-           Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
-           Peto uses the estimated survival probability as the weight.
-           Fleming-Harrington uses
+        weightings : str, optional
+            The weighting method is for weighted log-rank test.
+            Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
+            None means unweighted log-rank test.
+            Wilcoxon uses the number of at-risk population at each time point as the weight.
+            Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
+            Peto uses the estimated survival probability as the weight.
+            Fleming-Harrington uses
                w_i = S(t_i) ** p * (1 - S(t_i)) ** q
-        p: float, default: 0
+        p : float, default=0
             The p parameter for the Fleming-Harrington weighting method.
-        q: float, default: 0
+        q : float, default=0
             The q parameter for the Fleming-Harrington weighting method.
 
         Returns
         -------
-        p_value: float
+        p_value : float
             The p-value of the log-rank test.
-        test_statistic: float
+        test_statistic : float
             The test statistic of the log-rank test.
         """
         results = logrank_test(
@@ -1000,15 +1268,23 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         """
         Calculate the survival AUPRC for right-censored data.
 
+        The survival precision-recall measure follows [1]_.
+
         Parameters
         ----------
-        n_quad: int, default: 256
+        n_quad : int, default=256
             Number of quadrature intervals used for numerical integration.
 
         Returns
         -------
-        auprc: float
+        auprc : float
             The survival AUPRC.
+
+        References
+        ----------
+        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
         """
         predictions_cdf = 1 - self._pred_survs
         return auprc_right_censor(
@@ -1031,29 +1307,29 @@ class PycoxEvaluator(SurvivalEvaluator, ABC):
         train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
-    ):
+    ) -> None:
         """
         Evaluator for survival models in PyCox packages.
 
         Parameters
         ----------
-        surv: pd.DataFrame, shape = (n_time_points, n_samples)
+        surv : pd.DataFrame, shape = (n_time_points, n_samples)
             Predicted survival curves for the testing samples
             DataFrame index represents the time coordinates for the given curves.
             DataFrame value represents transpose of the survival probabilities.
-        event_times: NumericArrayLike, shape = (n_samples,)
+        event_times : NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
-        event_indicators: NumericArrayLike, shape = (n_samples,)
+        event_indicators : NumericArrayLike, shape = (n_samples,)
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: NumericArrayLike, shape = (n_samples,), optional
+        train_event_times : NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
-        train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+        train_event_indicators : NumericArrayLike, shape = (n_samples,), optional
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        predict_time_method: string, default: "Median"
+        predict_time_method : str, default="Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
-        interpolation: string, default: "Linear"
+        interpolation : str, default="Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
         """
@@ -1084,27 +1360,27 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
         train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
-    ):
+    ) -> None:
         """
         Evaluator for survival models in Lifelines packages.
 
         Parameters
         ----------
-        surv: pd.DataFrame, shape = (n_time_points, n_samples)
+        surv : pd.DataFrame, shape = (n_time_points, n_samples)
             Predicted survival curves for the testing samples
-        event_times: NumericArrayLike, shape = (n_samples,)
+        event_times : NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
-        event_indicators: NumericArrayLike, shape = (n_samples,)
+        event_indicators : NumericArrayLike, shape = (n_samples,)
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: NumericArrayLike, shape = (n_samples,), optional
+        train_event_times : NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
-        train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+        train_event_indicators : NumericArrayLike, shape = (n_samples,), optional
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        predict_time_method: string, default: "Median"
+        predict_time_method : str, default="Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean" and "RMST".
-        interpolation: string, default: "Linear"
+        interpolation : str, default="Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
         """
@@ -1122,36 +1398,36 @@ class LifelinesEvaluator(PycoxEvaluator, ABC):
 class ScikitSurvivalEvaluator(SurvivalEvaluator, ABC):
     def __init__(
         self,
-        surv,
+        surv: np.ndarray,
         event_times: NumericArrayLike,
         event_indicators: NumericArrayLike,
         train_event_times: NumericArrayLike | None = None,
         train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
-    ):
+    ) -> None:
         """
         Evaluator for survival models in scikit-survival packages.
 
         Parameters
         ----------
-        surv: shape = (n_samples,)
+        surv : ndarray, shape = (n_samples,)
             Predicted survival curves for the testing samples from scikit-survival model.
             Each element is a scikit-survival customized object.
             '.x' attribute is the time coordinates for the given curve. '.y' attribute is the survival probabilities.
-        event_times: NumericArrayLike, shape = (n_samples,)
+        event_times : NumericArrayLike, shape = (n_samples,)
             Event times for the testing samples.
-        event_indicators: NumericArrayLike, shape = (n_samples,)
+        event_indicators : NumericArrayLike, shape = (n_samples,)
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: NumericArrayLike, shape = (n_samples,), optional
+        train_event_times : NumericArrayLike, shape = (n_samples,), optional
             Event times for the training samples.
-        train_event_indicators: NumericArrayLike, shape = (n_samples,), optional
+        train_event_indicators : NumericArrayLike, shape = (n_samples,), optional
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        predict_time_method: string, default: "Median"
+        predict_time_method : str, default="Median"
             The method used to calculate the predicted event time. Options: "Median" (default), "Mean", and "RMST".
-        interpolation: string, default: "Linear"
+        interpolation : str, default="Linear"
             The interpolation method used to calculate the predicted event time.
             Options: "Linear" (default), "Pchip".
         """
@@ -1199,22 +1475,22 @@ class PointEvaluator:
         event_indicators: NumericArrayLike,
         train_event_times: NumericArrayLike | None = None,
         train_event_indicators: NumericArrayLike | None = None,
-    ):
+    ) -> None:
         """
-        Initialize the Evaluator
+        Initialize the PointEvaluator with predictions and observed outcomes.
 
         Parameters
         ----------
-        pred_times: structured array, shape = (n_samples, )
+        pred_times : NumericArrayLike, shape = (n_samples, )
             Predicted survival times for the testing samples.
-        event_times: structured array, shape = (n_samples, )
+        event_times : NumericArrayLike, shape = (n_samples, )
             Actual event/censor time for the testing samples.
-        event_indicators: structured array, shape = (n_samples, )
+        event_indicators : NumericArrayLike, shape = (n_samples, )
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: structured array, shape = (n_train_samples, )
+        train_event_times : NumericArrayLike, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
-        train_event_indicators: structured array, shape = (n_train_samples, )
+        train_event_indicators : NumericArrayLike, shape = (n_train_samples, )
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
@@ -1232,7 +1508,20 @@ class PointEvaluator:
 
         self._NO_CENSOR = np.all(self.event_indicators == 1)
 
-    def _error_trainset(self, method_name: str):
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
@@ -1240,11 +1529,27 @@ class PointEvaluator:
             )
 
     @property
-    def pred_times(self):
+    def pred_times(self) -> np.ndarray:
+        """
+        Return the stored event-time point predictions.
+
+        Returns
+        -------
+        ndarray
+            Stored predicted event times with shape (n_samples,).
+        """
         return self._pred_times
 
     @pred_times.setter
-    def pred_times(self, pred_times):
+    def pred_times(self, pred_times: NumericArrayLike) -> None:
+        """
+        Replace the stored event-time point predictions.
+
+        Parameters
+        ----------
+        pred_times : NumericArrayLike
+            Predicted event times, one per testing sample.
+        """
         pred_times = check_and_convert(pred_times)
         if pred_times.shape != self.event_times.shape:
             raise ValueError("pred_times and event_times must have the same shape.")
@@ -1259,9 +1564,13 @@ class PointEvaluator:
         """
         Calculate the concordance index between the predicted survival times and the true survival times.
 
+        The ``Harrell`` and ``Naive`` methods follow [1]_; ``Uno`` and ``IPCW``
+        use the censoring-weighted approach in [2]_. The ``Margin`` method is
+        described in [3]_.
+
         Parameters
         ----------
-        ties: str, default = "Risk"
+        ties : str, default="Risk"
             A string indicating the way ties should be handled.
             Options: "None", "Time", "Risk" (default), or "All"
             "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
@@ -1270,7 +1579,7 @@ class PointEvaluator:
             "All" includes all ties.
             Note the concordance calculation is given by
             (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        method: str, default = "Harrell"
+        method : str, default="Harrell"
             A string indicating the method for constructing the pairs of samples.
             Options are "Harrell" (default), "Naive", "Uno", "IPCW", or "Margin".
             "Harrell": comparable pairs are anchored by samples with observed
@@ -1284,19 +1593,35 @@ class PointEvaluator:
             time for the censored samples will be calculated and used to construct
             the pairs. "Uno", "IPCW", and "Margin" require training set
             information.
-        tau: float, optional (default=None)
+        tau : float, optional, default=None
             Truncation time. If provided, only pairs whose effective earlier or
             anchor time is strictly before ``tau`` are counted. If None, no
             truncation is applied.
 
         Returns
         -------
-        concordance_index: float
+        concordance_index : float
             The concordance index, which is the proportion of concordant pairs among all pairs.
-        concordant_pairs: float
+        concordant_pairs : float
             The number of concordant pairs.
-        total_pairs: float
+        total_pairs : float
             The total number of comparable pairs considered in the concordance calculation.
+
+        References
+        ----------
+        .. [1] Harrell, F. E., Jr.; Lee, K. L.; Mark, D. B. (1996).
+           "Multivariable prognostic models: issues in developing models, evaluating
+           assumptions and adequacy, and measuring and reducing errors".
+           Statistics in Medicine, 15(4), 361-387.
+           https://doi.org/10.1002/(SICI)1097-0258(19960229)15:4%3C361::AID-SIM168%3E3.0.CO;2-4
+        .. [2] Uno, H.; Cai, T.; Pencina, M. J.; D'Agostino, R. B.; Wei, L. J. (2011).
+           "On the C-statistics for evaluating overall adequacy of risk prediction
+           procedures with censored survival data". Statistics in Medicine,
+           30(10), 1105-1117. https://doi.org/10.1002/sim.4154
+        .. [3] Kumar, N.; Qi, S.-A.; Kuan, L.-H.; Sun, W.; Zhang, J.; Greiner, R. (2022).
+           "Learning accurate personalized survival models for predicting hospital
+           discharge and mortality of COVID-19 patients". Scientific Reports,
+           12, 4472. https://doi.org/10.1038/s41598-022-08601-6
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -1322,30 +1647,47 @@ class PointEvaluator:
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the MAE score for the test set.
 
+        The ``IPCW-D``, ``IPCW-T``, and ``Pseudo_obs`` MAE formulations are
+        described in [1]_. For truncated ``Margin`` error, see [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the MAE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use weighting scheme for MAE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default: False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default: False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        mae_score: float
+        mae_score : float
             The MAE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -1374,30 +1716,47 @@ class PointEvaluator:
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the MSE score for the test set.
 
+        The censoring strategies adapt the MAE formulations in [1]_. The
+        truncated ``Margin`` approach is described for absolute error in [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the MSE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use weighting scheme for MSE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default: False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default: False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        mse_score: float
+        mse_score : float
             The MSE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         method = method.lower()
         if self._NO_CENSOR:
@@ -1426,30 +1785,47 @@ class PointEvaluator:
         weighted: bool | None = None,
         log_scale: bool = False,
         verbose: bool = False,
-        truncated_time=None,
+        truncated_time: float | None = None,
     ) -> float:
         """
         Calculate the root mean squared error (RMSE) score for the test set.
 
+        The censoring strategies adapt the MAE formulations in [1]_. The
+        truncated ``Margin`` approach is described for absolute error in [2]_.
+
         Parameters
         ----------
-        method: string, default: "Hinge"
+        method : str, default="Hinge"
             The method used to calculate the RMSE score.
             Options: "Uncensored", "Hinge" (default), "Margin", "IPCW-T", "IPCW-D", or "Pseudo_obs"
-        weighted: bool, default: None
+        weighted : bool, default=None
             Whether to use a weighting scheme for RMSE.
             If None, the default value is False for "Uncensored" and "Hinge" methods, and True for the rest.
-        log_scale: boolean, default = False
+        log_scale : bool, default=False
             Whether to use log scale for the time axis.
-        verbose: boolean, default = False
+        verbose : bool, default=False
             Whether to show the progress bar.
-        truncated_time: float, default: None
-            Truncated time.
+        truncated_time : float, default=None
+            Optional upper limit for the event-time errors in methods that support truncation.
 
         Returns
         -------
-        rmse_score: float
+        rmse_score : float
             The RMSE score for the test set.
+
+        References
+        ----------
+        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+           Ranganath, R.; Henao, R.; Greiner, R. (2023).
+           "An Effective Meaningful Way to Evaluate Survival Models".
+           Proceedings of the 40th International Conference on Machine Learning,
+           Proceedings of Machine Learning Research, 202, 28244-28276.
+           https://proceedings.mlr.press/v202/qi23b.html
+        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+           Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
+           Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
+           Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
+           2(1), 475-481. https://doi.org/10.1609/aaaiss.v2i1.27716
         """
         return self.mse(method, weighted, log_scale, verbose, truncated_time) ** 0.5
 
@@ -1464,25 +1840,25 @@ class PointEvaluator:
 
         Parameters
         ----------
-        weightings: str, optional
-           The weighting method is for weighted log-rank test.
-           Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
-           None means unweighted log-rank test.
-           Wilcoxon uses the number of at-risk population at each time point as the weight.
-           Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
-           Peto uses the estimated survival probability as the weight.
-           Fleming-Harrington uses
+        weightings : str, optional
+            The weighting method is for weighted log-rank test.
+            Options: "None" (default), "wilcoxon", "tarone-ware", "peto", "fleming-harrington".
+            None means unweighted log-rank test.
+            Wilcoxon uses the number of at-risk population at each time point as the weight.
+            Tarone-Ware uses the square root of the number of at-risk population at each time point as the weight.
+            Peto uses the estimated survival probability as the weight.
+            Fleming-Harrington uses
                w_i = S(t_i) ** p * (1 - S(t_i)) ** q
-        p: float, default: 0
+        p : float, default=0
             The p parameter for the Fleming-Harrington weighting method.
-        q: float, default: 0
+        q : float, default=0
             The q parameter for the Fleming-Harrington weighting method.
 
         Returns
         -------
-        p_value: float
+        p_value : float
             The p-value of the log-rank test.
-        test_statistic: float
+        test_statistic : float
             The test statistic of the log-rank test.
         """
         results = logrank_test(
@@ -1506,24 +1882,24 @@ class SingleTimeEvaluator:
         target_time: float | None = None,
         train_event_times: NumericArrayLike | None = None,
         train_event_indicators: NumericArrayLike | None = None,
-    ):
+    ) -> None:
         """
-        Initialize the Evaluator
+        Initialize the SingleTimeEvaluator with predictions and observed outcomes.
 
         Parameters
         ----------
-        pred_probs: structured array, shape = (n_samples, )
+        pred_probs : NumericArrayLike, shape = (n_samples, )
             Predicted survival probability at the target time for the testing samples.
-        event_times: structured array, shape = (n_samples, )
+        event_times : NumericArrayLike, shape = (n_samples, )
             Actual event/censor time for the testing samples.
-        event_indicators: structured array, shape = (n_samples, )
+        event_indicators : NumericArrayLike, shape = (n_samples, )
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        target_time: float, int, or None, default = None
+        target_time : float, int, or None, default=None
             Time point at which the evaluation is to be performed. If None, the target time is set to the median time
-        train_event_times: structured array, shape = (n_train_samples, )
+        train_event_times : NumericArrayLike, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
-        train_event_indicators: structured array, shape = (n_train_samples, )
+        train_event_indicators : NumericArrayLike, shape = (n_train_samples, )
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
         """
@@ -1551,7 +1927,20 @@ class SingleTimeEvaluator:
         self.target_time = target_time
         self._NO_CENSOR = np.all(self.event_indicators == 1)
 
-    def _error_trainset(self, method_name: str):
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
         if (self.train_event_times is None) or (self.train_event_indicators is None):
             raise TypeError(
                 "Train set information is missing. "
@@ -1559,11 +1948,27 @@ class SingleTimeEvaluator:
             )
 
     @property
-    def pred_probs(self):
+    def pred_probs(self) -> np.ndarray:
+        """
+        Return the stored single-time survival probabilities.
+
+        Returns
+        -------
+        ndarray
+            Stored predicted survival probabilities with shape (n_samples,).
+        """
         return self._pred_probs
 
     @pred_probs.setter
-    def pred_probs(self, pred_probs):
+    def pred_probs(self, pred_probs: NumericArrayLike) -> None:
+        """
+        Replace the stored single-time survival probabilities.
+
+        Parameters
+        ----------
+        pred_probs : NumericArrayLike
+            Predicted survival probabilities at the target time, one per testing sample.
+        """
         pred_probs = check_and_convert(pred_probs)
         if pred_probs.ndim != 1:
             raise ValueError(
@@ -1575,24 +1980,46 @@ class SingleTimeEvaluator:
         self._pred_probs = pred_probs
 
     def auc(self, method: str = "Naive") -> float:
-        """Calculate cumulative/dynamic AUROC at this evaluator's target time.
+        """
+        Calculate cumulative/dynamic AUROC at this evaluator's target time.
 
         Cases are observed events at or before the target. Controls are
         observations after the target and censorings exactly at the target.
         Earlier censorings are excluded.
 
-        Args:
-            method: "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
-                training outcomes, assumes independent censoring, and weights
-                cases by 1/G(event_time-) from reverse Kaplan-Meier.
+        The cumulative/dynamic AUROC definition follows [1]_. For ``IPCW``
+        and its alias ``Uno``, censoring-weighted estimation follows [2]_.
 
-        Returns:
+        Parameters
+        ----------
+        method : str
+            "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
+            training outcomes, assumes independent censoring, and weights
+            cases by 1/G(event_time-) from reverse Kaplan-Meier.
+
+        Returns
+        -------
+        float
             AUROC at the target time.
 
-        Raises:
-            TypeError: If IPCW is requested without training outcomes.
-            ValueError: If inputs or the method are invalid, either class is
-                absent, or IPCW cannot be estimated at the target.
+        Raises
+        ------
+        TypeError
+            If IPCW is requested without training outcomes.
+        ValueError
+            If inputs or the method are invalid, either class is
+            absent, or IPCW cannot be estimated at the target.
+
+        References
+        ----------
+        .. [1] Heagerty, P. J.; Lumley, T.; Pepe, M. S. (2000). "Time-dependent ROC
+           curves for censored survival data and a diagnostic marker".
+           Biometrics, 56(2), 337-344.
+           https://doi.org/10.1111/j.0006-341X.2000.00337.x
+        .. [2] Uno, H.; Cai, T.; Tian, L.; Wei, L. J. (2007). "Evaluating prediction
+           rules for t-year survivors with censored regression models".
+           Journal of the American Statistical Association, 102(478), 527-537.
+           https://doi.org/10.1198/016214507000000149
         """
         if method.lower() in {"ipcw", "uno"}:
             self._error_trainset("IPCW AUROC")
@@ -1611,15 +2038,33 @@ class SingleTimeEvaluator:
         """
         Calculate the Brier score at a given time point from the predicted survival curve.
 
+        The original Brier score is described in [1]_. IPCW estimation for
+        right-censored outcomes follows Graf et al. [2]_ and Gerds and
+        Schumacher [3]_.
+
         Parameters
         ----------
-        IPCW_weighted: bool, default = True
+        IPCW_weighted : bool, default=True
             Whether to use IPCW weighting for the Brier score.
 
         Returns
         -------
-        brier_score: float
+        brier_score : float
             The Brier score at the target time point.
+
+        References
+        ----------
+        .. [1] Brier, G. W. (1950). "Verification of forecasts expressed in terms
+           of probability". Monthly Weather Review, 78(1), 1-3.
+           https://doi.org/10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2
+        .. [2] Graf, E.; Schmoor, C.; Sauerbrei, W.; Schumacher, M. (1999).
+           "Assessment and comparison of prognostic classification schemes for
+           survival data". Statistics in Medicine, 18(17-18), 2529-2545.
+           https://doi.org/10.1002/(SICI)1097-0258(19990915/30)18:17/18<2529::AID-SIM274>3.0.CO;2-5
+        .. [3] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
         """
         # Fully observed test outcomes use the plain Brier score.
         if self._NO_CENSOR:
@@ -1650,21 +2095,24 @@ class SingleTimeEvaluator:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
 
+        The ``DN`` method follows D'Agostino and Nam [1]_; its Greenwood
+        variance modification is discussed in [2]_.
+
         Parameters
         ----------
-        num_bins: int, default: 10
+        num_bins : int, default=10
             Number of bins used to calculate the one calibration score.
-        binning_strategy: str, default: "C"
+        binning_strategy : str, default="C"
             The strategy to bin the predictions. The options are: "C" (default), and "H".
             C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
             H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
-        method: string, default: "DN"
+        method : str, default="DN"
             The method used to calculate the one calibration score.
             Options: "Uncensored", or "DN" (default)
-        return_details: bool, default: False
+        return_details : bool, default=False
             Whether to return the detailed calibration information.
 
-        adjust_variance: bool, default: True
+        adjust_variance : bool, default=True
             Use censoring-aware Greenwood variance for DN, or observed binomial
             variance for Uncensored, with G degrees of freedom. False uses
             the original expected binomial variance and HL/DN convention.
@@ -1672,13 +2120,13 @@ class SingleTimeEvaluator:
 
         Returns
         -------
-        p_value: float
+        p_value : float
             The approximate calibration p-value; NaN for an undefined adjusted test.
-        observed_probabilities: list
+        observed_probabilities : list
             The observed probabilities in each bin.
-        expected_probabilities: list
+        expected_probabilities : list
             The expected probabilities in each bin.
-        details: dict, optional
+        details : dict, optional
             A dictionary containing detailed calibration information, including:
             - p_value: The approximate calibration p-value; NaN for an undefined adjusted test.
             - statistics: The grouped calibration statistic.
@@ -1691,6 +2139,16 @@ class SingleTimeEvaluator:
             - histogram_plot: A tuple containing the figure and axes of the histogram plot.
             - pp_plot: A tuple containing the figure and axes of the P-P plot.
             Only returned when 'return_details' is set to True.
+
+        References
+        ----------
+        .. [1] D'Agostino, R. B.; Nam, B.-H. (2003). "Evaluation of the performance
+           of survival analysis models: discrimination and calibration measures".
+           Handbook of Statistics, 23, 1-25.
+           https://doi.org/10.1016/S0169-7161(03)23001-7
+        .. [2] Demler, Paynter and Cook (2015). "Tests of Calibration and Goodness of Fit
+           in the Survival Setting". Statistics in Medicine, 34(10), 1659-1680.
+           https://doi.org/10.1002/sim.6428
         """
         if self._NO_CENSOR:
             method = "Uncensored"
@@ -1729,22 +2187,28 @@ class SingleTimeEvaluator:
         """
         Calculate the integrated one calibration index (ICI) for a given set of predictions and true event times.
 
+        The smoothed calibration curve and integrated calibration index follow [1]_.
+
         Parameters
         ----------
-        knots: int, default = 3
+        knots : int, default=3
             The number of knots to use for the spline fit. If None, the number of knots is automatically determined.
-        draw_figure: bool, default = True
+        draw_figure : bool, default=True
             Whether to create a figure showing the graphical calibration curve.
-        figure_range: tuple, optional
+        figure_range : tuple, optional
             The range of the figure to be plotted. If None, the range is automatically determined.
 
         Returns
         -------
-        summary: dict
-            A dictionary containing the summary of ICI for the target time point, including the ICI value,
-            the E50, E90, and the E_max values.
-        fig: tuple[plt.Figure, plt.Axes]
-            The matplotlib figure and axes objects for the calibration curve plot. Returned only if draw_figure is True.
+        dict or tuple[dict, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
+            ICI summary containing ICI, E50, E90, E_max, and curve data. When draw_figure is True
+            return (summary, (figure, axes)); otherwise return the summary alone.
+
+        References
+        ----------
+        .. [1] Austin et al. (2020). "Graphical calibration curves and the integrated
+           calibration index (ICI) for survival models". Statistics in Medicine, 39(21),
+           2714-2742. https://doi.org/10.1002/sim.8570
         """
         return integrated_calibration_index(
             preds=1 - self._pred_probs,
@@ -1768,33 +2232,34 @@ class QuantileRegEvaluator(SurvivalEvaluator):
         train_event_indicators: NumericArrayLike | None = None,
         predict_time_method: str = "Median",
         interpolation: str = "Linear",
-    ):
+    ) -> None:
         """
         Initialize the quantile regression evaluator.
+
         Parameters
         ----------
-        pred_regs: structured array,
+        pred_regs : NumericArrayLike
             Accept shapes: (n_quantiles,) or (n_samples, n_quantiles).
             Predicted event-time quantiles for the testing samples. Each column
             corresponds to the matching entry in `quantile_levels`.
             At least one of `pred_regs` or `quantile_levels` must be a 2D array.
-        quantile_levels: structured array,
+        quantile_levels : NumericArrayLike
             Accept shapes: (n_quantiles,) or (n_samples, n_quantiles).
             Cumulative event-probability levels corresponding to `pred_regs`.
             At least one of `pred_regs` or `quantile_levels` must be a 2D array.
-        event_times: structured array, shape = (n_samples, )
+        event_times : NumericArrayLike, shape = (n_samples, )
             Actual event/censor time for the testing samples.
-        event_indicators: structured array, shape = (n_samples, )
+        event_indicators : NumericArrayLike, shape = (n_samples, )
             Binary event indicators for the testing samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        train_event_times: structured array, shape = (n_train_samples, )
+        train_event_times : NumericArrayLike, shape = (n_train_samples, )
             Actual event/censor time for the training samples.
-        train_event_indicators: structured array, shape = (n_train_samples, )
+        train_event_indicators : NumericArrayLike, shape = (n_train_samples, )
             Binary event indicators for the training samples: 1 denotes an
             observed event and 0 denotes a censored observation.
-        predict_time_method: str, default = "Median"
+        predict_time_method : str, default="Median"
             Method for calculating predicted survival time. Available options are "Median", "Mean" or "RMST".
-        interpolation: str, default = "Linear"
+        interpolation : str, default="Linear"
             Method for interpolation. Available options are ['Linear', 'Pchip'].
         """
         quantile_levels = check_and_convert(quantile_levels)
@@ -1814,19 +2279,36 @@ class QuantileRegEvaluator(SurvivalEvaluator):
             interpolation,
         )
 
-    def km_calibration(self, draw_figure: bool = False):
+    def km_calibration(
+        self,
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
         """
         Calculate the KM calibration score from the predicted survival curve.
 
+        Related marginal-calibration diagnostics compare survival curves
+        visually [1]_ or through KL divergence [2]_. This method uses
+        integrated squared error.
+
         Parameters
         ----------
-        draw_figure: bool, default: False
+        draw_figure : bool, default=False
             Whether to draw the figure of the KM calibration.
+
         Returns
         -------
-        km_cal: float
-            Normalized integrated squared error between the average predicted
-            survival curve and the Kaplan-Meier estimate. Lower is better.
+        float or tuple[float, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
+            Normalized integrated squared error between the mean predicted survival curve and the
+            Kaplan-Meier estimate. When draw_figure is True, return (score, (figure, axes)).
+
+        References
+        ----------
+        .. [1] Chapfuwa et al. (2020). "Calibration and Uncertainty in Neural
+           Time-to-Event Modeling". IEEE Transactions on Neural Networks and Learning Systems.
+           https://pmc.ncbi.nlm.nih.gov/articles/PMC8439415/
+        .. [2] Yanagisawa (2023). "Proper Scoring Rules for Survival Analysis".
+           Proceedings of Machine Learning Research, 202, 39165-39182.
+           https://proceedings.mlr.press/v202/yanagisawa23a.html
         """
         unique_times = np.unique(self.event_times[self.event_indicators == 1])
         survival_curves = quantile_to_survival(

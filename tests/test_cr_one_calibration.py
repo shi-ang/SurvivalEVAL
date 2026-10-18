@@ -24,7 +24,9 @@ def grouped_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 @pytest.mark.parametrize("strategy", ["C", "c", "H", "h"])
 @pytest.mark.parametrize("cause", [1, 2])
 def test_grouped_aj_incidence_with_competing_events_and_ties(
-    grouped_data: tuple, strategy: str, cause: int
+    grouped_data: tuple,
+    strategy: str,
+    cause: int,
 ) -> None:
     _, _, observed, expected = one_calibration_cr(
         *grouped_data, 2, event_of_interest=cause, num_bins=3, binning_strategy=strategy
@@ -91,7 +93,8 @@ def test_absent_cause_and_all_censored_groups(events: list, cause: int) -> None:
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_readonly_noncontiguous_inputs_are_unchanged(
-    grouped_data: tuple, dtype: type
+    grouped_data: tuple,
+    dtype: type,
 ) -> None:
     arrays = []
     for original in grouped_data:
@@ -108,7 +111,9 @@ def test_readonly_noncontiguous_inputs_are_unchanged(
 @pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
 @pytest.mark.parametrize("cause", [1, 2])
 def test_evaluator_matches_standalone_and_uses_default_time(
-    grouped_data: tuple, interpolation: str, cause: int
+    grouped_data: tuple,
+    interpolation: str,
+    cause: int,
 ) -> None:
     probabilities, times, events = grouped_data
     cifs = np.stack([probabilities * 0.6, probabilities * 0.3], axis=1)
@@ -196,7 +201,10 @@ def test_invalid_bin_count(bins: object) -> None:
     ],
 )
 def test_invalid_inputs(
-    preds: object, times: object, events: object, target: float
+    preds: object,
+    times: object,
+    events: object,
+    target: float,
 ) -> None:
     with pytest.raises(ValueError):
         one_calibration_cr(preds, times, events, target)

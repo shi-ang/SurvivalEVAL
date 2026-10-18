@@ -9,8 +9,25 @@ from SurvivalEVAL.Evaluations.util import fit_least_squares
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
 
 
-def _calibration_curve_details(observed: list, expected: list) -> dict:
-    """Describe and plot grouped calibration with predicted risk on the x-axis."""
+def _calibration_curve_details(
+    observed: list[float] | np.ndarray,
+    expected: list[float] | np.ndarray,
+) -> dict:
+    """
+    Describe and plot grouped calibration with predicted risk on the x-axis.
+
+    Parameters
+    ----------
+    observed : list[float] or ndarray
+        Observed probabilities in calibration-bin order.
+    expected : list[float] or ndarray
+        Expected probabilities in the same calibration-bin order.
+
+    Returns
+    -------
+    dict
+        Slope, intercept, maximum local deviation, and histogram and probability-probability plots.
+    """
     obs, exp = np.asarray(observed), np.asarray(expected)
     order = np.argsort(exp, kind="stable")
     slope, intercept = fit_least_squares(exp, obs, left_anchor=True, right_anchor=True)
@@ -36,8 +53,12 @@ def _calibration_curve_details(observed: list, expected: list) -> dict:
     }
 
 
-def _maximum_local_deviation(observed, expected) -> float:
-    """Measure the largest adjacent calibration slope or its reciprocal.
+def _maximum_local_deviation(
+    observed: list[float] | np.ndarray,
+    expected: list[float] | np.ndarray,
+) -> float:
+    """
+    Measure the largest adjacent calibration slope or its reciprocal.
 
     Parameters
     ----------
