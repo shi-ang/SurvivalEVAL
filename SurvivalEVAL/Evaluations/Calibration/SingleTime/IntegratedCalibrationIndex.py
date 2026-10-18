@@ -9,8 +9,8 @@ from patsy import dmatrix
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
 from SurvivalEVAL.Evaluations.util import (
-    check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_probabilities,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
 
@@ -85,7 +85,7 @@ def integrated_calibration_index(
     [1] Austin et al., Graphical calibration curves and the integrated calibration index (ICI) for survival models.
     Stat Med. 2020
     """
-    preds = check_and_convert(preds)
+    preds = check_and_convert_probabilities(preds, "preds")
     event_time, event_indicator = check_and_convert_event_data(
         event_time, event_indicator
     )
@@ -93,9 +93,6 @@ def integrated_calibration_index(
         raise ValueError(
             "preds, event_time, and event_indicator must have the same shape."
         )
-    if np.any((preds < 0) | (preds > 1)):
-        raise ValueError("Event probabilities must be between 0 and 1.")
-
     grid = np.linspace(np.quantile(preds, 0.01), np.quantile(preds, 0.99), 100)
     pred_clls = _cloglog(preds)
     distinct_predictions = np.unique(pred_clls).size

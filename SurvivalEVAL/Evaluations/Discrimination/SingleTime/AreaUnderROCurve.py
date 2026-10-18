@@ -6,8 +6,8 @@ from sklearn.metrics import roc_auc_score
 from SurvivalEVAL.Evaluations.util import (
     _check_control_definition,
     _inverse_censoring_weights,
-    check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_probabilities,
     validate_time_point,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
@@ -49,7 +49,9 @@ def auc(
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators
     )
-    predict_probs = _check_auc_predictions(predict_probs, event_times, ndim=1)
+    predict_probs = check_and_convert_probabilities(predict_probs, "predict_probs")
+    if predict_probs.shape != event_times.shape:
+        raise ValueError("predict_probs must have one entry per observed subject.")
     target_time = _auc_target_time(target_time, event_times)
     censoring_survival = _auc_censoring_survival(
         event_times,
@@ -127,7 +129,9 @@ def auc_cr_per_event(
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators, competing_risks=True
     )
-    predict_probs = _check_auc_predictions(predict_probs, event_times, ndim=1)
+    predict_probs = check_and_convert_probabilities(predict_probs, "predict_probs")
+    if predict_probs.shape != event_times.shape:
+        raise ValueError("predict_probs must have one entry per observed subject.")
     if (
         isinstance(event_of_interest, (bool, np.bool_))
         or not isinstance(event_of_interest, (int, np.integer))
@@ -201,7 +205,9 @@ def auc_cr(
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators, competing_risks=True
     )
-    predict_probs = _check_auc_predictions(predict_probs, event_times, ndim=2)
+    predict_probs = check_and_convert_probabilities(predict_probs, "predict_probs")
+    if predict_probs.ndim != 2 or predict_probs.shape[0] != event_times.size:
+        raise ValueError("predict_probs must have shape (n_samples, n_causes).")
     if np.any(event_indicators > predict_probs.shape[1]):
         raise ValueError("Event labels must not exceed the number of predicted causes.")
     target_time = _auc_target_time(target_time, event_times)
@@ -243,22 +249,6 @@ def _check_auc_options(
             raise ValueError("method must be 'Naive' or 'IPCW'.")
         raise ValueError("method must be 'Naive', 'IPCW', or 'Uno'.")
     return method != "naive", _check_control_definition(control_definition)
-
-
-def _check_auc_predictions(
-    predict_probs: np.ndarray, event_times: np.ndarray, ndim: int
-) -> np.ndarray:
-    """Validate probabilities with one sample axis and an optional cause axis."""
-    predict_probs = check_and_convert(predict_probs)
-    if predict_probs.ndim != ndim or predict_probs.shape[0] != event_times.size:
-        if ndim == 1:
-            raise ValueError("predict_probs must have one entry per observed subject.")
-        raise ValueError("predict_probs must have shape (n_samples, n_causes).")
-    if not np.all(np.isfinite(predict_probs)) or np.any(
-        (predict_probs < 0) | (predict_probs > 1)
-    ):
-        raise ValueError("predict_probs must contain finite probabilities in [0, 1].")
-    return predict_probs
 
 
 def _auc_target_time(target_time: float | None, event_times: np.ndarray) -> float:

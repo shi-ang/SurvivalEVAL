@@ -75,7 +75,14 @@
     grid resolution and integration, and correct the survival Simpson call.
 16. Add cause-specific fixed-time calibration curves through `one_calibration_cr`
     and `CompetingRisksEvaluator.one_calibration`, using within-group
-    Aalen–Johansen incidence and the existing C/H bins. 
+    Aalen–Johansen incidence and the existing C/H bins.
+17. Add `adjust_variance=True` to single-event and competing-risk one-calibration.
+    Use Greenwood/KM and tied-event Greenwood-type AJ variances in a shared
+    grouped Wald test, with one degree of freedom per nonempty group for
+    independently trained predictions. Return approximate p-values and optional
+    test/curve details; report undefined adjusted tests when group variances are
+    zero. False uses expected-binomial HL/DN scoring. Use right-continuous,
+    stepwise calibration estimates and include events at the target time.
 
 ## 2026-10-08: Version 0.8.7
 

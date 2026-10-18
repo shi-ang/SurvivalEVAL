@@ -26,6 +26,7 @@ def calibrate(request):
                 np.ones(times.size),
                 2.0,
                 method=request.param,
+                adjust_variance=False,
                 **kwargs,
             )
         left = right = times
@@ -143,7 +144,9 @@ def test_survival_evaluator_all_one_curves_calibrate_without_arithmetic_errors()
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         summary = evaluator.integrated_calibration_index(3.0, draw_figure=False)
-        p_value, _, expected = evaluator.one_calibration(3.0, num_bins=3)
+        p_value, _, expected = evaluator.one_calibration(
+            3.0, num_bins=3, adjust_variance=False
+        )
     assert summary["ICI"] == pytest.approx(0.25)
     assert p_value == 0.0
     np.testing.assert_array_equal(expected, 0.0)
@@ -169,6 +172,8 @@ def test_constant_calibration_details_handle_tied_or_single_bins(kind, strategy)
         kwargs["target_time"] = 3.0
     if kind == "interval":
         kwargs["method"] = "MidPoint"
+    else:
+        kwargs["adjust_variance"] = False
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         p_value, details = evaluator.one_calibration(**kwargs)

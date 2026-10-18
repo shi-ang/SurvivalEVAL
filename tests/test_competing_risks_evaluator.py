@@ -139,7 +139,7 @@ def test_finite_horizon_requires_explicit_eventual_probabilities(predictions):
         ("duplicate_time", "strictly increasing"),
         ("infinite_time", "finite, non-negative"),
         ("negative_time", "finite, non-negative"),
-        ("observed_rank", "1D arrays"),
+        ("observed_rank", "1D"),
         ("negative_observed", "finite and non-negative"),
         ("infinite_observed", "finite and non-negative"),
         ("beyond_horizon", "within the prediction horizon"),
@@ -421,7 +421,7 @@ def test_ipcw_concordance_requires_training_data(predictions):
     [
         ([1], None, "Supply both"),
         (None, [1], "Supply both"),
-        ([[1]], [[1]], "must be 1D"),
+        ([[1]], [[1]], "1D"),
         ([1, 2], [1], "same shape"),
         ([-1], [1], "finite and non-negative"),
         ([np.inf], [1], "finite and non-negative"),

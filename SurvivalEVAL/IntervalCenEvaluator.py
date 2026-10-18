@@ -588,8 +588,13 @@ class IntervalCenEvaluator(_BaseSurvivalEvaluator):
             method=method,
         )
         if return_details:
-            details = _calibration_curve_details(obs, exp)
-            details.update(p_value=p_value, statistics=hl_stats)
+            details = {
+                "p_value": p_value,
+                "statistics": hl_stats,
+                "observed_probabilities": obs,
+                "expected_probabilities": exp,
+            }
+            details.update(_calibration_curve_details(obs, exp))
             return p_value, details
         return p_value, obs, exp
 

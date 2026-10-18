@@ -154,7 +154,8 @@ def test_quantile_calibration_tools(quantile_evaluator):
     one_p, one_details = evaluator.one_calibration(
         target_time=target_time, num_bins=5, return_details=True
     )
-    assert np.isfinite(one_p)
+    assert np.isnan(one_p)
+    assert 0 in one_details["variances"]
     assert "observed_probabilities" in one_details
     fig_hist, _ = one_details["histogram_plot"]
     fig_pp, _ = one_details["pp_plot"]

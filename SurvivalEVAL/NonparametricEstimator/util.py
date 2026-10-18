@@ -7,17 +7,21 @@ import numpy as np
 from SurvivalEVAL.Evaluations.util import get_prob_at_zero
 
 
-def _predict_step(t, event_times, values, baseline):
-    """Evaluate right-continuous scalar/vector/matrix steps at arbitrary shapes."""
+def _predict_step(
+    t, event_times, values, baseline, *, side: Literal["left", "right"] = "right"
+):
+    """Evaluate scalar/vector/matrix steps at arbitrary shapes and either side."""
     if event_times is None:
         raise RuntimeError("Call fit() before prediction.")
+    if side not in {"left", "right"}:
+        raise ValueError("side must be 'left' or 'right'.")
     times = np.asarray(t, dtype=float)
     if np.any(np.isnan(times)) or np.any(times < 0):
         raise ValueError(
             "Prediction times must be non-negative and must not contain NaN."
         )
 
-    indices = np.searchsorted(event_times, times.ravel(), side="right") - 1
+    indices = np.searchsorted(event_times, times.ravel(), side=side) - 1
     result = np.broadcast_to(baseline, (times.size,) + values.shape[1:]).copy()
     after_first = indices >= 0
     result[after_first] = values[indices[after_first]]

@@ -10,8 +10,8 @@ from scipy.integrate import simpson, trapezoid
 from SurvivalEVAL.Evaluations.custom_types import Numeric
 from SurvivalEVAL.Evaluations.util import (
     _inverse_censoring_weights,
-    check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_probabilities,
     validate_time_points,
 )
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
@@ -413,7 +413,7 @@ def _check_brier_inputs(
     ndim: int = 2,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Validate predictions and outcomes for survival or cause-specific Brier scores."""
-    pred_mat = check_and_convert(pred_mat)
+    pred_mat = check_and_convert_probabilities(pred_mat, "pred_mat")
     event_times, event_indicators = check_and_convert_event_data(
         event_times, event_indicators, competing_risks=competing_risks
     )
@@ -431,13 +431,6 @@ def _check_brier_inputs(
             else "(n_samples, n_causes, n_time_points)"
         )
         raise ValueError(f"pred_mat must have shape {shape}, got {pred_mat.shape}.")
-    # Validate one cause at a time so temporary masks do not grow with n_causes.
-    matrices = (pred_mat,) if ndim == 2 else pred_mat.transpose(1, 0, 2)
-    for predictions in matrices:
-        if not np.all(np.isfinite(predictions)) or np.any(
-            (predictions < 0) | (predictions > 1)
-        ):
-            raise ValueError("pred_mat must contain finite probabilities in [0, 1].")
     return pred_mat, event_times, event_indicators, target_times
 
 

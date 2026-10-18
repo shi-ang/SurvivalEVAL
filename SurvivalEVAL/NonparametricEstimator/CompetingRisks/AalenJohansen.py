@@ -44,6 +44,8 @@ class AalenJohansenCompetingRisks:
         self.unique_times_ = None
         self.surv_ = None
         self.cif_ = None
+        self._at_risk = None
+        self._event_counts = None
 
     def fit(self, times, events):
         """Fit from observed times and event labels, returning self.
@@ -91,13 +93,15 @@ class AalenJohansenCompetingRisks:
 
         survival = np.cumprod(1 - counts.sum(axis=0) / at_risk)
         survival_before = np.r_[1.0, survival][:-1]
-        counts *= survival_before / at_risk
-        np.cumsum(counts, axis=1, out=counts)
+        cifs = counts * (survival_before / at_risk)
+        np.cumsum(cifs, axis=1, out=cifs)
 
         self.n_causes_ = n_causes
         self.unique_times_ = unique_times
         self.surv_ = survival
-        self.cif_ = counts
+        self.cif_ = cifs
+        self._at_risk = at_risk
+        self._event_counts = counts
         return self
 
     def predict_surv(self, t):
@@ -124,7 +128,7 @@ class AalenJohansenCompetingRisks:
 
         Row 0 contains survival and CIFs. Each absorbing state's row is its
         identity row. Before the first event the entire matrix is the identity.
-        Matrices are constructed on demand; fitting stores only survival/CIFs.
+        Matrices are constructed on demand.
         """
         survival = self.predict_surv(t)
         n_states = self.n_causes_ + 1
@@ -134,3 +138,62 @@ class AalenJohansenCompetingRisks:
         matrices[..., 0, 0] = survival
         matrices[..., 0, 1:] = self.predict_cif(t)
         return matrices
+
+    def predict_cif_variance(self, t: float | np.ndarray) -> np.ndarray:
+        """Predict Greenwood-type variances of the fitted cause-specific CIFs.
+
+        Args:
+            t: Non-negative times, including positive infinity. Queries include
+                events at the given time, with simultaneous updates for tied causes.
+
+        Returns:
+            Variances with shape shape(t) + (n_causes,), matching predict_cif.
+            Values are zero before the first event and stay constant after
+            the final event. Calculates marginal variances on demand from the
+            fitted counts and risk sets, without refitting. A single cause
+            reduces to Kaplan–Meier Greenwood variance.
+
+        Raises:
+            RuntimeError: If fit has not been called.
+            ValueError: If times are negative or NaN.
+
+        References:
+            Allignol, Schumacher and Beyersmann (2010), "A Note on Variance
+            Estimation of the Aalen–Johansen Estimator ...",
+            https://doi.org/10.1002/bimj.200900039.
+        """
+        cifs = self.predict_cif(t)
+        times = np.asarray(t, dtype=float)
+        risk = self._at_risk.astype(float, copy=False)
+        total = self._event_counts.sum(axis=0)
+        survival_before = np.r_[1.0, self.surv_][:-1]
+        cause_fraction = self._event_counts / total
+        # Orthogonal cause-split and total-event terms keep contributions non-negative.
+        split_variance = (
+            (survival_before / risk) ** 2 * self._event_counts * (1 - cause_fraction)
+        )
+        event_weight = np.divide(
+            total, risk * (risk - total), out=np.zeros(risk.shape), where=risk > total
+        )
+        event_term = survival_before * cause_fraction * (1 - total / risk)
+        stops, inverse = np.unique(
+            np.searchsorted(self.unique_times_, times.ravel(), side="right"),
+            return_inverse=True,
+        )
+        result = np.zeros((stops.size, self.n_causes_), dtype=float)
+        for i, stop in enumerate(stops):
+            if stop == 0:
+                continue
+            remaining = self.cif_[:, stop - 1, None] - self.cif_[:, :stop]
+            result[i] = np.sum(
+                split_variance[:, :stop]
+                + (event_term[:, :stop] - remaining) ** 2 * event_weight[:stop],
+                axis=1,
+            )
+            if self.surv_[stop - 1] == 0:
+                # A sole observed cause with exhausted survival has exactly zero variance.
+                sole_cause = np.all(
+                    self._event_counts[:, :stop] == total[:stop], axis=1
+                )
+                result[i, sole_cause] = 0.0
+        return result[inverse].reshape(cifs.shape)

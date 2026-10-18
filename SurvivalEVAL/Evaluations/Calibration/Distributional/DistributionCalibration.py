@@ -7,7 +7,10 @@ from matplotlib import pyplot as plt
 from scipy.integrate import trapezoid
 from scipy.stats import chisquare
 
-from SurvivalEVAL.Evaluations.util import check_and_convert
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert_event_indicators,
+    check_and_convert_probabilities,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
@@ -226,28 +229,23 @@ def _check_cr_d_inputs(
 
     See Also
     --------
-    check_and_convert : Numeric input conversion and basic array validation.
+    check_and_convert_probabilities : Numeric conversion and probability bounds.
     """
-    cifs, event_probs = check_and_convert(pred_cifs, pred_event_probs)
-    survs, events = check_and_convert(pred_survs, event_indicators)
-    if cifs.ndim not in (1, 2) or survs.ndim != 1 or cifs.shape[0] != survs.size:
+    cifs = check_and_convert_probabilities(pred_cifs, "pred_cifs")
+    event_probs = check_and_convert_probabilities(pred_event_probs, "pred_event_probs")
+    survs = check_and_convert_probabilities(pred_survs, "pred_survs")
+    events = check_and_convert_event_indicators(event_indicators, competing_risks=True)
+    if cifs.shape != event_probs.shape:
+        raise ValueError("pred_cifs and pred_event_probs must have the same shape.")
+    if (
+        cifs.ndim not in (1, 2)
+        or survs.shape != events.shape
+        or cifs.shape[0] != survs.size
+    ):
         raise ValueError(
             "CIFs must have shape (n_samples,) or (n_samples, n_causes); "
             "survival probabilities and event_indicators must have shape (n_samples,)."
         )
-    if (
-        not np.all(np.isfinite(events))
-        or np.any(events < 0)
-        or np.any(events != np.floor(events))
-    ):
-        raise ValueError("event_indicators must be non-negative integer cause labels.")
-    for name, values in (
-        ("pred_cifs", cifs),
-        ("pred_event_probs", event_probs),
-        ("pred_survs", survs),
-    ):
-        if not np.all(np.isfinite(values)) or np.any((values < 0) | (values > 1)):
-            raise ValueError(f"{name} must contain finite probabilities in [0, 1].")
     if np.any(cifs > event_probs):
         raise ValueError(
             "Observed-time CIFs must not exceed terminal event probabilities."

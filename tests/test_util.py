@@ -12,6 +12,8 @@ from SurvivalEVAL.Evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_event_indicators,
+    check_and_convert_probabilities,
     check_monotonicity,
     make_monotonic,
     predict_multi_probs_from_curve,
@@ -117,6 +119,54 @@ def test_check_and_convert_reuses_cpu_torch_storage():
 
     assert converted.dtype == np.float32
     assert np.shares_memory(converted, values.detach().numpy())
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+@pytest.mark.parametrize("shape", [(8,), (2, 4), (2, 2, 2)])
+@pytest.mark.parametrize("copy", [False, True])
+def test_probability_validation_preserves_shape_and_storage(
+    dtype: type, shape: tuple[int, ...], copy: bool
+) -> None:
+    values = np.linspace(0, 1, 16, dtype=dtype)[::2].reshape(shape)
+    values.flags.writeable = False
+    converted = check_and_convert_probabilities(values, copy=copy)
+    np.testing.assert_array_equal(converted, values)
+    assert converted.dtype == dtype
+    assert np.shares_memory(converted, values) == (not copy)
+    assert not values.flags.writeable
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1, np.inf, -np.inf, np.nan])
+def test_probability_validation_rejects_invalid_values(value: float) -> None:
+    with pytest.raises(ValueError, match="predictions"):
+        check_and_convert_probabilities([0, value, 1], input_name="predictions")
+
+
+@pytest.mark.parametrize("competing_risks", [False, True])
+@pytest.mark.parametrize("copy", [False, True])
+def test_event_indicator_validation_without_times(
+    competing_risks: bool, copy: bool
+) -> None:
+    values = np.array([0, 1, 2] if competing_risks else [0, 1, 1], dtype=np.int64)
+    values.flags.writeable = False
+    converted = check_and_convert_event_indicators(
+        values, competing_risks=competing_risks, copy=copy
+    )
+    np.testing.assert_array_equal(converted, values)
+    assert converted.dtype == (values.dtype if competing_risks else bool)
+    assert np.shares_memory(converted, values) == (competing_risks and not copy)
+    assert not values.flags.writeable
+
+
+@pytest.mark.parametrize("competing_risks", [False, True])
+@pytest.mark.parametrize(
+    "labels", [[-1, 0], [0, 0.5], [0, np.inf], [0, np.nan], [[0, 1]]]
+)
+def test_event_indicator_validation_rejects_invalid_labels(
+    labels: list, competing_risks: bool
+) -> None:
+    with pytest.raises(ValueError):
+        check_and_convert_event_indicators(labels, competing_risks=competing_risks)
 
 
 def test_check_and_convert_event_data_preserves_compatible_arrays():

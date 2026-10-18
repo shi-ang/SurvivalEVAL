@@ -26,7 +26,7 @@ def grouped_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 def test_grouped_aj_incidence_with_competing_events_and_ties(
     grouped_data: tuple, strategy: str, cause: int
 ) -> None:
-    observed, expected = one_calibration_cr(
+    _, _, observed, expected = one_calibration_cr(
         *grouped_data, 2, event_of_interest=cause, num_bins=3, binning_strategy=strategy
     )
     # First group: S(1) = 3/4, then cause 1 has one event among two at risk.
@@ -40,7 +40,7 @@ def test_grouped_aj_incidence_with_competing_events_and_ties(
 
 @pytest.mark.parametrize("target, expected", [(0, 0.25), (2, 0.25), (4, 0.25)])
 def test_events_at_target_and_zero_are_included(target: float, expected: float) -> None:
-    observed, _ = one_calibration_cr(
+    _, _, observed, _ = one_calibration_cr(
         np.full(4, 0.25), [0, 2, 3, 4], [1, 2, 0, 2], target, num_bins=1
     )
     assert observed == [expected]
@@ -51,7 +51,9 @@ def test_fully_observed_groups_match_empirical_incidence(num_bins: int) -> None:
     probabilities = np.linspace(0, 1, 8)
     times = np.array([1, 3, 2, 4, 1, 3, 2, 4])
     events = np.array([1, 2, 2, 1, 2, 1, 1, 2])
-    obs, exp = one_calibration_cr(probabilities, times, events, 2, num_bins=num_bins)
+    _, _, obs, exp = one_calibration_cr(
+        probabilities, times, events, 2, num_bins=num_bins
+    )
     groups = [
         group for group in np.array_split(np.arange(7, -1, -1), num_bins) if group.size
     ]
@@ -66,7 +68,7 @@ def test_one_cause_matches_single_event_km_curve(strategy: str) -> None:
     predictions = np.linspace(0.1, 0.9, 12)
     times = np.tile([1, 2, 3, 4], 3)
     events = np.tile([1, 0, 1, 0], 3)
-    obs, exp = one_calibration_cr(
+    _, _, obs, exp = one_calibration_cr(
         predictions, times, events, 2.5, num_bins=3, binning_strategy=strategy
     )
     _, _, single_obs, single_exp = one_calibration(
@@ -80,7 +82,7 @@ def test_one_cause_matches_single_event_km_curve(strategy: str) -> None:
     "events, cause", [([0, 0, 0], 1), ([2, 3, 2], 1), ([1, 2, 3], 4)]
 )
 def test_absent_cause_and_all_censored_groups(events: list, cause: int) -> None:
-    obs, exp = one_calibration_cr(
+    _, _, obs, exp = one_calibration_cr(
         [0, 0.5, 1], [1, 2, 3], events, 2, cause, num_bins=8, binning_strategy="H"
     )
     np.testing.assert_array_equal(obs, [0, 0, 0])
@@ -96,7 +98,7 @@ def test_readonly_noncontiguous_inputs_are_unchanged(
         data = np.repeat(original.astype(dtype), 2)[::2]
         data.flags.writeable = False
         arrays.append(data)
-    obs, exp = one_calibration_cr(*arrays, 2, num_bins=3)
+    _, _, obs, exp = one_calibration_cr(*arrays, 2, num_bins=3)
     np.testing.assert_allclose(obs, [0.375, 0.25, 0])
     np.testing.assert_allclose(exp, [0.9, 0.5, 0.1])
     for actual, original in zip(arrays, grouped_data):
@@ -124,7 +126,8 @@ def test_evaluator_matches_standalone_and_uses_default_time(
     predicted = evaluator.predict_cifs(np.array([target]), cause)[:, 0]
     expected = one_calibration_cr(predicted, times, events, target, cause, num_bins=3)
     actual = evaluator.one_calibration(event_of_interest=cause, num_bins=3)
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(actual[0], expected[0], equal_nan=True)
+    np.testing.assert_allclose(actual[1:], expected[2:])
 
 
 @pytest.mark.parametrize("strategy", ["C", "H"])
@@ -137,14 +140,17 @@ def test_curve_details_plot_expected_on_x_axis(strategy: str, constant: bool) ->
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
-        details = evaluator.one_calibration(
+        p_value, details = evaluator.one_calibration(
             4, num_bins=3, binning_strategy=strategy, return_details=True
         )
     try:
-        obs, exp = evaluator.one_calibration(4, num_bins=3, binning_strategy=strategy)
+        _, obs, exp = evaluator.one_calibration(
+            4, num_bins=3, binning_strategy=strategy
+        )
         np.testing.assert_allclose(details["observed_probabilities"], obs)
         np.testing.assert_allclose(details["expected_probabilities"], exp)
-        assert "p_value" not in details and "statistics" not in details
+        np.testing.assert_allclose(details["p_value"], p_value, equal_nan=True)
+        assert "statistics" in details and "variances" in details
         order = np.argsort(exp, kind="stable")
         line = details["pp_plot"][1].lines[1]
         np.testing.assert_allclose(line.get_xdata(), np.asarray(exp)[order])

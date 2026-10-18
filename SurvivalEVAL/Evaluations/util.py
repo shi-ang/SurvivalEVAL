@@ -162,8 +162,44 @@ def check_and_convert_event_data(
             or negative, or indicators contain invalid event labels.
     """
     times = _as_continuous_array(event_times, copy=copy, input_name="event_times")
+    indicators = check_and_convert_event_indicators(
+        event_indicators, copy=copy, competing_risks=competing_risks
+    )
+    _check_matching_shapes((times, indicators), ("event_times", "event_indicators"))
+    if times.ndim != 1:
+        raise ValueError("Event times and indicators must be 1D arrays.")
+    if not np.all(np.isfinite(times)) or np.any(times < 0):
+        raise ValueError("Event times must be finite and non-negative.")
+    return times, indicators
+
+
+def check_and_convert_event_indicators(
+    event_indicators: NumericArrayLike,
+    *,
+    copy: bool = False,
+    competing_risks: bool = False,
+) -> np.ndarray:
+    """Validate event indicators independently of observed times.
+
+    Args:
+        event_indicators: Nonempty 1D binary indicators, or non-negative integer
+            cause labels when competing_risks is True. Zero denotes censoring.
+        copy: Return independent storage instead of reusing compatible inputs.
+        competing_risks: Preserve cause labels instead of converting to booleans.
+
+    Returns:
+        Boolean event indicators, or cause labels with their original dtype.
+        Compatible arrays are reused when copy is False; inputs are not modified.
+
+    Raises:
+        TypeError: If inputs are not real numeric arrays.
+        IndexError: If the array is empty.
+        ValueError: If inputs are not 1D or contain invalid labels.
+    """
     indicators = _as_numpy_array(event_indicators, "event_indicators")
     _validate_numeric_array(indicators, "event_indicators")
+    if indicators.ndim != 1:
+        raise ValueError("event_indicators must be a 1D array.")
 
     if competing_risks:
         if (
@@ -183,12 +219,38 @@ def check_and_convert_event_data(
     elif copy:
         indicators = indicators.copy()
 
-    _check_matching_shapes((times, indicators), ("event_times", "event_indicators"))
-    if times.ndim != 1:
-        raise ValueError("Event times and indicators must be 1D arrays.")
-    if not np.all(np.isfinite(times)) or np.any(times < 0):
-        raise ValueError("Event times must be finite and non-negative.")
-    return times, indicators
+    return indicators
+
+
+def check_and_convert_probabilities(
+    probabilities: NumericArrayLike,
+    input_name: str = "probabilities",
+    *,
+    copy: bool = False,
+) -> np.ndarray:
+    """Convert a nonempty array of finite probabilities in [0, 1].
+
+    Args:
+        probabilities: Numeric probabilities of any non-scalar shape.
+        input_name: Name used in validation errors.
+        copy: Return independent storage instead of reusing compatible floats.
+
+    Returns:
+        A floating-point array with the original shape. Compatible float32 and
+        float64 arrays are reused when copy is False; inputs are not modified.
+
+    Raises:
+        TypeError: If inputs are not real numeric arrays.
+        IndexError: If the array is empty.
+        ValueError: If probabilities are nonfinite or outside [0, 1].
+    """
+    probabilities = _as_continuous_array(
+        probabilities, copy=copy, input_name=input_name
+    )
+    # NaNs are rejected during conversion; bounds also reject infinities.
+    if probabilities.min() < 0 or probabilities.max() > 1:
+        raise ValueError(f"{input_name} must contain finite probabilities in [0, 1].")
+    return probabilities
 
 
 def validate_time_point(

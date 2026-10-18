@@ -7,8 +7,8 @@ from scipy.stats import chi2
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric
 from SurvivalEVAL.Evaluations.util import (
-    check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_probabilities,
     validate_time_point,
 )
 from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
@@ -18,6 +18,7 @@ from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
 )
+from SurvivalEVAL.NonparametricEstimator.util import _predict_step
 
 
 def _probability_bins(
@@ -46,6 +47,12 @@ def _probability_bins(
     TypeError
         If the strategy is neither "c" nor "h".
     """
+    if (
+        isinstance(num_bins, (bool, np.bool_))
+        or not isinstance(num_bins, (int, np.integer))
+        or num_bins < 1
+    ):
+        raise ValueError("num_bins must be a positive integer.")
     if strategy == "c":
         return np.array_split(np.argsort(-preds), num_bins)
     if strategy == "h":
@@ -60,7 +67,15 @@ def _probability_bins(
     raise TypeError("Please enter one of 'C','H' for binning_strategy.")
 
 
-def _calibration_result(observed, expected, bin_sizes, *, uncensored=False):
+def _calibration_result(
+    observed: list,
+    expected: list,
+    bin_sizes: list,
+    *,
+    uncensored: bool = False,
+    variances: list | None = None,
+    return_details: bool = False,
+) -> tuple[float, float, list, list] | tuple[float, dict]:
     """Compute the one-calibration statistic and its chi-square p-value.
 
     Parameters
@@ -73,6 +88,12 @@ def _calibration_result(observed, expected, bin_sizes, *, uncensored=False):
         Use n_bins - 2 degrees of freedom for the uncensored method.
         Otherwise use n_bins - 1, except when n_bins > 15, which uses
         n_bins - 2.
+    variances : list, optional
+        Estimated variances of group incidence probabilities. When supplied,
+        use G degrees of freedom and return an undefined p-value if any
+        variance is zero. Otherwise use expected binomial variances.
+    return_details : bool, default=False
+        Return (p_value, details) instead of the four-element result.
 
     Returns
     -------
@@ -83,8 +104,11 @@ def _calibration_result(observed, expected, bin_sizes, *, uncensored=False):
         NaN when the degrees of freedom are nonpositive.
     """
     obs, exp = np.asarray(observed), np.asarray(expected)
-    numerator = np.asarray(bin_sizes) * (obs - exp) ** 2
-    variance = exp * (1 - exp)
+    numerator = (obs - exp) ** 2
+    adjusted = variances is not None
+    variance = (
+        np.asarray(variances) if adjusted else exp * (1 - exp) / np.asarray(bin_sizes)
+    )
     contributions = np.divide(
         numerator,
         variance,
@@ -93,8 +117,20 @@ def _calibration_result(observed, expected, bin_sizes, *, uncensored=False):
     )
     statistic = float(contributions.sum())
     num_bins = len(observed)
-    dof = num_bins - (2 if uncensored or num_bins > 15 else 1)
-    p_value = float(chi2.sf(statistic, dof)) if dof > 0 else np.nan
+    dof = num_bins if adjusted else num_bins - (2 if uncensored or num_bins > 15 else 1)
+    defined = dof > 0 and (not adjusted or np.all(variance > 0))
+    p_value = float(chi2.sf(statistic, dof)) if defined else np.nan
+    if return_details:
+        return p_value, {
+            "p_value": p_value,
+            "statistics": statistic,
+            "observed_probabilities": observed,
+            "expected_probabilities": expected,
+            "bin_sizes": bin_sizes,
+            "variances": variance.tolist(),
+            "degrees_of_freedom": dof,
+            "adjust_variance": adjusted,
+        }
     return p_value, statistic, observed, expected
 
 
@@ -106,71 +142,64 @@ def one_calibration(
     num_bins: int = 10,
     binning_strategy: str = "C",
     method: str = "DN",
-) -> tuple[float, float, list, list]:
-    """
-    Compute the one calibration score for a given set of predictions and true event times.
+    adjust_variance: bool = True,
+    return_details: bool = False,
+) -> tuple[float, float, list, list] | tuple[float, dict]:
+    """Test fixed-time calibration in groups of predicted event probabilities.
 
-    Parameters
-    ----------
-    preds: np.ndarray
-        The predicted probabilities of experiencing the event at the time of interest.
-    event_time: np.ndarray
-        The true event times.
-    event_indicator: np.ndarray
-        Binary event indicators: 1 denotes an observed event and 0 denotes a
-        censored observation.
-    target_time: Numeric
-        The time of interest.
-    num_bins: int
-        The number of bins to divide the predictions into.
-    binning_strategy: str
-        The strategy to bin the predictions. The options are: "C" (default), and "H".
-        C-statistics means the predictions are divided into equal-sized bins based on the predicted probabilities.
-        H-statistics means the predictions are divided into equal-increment bins from 0 to 1.
-    method: str
-        The method to handle censored patients. The options are: "DN" (default), and "Uncensored".
-        "Uncensored" removes observations censored before the target time, whose event status is unknown,
-        and uses the standard Hosmer-Lemeshow test on the remaining observations.
-        "DN" method uses the D'Agostino-Nam method, which uses the Kaplan-Meier estimate of the survival function
-        to compute the average observed probabilities in each bin.
+    Args:
+        preds: One finite event probability in [0, 1] per subject at target_time.
+        event_time: Matching finite, non-negative observed event/censoring times.
+        event_indicator: Matching binary indicators, with 0 for censoring.
+        target_time: Finite, non-negative horizon. Events at this time are included.
+        num_bins: Positive integer number of groups. Empty groups are omitted.
+        binning_strategy: "C" for approximately equal-sized groups ordered by
+            descending risk, or "H" for equal-width probability groups.
+        method: "DN" (default) uses within-group Kaplan–Meier failure estimates.
+            "Uncensored" excludes subjects censored before target_time and uses
+            the remaining observed binary outcomes. Names are case-insensitive.
+        adjust_variance: Use Greenwood variance for DN, or observed binomial
+            variance for Uncensored. Defaults to True. False uses the original
+            expected binomial variance, mean(preds) * (1 - mean(preds)) / n.
+        return_details: Return (p_value, details), including statistics,
+            observed_probabilities, expected_probabilities, bin_sizes,
+            variances, degrees_of_freedom, and adjust_variance.
 
-    Returns
-    -------
-    p_value: float
-        The one calibration p-value, or NaN if too few nonempty bins remain.
-    statistics: float
-        The Hosmer-Lemeshow statistics.
-        Boundary probabilities contribute zero when observed and expected
-        probabilities agree, and infinity otherwise.
-    observed_probabilities: list
-        The observed probabilities in each bin.
-    expected_probabilities: list
-        The expected probabilities in each bin.
+    Returns:
+        (p_value, statistic, observed, expected), or (p_value, details).
+        The adjusted statistic is the sum of squared group discrepancies divided
+        by estimated variances, using G degrees of freedom for G nonempty
+        groups with predictions fixed independently of the evaluation outcomes.
+        The p-value is an asymptotic approximation,
+        not a correction for evaluating a fitted model on its development data.
+        It is NaN if no groups remain or any adjusted variance is zero.
+        Without adjustment, the existing HL/DN degrees-of-freedom convention applies.
+        KM estimates are right-continuous and stay constant after the final event.
+
+    Notes:
+        Censoring must be independent within risk groups. Sparse groups make
+        chi-square approximations unreliable; inspect the curve and group sizes.
+
+    References:
+        Demler, Paynter and Cook (2015), "Tests of Calibration and Goodness of Fit
+        in the Survival Setting", https://doi.org/10.1002/sim.6428.
     """
     method = method.lower()
     if method not in {"uncensored", "dn"}:
         raise TypeError("Please enter one of 'Uncensored','DN' for method.")
-
-    observed, expected, bin_sizes = [], [], []
-    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
-        if method == "uncensored":
-            indices = indices[
-                ~((event_time[indices] < target_time) & (event_indicator[indices] == 0))
-            ]
-        if indices.size == 0:
-            continue
-
-        if method == "uncensored":
-            event_probability = np.mean(event_time[indices] < target_time)
-        else:
-            km = KaplanMeier(event_time[indices], event_indicator[indices])
-            event_probability = 1 - km.predict(target_time)
-        observed.append(event_probability)
-        expected.append(np.mean(preds[indices], dtype=float))
-        bin_sizes.append(indices.size)
-
-    return _calibration_result(
-        observed, expected, bin_sizes, uncensored=method == "uncensored"
+    event_time, event_indicator = check_and_convert_event_data(
+        event_time, event_indicator
+    )
+    return _one_calibration(
+        preds,
+        event_time,
+        event_indicator,
+        target_time,
+        num_bins,
+        binning_strategy,
+        adjust_variance,
+        return_details,
+        method=method,
     )
 
 
@@ -182,75 +211,65 @@ def one_calibration_cr(
     event_of_interest: int = 1,
     num_bins: int = 10,
     binning_strategy: str = "C",
-) -> tuple[list[float], list[float]]:
-    """Calculate a cause-specific calibration curve at one time.
-
-    Compare each group's mean predicted CIF with its Aalen–Johansen estimate
-    for the selected cause. All observed causes contribute to the risk sets;
-    competing events are not treated as censorings. Assumes independent
-    censoring within each group. This curve does not provide a calibration test.
+    adjust_variance: bool = True,
+    return_details: bool = False,
+) -> tuple[float, float, list, list] | tuple[float, dict]:
+    """Test cause-specific calibration at one time using grouped AJ incidence.
 
     Args:
         preds: One finite CIF probability in [0, 1] per subject at target_time.
-        event_time: Finite, non-negative observed event or censoring times.
-        event_indicator: Matching non-negative integer labels, with 0 for censoring.
-        target_time: Finite, non-negative evaluation time. Events at this time
-            contribute to observed incidence (right continuity).
+        event_time: Matching finite, non-negative observed event/censoring times.
+        event_indicator: Matching non-negative integer cause labels; 0 is censoring.
+        target_time: Finite, non-negative horizon. Events at this time are included.
         event_of_interest: Positive integer cause label, including an absent cause.
         num_bins: Positive integer number of groups. Empty groups are omitted.
-        binning_strategy: "C" (default) splits descending risks into approximately
-            equal-sized groups; "H" uses equal-width groups on [0, 1].
-            Case-insensitive, with the same grouping as survival one_calibration.
+        binning_strategy: "C" for approximately equal-sized groups ordered by
+            descending risk, or "H" for equal-width probability groups.
+        adjust_variance: Use the Greenwood-type variance of the Aalen–Johansen
+            incidence estimate, accounting for simultaneous tied events.
+            Defaults to True. False uses expected binomial variance instead.
+        return_details: Return (p_value, details), with the same fields as
+            single-event one_calibration, including group variances and sizes.
 
     Returns:
-        Observed and mean predicted probabilities for each nonempty group.
-        C groups follow descending risk; H groups follow ascending risk.
-        All-censored groups and groups without the selected cause have observed
-        probability zero. AJ estimates stay constant after the final event.
+        (p_value, statistic, observed, expected), or (p_value, details).
+        Observed probabilities are within-group AJ estimates for the selected
+        cause. Other causes remain observed events, pooled for this calculation.
+        The adjusted test is a grouped Wald extension using AJ variance and G
+        degrees of freedom, not the original single-event GND test. P-values are
+        asymptotic approximations assuming independent censoring within groups
+        and an independently trained prediction model. Sparse groups can be
+        unreliable. The adjusted p-value is NaN if any group variance is zero
+        or no groups remain. Estimates stay constant after the final event;
+        unobserved causes and all-censored groups have incidence zero.
 
-    Raises:
-        ValueError: If predictions, outcomes, time, cause, or bin count are invalid.
-        TypeError: If the binning strategy is unsupported.
+    References:
+        Allignol, Schumacher and Beyersmann (2010), "A Note on Variance Estimation
+        of the Aalen–Johansen Estimator ...", https://doi.org/10.1002/bimj.200900039.
     """
     event_time, event_indicator = check_and_convert_event_data(
         event_time, event_indicator, competing_risks=True
     )
-    preds = check_and_convert(preds)
-    if preds.shape != event_time.shape:
-        raise ValueError("preds must have one probability per observed subject.")
-    if not np.all(np.isfinite(preds)) or np.any((preds < 0) | (preds > 1)):
-        raise ValueError("preds must contain finite probabilities in [0, 1].")
-    target_time = validate_time_point(target_time)
-    if not np.isfinite(target_time):
-        raise ValueError("target_time must be finite.")
     if (
         isinstance(event_of_interest, (bool, np.bool_))
         or not isinstance(event_of_interest, (int, np.integer))
         or event_of_interest < 1
     ):
         raise ValueError("event_of_interest must be a positive integer cause label.")
-    if (
-        isinstance(num_bins, (bool, np.bool_))
-        or not isinstance(num_bins, (int, np.integer))
-        or num_bins < 1
-    ):
-        raise ValueError("num_bins must be a positive integer.")
 
-    # Pool competing causes: only the selected cause's CIF is needed.
-    # Our way is an equivalent computational simplification of the original labels,
-    # it avoids calculating separate CIFs that this function never uses. 
+    # Pool competing causes: the selected CIF and its variance are unchanged.
     events = np.where(event_indicator > 0, 2, 0)
     events[event_indicator == event_of_interest] = 1
-    observed, expected = [], []
-    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
-        if indices.size == 0:
-            continue
-        aj = AalenJohansenCompetingRisks(n_causes=2).fit(
-            event_time[indices], events[indices]
-        )
-        observed.append(float(aj.predict_cif(target_time)[0]))
-        expected.append(float(np.mean(preds[indices], dtype=float)))
-    return observed, expected
+    return _one_calibration(
+        preds,
+        event_time,
+        events,
+        target_time,
+        num_bins,
+        binning_strategy,
+        adjust_variance,
+        return_details,
+    )
 
 
 def one_cal_ic(
@@ -319,3 +338,62 @@ def one_cal_ic(
         bin_sizes.append(indices.size)
 
     return _calibration_result(observed, expected, bin_sizes)
+
+
+def _one_calibration(
+    preds: np.ndarray,
+    event_time: np.ndarray,
+    events: np.ndarray,
+    target_time: float,
+    num_bins: int,
+    binning_strategy: str,
+    adjust_variance: bool,
+    return_details: bool,
+    *,
+    method: str = "aj",
+) -> tuple[float, float, list, list] | tuple[float, dict]:
+    """Evaluate pooled labels (0 censoring, 1 selected, 2 competing) in risk bins."""
+    preds = check_and_convert_probabilities(preds, "preds")
+    if preds.shape != event_time.shape:
+        raise ValueError("preds must have one probability per observed subject.")
+    target_time = validate_time_point(target_time)
+    if not np.isfinite(target_time):
+        raise ValueError("target_time must be finite.")
+    observed, expected, bin_sizes = [], [], []
+    variances = [] if adjust_variance else None
+    uncensored = method == "uncensored"
+    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
+        if uncensored:
+            indices = indices[
+                ~((event_time[indices] < target_time) & (events[indices] == 0))
+            ]
+        if indices.size == 0:
+            continue
+        times, indicators = event_time[indices], events[indices]
+        if uncensored:
+            probability = float(np.mean((times <= target_time) & (indicators == 1)))
+            if adjust_variance:
+                variances.append(probability * (1 - probability) / indices.size)
+        elif method == "dn":
+            km = KaplanMeier(times, indicators)
+            probability = float(
+                _predict_step(target_time, km.survival_times, km.cumulative_dens, 0.0)
+            )
+            if adjust_variance:
+                variances.append(km.predict_variance(target_time))
+        else:
+            aj = AalenJohansenCompetingRisks(n_causes=2).fit(times, indicators)
+            probability = float(aj.predict_cif(target_time)[0])
+            if adjust_variance:
+                variances.append(float(aj.predict_cif_variance(target_time)[0]))
+        observed.append(probability)
+        expected.append(float(np.mean(preds[indices], dtype=float)))
+        bin_sizes.append(indices.size)
+    return _calibration_result(
+        observed,
+        expected,
+        bin_sizes,
+        uncensored=uncensored,
+        variances=variances,
+        return_details=return_details,
+    )

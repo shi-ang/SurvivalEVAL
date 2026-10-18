@@ -200,7 +200,7 @@ def test_only_contributing_censoring_probabilities_are_required() -> None:
         ({"event_indicators": [1, -1]}, "integer labels"),
         ({"target_times": [np.inf]}, "finite"),
         ({"target_times": [-1]}, "non-negative"),
-        ({"pred_mat": [1, 2]}, "shape"),
+        ({"pred_mat": [0.1, 0.2]}, "shape"),
     ],
 )
 def test_invalid_inputs(aggregate: bool, changes: dict, message: str) -> None:

@@ -9,6 +9,7 @@ from scipy.integrate import trapezoid
 
 from SurvivalEVAL.NonparametricEstimator.util import (
     _compute_event_counts,
+    _predict_step,
     infer_survival_probabilities,
 )
 
@@ -114,6 +115,42 @@ class KaplanMeier:
             return float(probabilities)
 
         return probabilities
+
+    def predict_variance(
+        self,
+        prediction_times: float | np.ndarray,
+        *,
+        side: Literal["left", "right"] = "right",
+    ) -> float | np.ndarray:
+        """Predict Greenwood variance of the fitted Kaplan–Meier step estimate.
+
+        Args:
+            prediction_times: Non-negative times, including positive infinity.
+            side: "right" (default) includes updates at the query time; "left"
+                excludes them. Uses the fitted risk sets, including reverse-KM
+                events-first risk sets when reverse=True.
+
+        Returns:
+            Variances with the query shape, or a float for a scalar query.
+            Variance is zero before the first event and stays constant after
+            the final observation. Applies to fitted survival S(t) and 1 - S(t);
+            it describes the step estimate rather than an extrapolated curve.
+
+        Raises:
+            ValueError: If times are negative or NaN, or side is invalid.
+        """
+        risk = self.population_count.astype(float, copy=False)
+        increments = np.divide(
+            self.events,
+            risk * (risk - self.events),
+            out=np.zeros(risk.shape),
+            where=(self.events > 0) & (risk > self.events),
+        )
+        variances = self.survival_probabilities**2 * np.cumsum(increments)
+        result = _predict_step(
+            prediction_times, self.survival_times, variances, 0.0, side=side
+        )
+        return result.item() if result.ndim == 0 else result
 
 
 @dataclass

@@ -628,6 +628,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
+        adjust_variance: bool = True,
     ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
@@ -648,18 +649,25 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         return_details: bool, default: False
             Whether to return detailed calibration information, including plots and statistics.
 
+        adjust_variance: bool, default: True
+            Use censoring-aware Greenwood variance for DN, or observed binomial
+            variance for Uncensored, with G degrees of freedom. False uses
+            the original expected binomial variance and HL/DN convention.
+            Adjusted p-values are undefined if any group variance is zero.
+
         Returns
         -------
         p_value: float
-            The p-value of the calibration test.
+            The approximate calibration p-value; NaN for an undefined adjusted test.
         observed_probabilities: list
             The observed probabilities in each bin.
         expected_probabilities: list
             The expected probabilities in each bin.
         details: dict, optional
             A dictionary containing detailed calibration information, including:
-            - p_value: The p-value of the calibration test.
-            - statistics: The Hosmer-Lemeshow statistics.
+            - p_value: The approximate calibration p-value; NaN for an undefined adjusted test.
+            - statistics: The grouped calibration statistic.
+            - variances, bin_sizes, degrees_of_freedom: Test variance and group information.
             - observed_probabilities: The observed probabilities in each bin.
             - expected_probabilities: The expected probabilities in each bin.
             - slope: The slope of the calibration curve.
@@ -676,7 +684,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             method = "Uncensored"
 
         predict_probs = self.predict_probability_from_curve(target_time)
-        p_value, hl_stats, obs, exp = one_calibration(
+        p_value, details = one_calibration(
             preds=1 - predict_probs,
             event_time=self.event_times,
             event_indicator=self.event_indicators,
@@ -684,13 +692,22 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             num_bins=num_bins,
             binning_strategy=binning_strategy,
             method=method,
+            adjust_variance=adjust_variance,
+            return_details=True,
         )
         if return_details:
-            details = _calibration_curve_details(obs, exp)
-            details.update(p_value=p_value, statistics=hl_stats)
+            details.update(
+                _calibration_curve_details(
+                    details["observed_probabilities"], details["expected_probabilities"]
+                )
+            )
             return p_value, details
 
-        return p_value, obs, exp
+        return (
+            p_value,
+            details["observed_probabilities"],
+            details["expected_probabilities"],
+        )
 
     def integrated_calibration_index(
         self,
@@ -1628,6 +1645,7 @@ class SingleTimeEvaluator:
         binning_strategy: str = "C",
         method: str = "DN",
         return_details: bool = False,
+        adjust_variance: bool = True,
     ) -> tuple[float, list, list] | tuple[float, dict]:
         """
         Calculate the one calibration score at a given time point from the predicted survival curve.
@@ -1646,18 +1664,25 @@ class SingleTimeEvaluator:
         return_details: bool, default: False
             Whether to return the detailed calibration information.
 
+        adjust_variance: bool, default: True
+            Use censoring-aware Greenwood variance for DN, or observed binomial
+            variance for Uncensored, with G degrees of freedom. False uses
+            the original expected binomial variance and HL/DN convention.
+            Adjusted p-values are undefined if any group variance is zero.
+
         Returns
         -------
         p_value: float
-            The p-value of the calibration test.
+            The approximate calibration p-value; NaN for an undefined adjusted test.
         observed_probabilities: list
             The observed probabilities in each bin.
         expected_probabilities: list
             The expected probabilities in each bin.
         details: dict, optional
             A dictionary containing detailed calibration information, including:
-            - p_value: The p-value of the calibration test.
-            - statistics: The Hosmer-Lemeshow statistics.
+            - p_value: The approximate calibration p-value; NaN for an undefined adjusted test.
+            - statistics: The grouped calibration statistic.
+            - variances, bin_sizes, degrees_of_freedom: Test variance and group information.
             - observed_probabilities: The observed probabilities in each bin.
             - expected_probabilities: The expected probabilities in each bin.
             - slope: The slope of the calibration curve.
@@ -1670,7 +1695,7 @@ class SingleTimeEvaluator:
         if self._NO_CENSOR:
             method = "Uncensored"
 
-        p_value, hl_stats, obs, exp = one_calibration(
+        p_value, details = one_calibration(
             preds=1 - self._pred_probs,
             event_time=self.event_times,
             event_indicator=self.event_indicators,
@@ -1678,13 +1703,22 @@ class SingleTimeEvaluator:
             num_bins=num_bins,
             binning_strategy=binning_strategy,
             method=method,
+            adjust_variance=adjust_variance,
+            return_details=True,
         )
         if return_details:
-            details = _calibration_curve_details(obs, exp)
-            details.update(p_value=p_value, statistics=hl_stats)
+            details.update(
+                _calibration_curve_details(
+                    details["observed_probabilities"], details["expected_probabilities"]
+                )
+            )
             return p_value, details
 
-        return p_value, obs, exp
+        return (
+            p_value,
+            details["observed_probabilities"],
+            details["expected_probabilities"],
+        )
 
     def integrated_calibration_index(
         self,

@@ -26,8 +26,6 @@ def _calibration_curve_details(observed: list, expected: list) -> dict:
     fig.tight_layout()
 
     return {
-        "observed_probabilities": observed,
-        "expected_probabilities": expected,
         "slope": slope,
         "intercept": intercept,
         "max_local_deviation": _maximum_local_deviation(obs, exp),

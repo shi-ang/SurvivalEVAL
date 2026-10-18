@@ -27,6 +27,7 @@ from SurvivalEVAL.Evaluations.Discrimination import (
 from SurvivalEVAL.Evaluations.util import (
     check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_probabilities,
     interpolated_curve,
     validate_time_point,
     validate_time_points,
@@ -113,7 +114,7 @@ class CompetingRisksEvaluator:
         setters to update predictions. Invalid updates preserve the current
         inputs.
         """
-        pred_cifs = check_and_convert(pred_cifs)
+        pred_cifs = check_and_convert_probabilities(pred_cifs, "CIFs")
         time_coordinates = check_and_convert(time_coordinates)
         if pred_cifs.ndim != 3:
             raise ValueError(
@@ -141,10 +142,6 @@ class CompetingRisksEvaluator:
             raise ValueError(
                 "event_indicators must contain integer cause labels from 0 to n_causes."
             )
-        if not np.all(np.isfinite(pred_cifs)) or np.any(
-            (pred_cifs < 0) | (pred_cifs > 1)
-        ):
-            raise ValueError("CIFs must contain finite probabilities in [0, 1].")
         if np.any(np.diff(pred_cifs, axis=2) < 0):
             raise ValueError("CIF curves must be nondecreasing.")
         if np.any(pred_cifs.sum(axis=1) > 1 + 1e-6):
@@ -921,8 +918,9 @@ class CompetingRisksEvaluator:
         num_bins: int = 10,
         binning_strategy: str = "C",
         return_details: bool = False,
-    ) -> tuple[list[float], list[float]] | dict:
-        """Compare grouped predicted CIFs with observed incidence at one time.
+        adjust_variance: bool = True,
+    ) -> tuple[float, list, list] | tuple[float, dict]:
+        """Test grouped predicted CIFs against observed incidence at one time.
 
         Args:
             target_time: Finite, non-negative time within the prediction grid.
@@ -931,16 +929,21 @@ class CompetingRisksEvaluator:
             num_bins: Positive integer number of groups. Empty groups are omitted.
             binning_strategy: "C" (default) for approximately equal-sized risk
                 groups, or "H" for equal-width probability groups; case-insensitive.
-            return_details: Return a dictionary with observed/expected probabilities,
+            return_details: Return (p_value, details), with observed/expected probabilities,
                 anchored least-squares slope and intercept, maximum local deviation,
-                histogram_plot and pp_plot figure/axes pairs. Figures are not shown.
+                statistic, variances, bin sizes, degrees of freedom, and histogram_plot
+                and pp_plot figure/axes pairs. Figures are not shown.
+            adjust_variance: Use Greenwood-type AJ variance and G degrees of
+                freedom, defaulting to True. False uses expected binomial variance
+                and the single-event DN degrees-of-freedom convention.
 
         Returns:
-            Observed and mean predicted probabilities for each nonempty group,
-            or the diagnostics dictionary when return_details is True. Observed
+            (p_value, observed, expected), or (p_value, details). Observed
             probabilities are within-group Aalen–Johansen estimates for the
-            selected cause, including events at target_time. No p-value or
-            chi-square statistic is reported; this is a calibration curve.
+            selected cause, including events at target_time. The adjusted test
+            is a grouped Wald test with asymptotic p-values, assuming independent
+            censoring within groups and an independently trained model. P-values
+            are NaN if any adjusted variance is zero or no groups remain.
         """
         self._check_event_of_interest(event_of_interest)
         if target_time is None:
@@ -948,7 +951,7 @@ class CompetingRisksEvaluator:
         probabilities = self.predict_risks(
             "CIF", target_time=target_time, event_of_interest=event_of_interest
         )
-        observed, expected = one_calibration_cr(
+        p_value, details = one_calibration_cr(
             probabilities,
             self.event_times,
             self.event_indicators,
@@ -956,10 +959,21 @@ class CompetingRisksEvaluator:
             event_of_interest,
             num_bins,
             binning_strategy,
+            adjust_variance=adjust_variance,
+            return_details=True,
         )
         if return_details:
-            return _calibration_curve_details(observed, expected)
-        return observed, expected
+            details.update(
+                _calibration_curve_details(
+                    details["observed_probabilities"], details["expected_probabilities"]
+                )
+            )
+            return p_value, details
+        return (
+            p_value,
+            details["observed_probabilities"],
+            details["expected_probabilities"],
+        )
 
     def cr_d_calibration(
         self,

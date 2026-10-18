@@ -256,6 +256,7 @@ patient at one target time.
 | IPCW Brier score | Brier score with inverse-probability-of-censoring weights. | `evl.brier_score(target_time=..., IPCW_weighted=True)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
 | Uncensored HL calibration | Hosmer-Lemeshow calibration test on uncensored samples. | `evl.one_calibration(target_time=..., method="Uncensored")` | [Hosmer and Lemeshow](https://www.tandfonline.com/doi/abs/10.1080/03610928008827941) |
 | DN HL calibration | D'Agostino-Nam extension using Kaplan-Meier estimates for observed probabilities. | `evl.one_calibration(target_time=..., method="DN")` | [D'Agostino and Nam](https://www.sciencedirect.com/science/article/pii/S0169716103230017) |
+| Variance-adjusted HL calibration | D'Agostino-Nam extension using Kaplan-Meier estimates for observed probabilities with variance adjustment. | `evl.one_calibration(target_time=..., method="DN", adjust_variance=True)` | [Demler et al.](https://onlinelibrary.wiley.com/doi/10.1002/sim.6428) |
 | Integrated calibration index | Smooth calibration-curve summary at a target time. | `evl.integrated_calibration_index(target_time=...)` | [Austin et al.](https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.8570) |
 
 ### Survival Distribution Metrics
@@ -300,6 +301,19 @@ time may contain different scores.
 `CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance, AUC, Brier scores, and integrated Brier scores, as well as CR-D-calibration.
 
 Readme docs to be updated before formal release
+
+```python
+p_value, observed, expected = evl.one_calibration(
+    target_time=25, event_of_interest=1, adjust_variance=True
+)
+p_value, details = evl.one_calibration(
+    target_time=25, event_of_interest=1, return_details=True
+)
+```
+
+`one_calibration_cr` provides the same cause-specific test for CIF probabilities
+at a fixed time. C/H binning and curve diagnostics match single-event calibration;
+competing causes remain observed events in the AJ estimate and variance.
 
 ## Interval-Censored Metrics
 
@@ -379,6 +393,12 @@ leave the risk set before tied censorings. IPCW metrics use this reverse KM esti
 returns `G(t-)`, before that time's censoring update. Fitting the corrected risk
 sets and choosing a left limit are separate operations.
 
+`km.predict_variance(times, side="right")` returns Greenwood variance of the
+fitted KM step estimate (also valid for its complement). The output matches the
+query shape; scalar input returns a float. `side="left"` excludes tied updates.
+Variance stays constant after the final observation and describes the fitted
+step estimate, independently of the linear tail used by `km.predict`.
+
 ### Competing risks and multi-state models
 
 `AalenJohansenCompetingRisks` estimates overall survival and one cumulative
@@ -395,7 +415,13 @@ aj = AalenJohansenCompetingRisks(n_causes=2).fit(
 )
 survival = aj.predict_surv([0, 1, 2])  # [1.0, 0.6, 0.3]
 cif = aj.predict_cif([0, 1, 2])       # [[0, 0], [0.2, 0.2], [0.2, 0.5]]
+variance = aj.predict_cif_variance([0, 1, 2])  # shape (3, 2)
 ```
+
+AJ variance uses the fitted counts and risk sets, preserves simultaneous ties,
+and follows `predict_cif`'s time and cause dimensions. Both estimators calculate
+variance on request. Single-event and competing-risk one-calibration reuse these
+methods for their variance adjustment.
 
 `AalenJohansenMultiState` estimates full transition matrices from aggregated
 data. Supply strictly increasing times, risk sets with shape `(J, n_states)`,
