@@ -21,6 +21,7 @@ from SurvivalEVAL.Evaluations.Calibration import (
     ksd_calibration,
     one_cal_ic,
     one_calibration,
+    one_calibration_cr,
     residuals,
 )
 from SurvivalEVAL.Evaluations.Discrimination import (
@@ -92,6 +93,7 @@ __all__ = [
     "mean_error",
     "mean_error_ic",
     "one_calibration",
+    "one_calibration_cr",
     "integrated_calibration_index",
     "one_cal_ic",
     "__version__",

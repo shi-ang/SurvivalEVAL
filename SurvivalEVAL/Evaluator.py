@@ -25,6 +25,7 @@ from SurvivalEVAL.Evaluations.Calibration import (
     residuals,
 )
 from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
+    _calibration_curve_details,
     _maximum_local_deviation,
 )
 from SurvivalEVAL.Evaluations.custom_types import Numeric, NumericArrayLike
@@ -685,60 +686,8 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             method=method,
         )
         if return_details:
-            # Fit least squares line
-            slope, intercept = fit_least_squares(
-                np.array(exp), np.array(obs), left_anchor=True, right_anchor=True
-            )
-
-            # Maximum local deviation, x is expected, y is observed
-            max_local_dev = _maximum_local_deviation(obs, exp)
-
-            # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
-            fig1, ax1 = plt.subplots()
-            bar_width = 0.4
-            indices = np.arange(len(obs)) + 1
-            ax1.bar(
-                [x - 0.2 for x in indices],
-                obs[::-1],
-                width=bar_width,
-                align="center",
-                label="Observed",
-                alpha=0.7,
-            )
-            ax1.bar(
-                [x + 0.2 for x in indices],
-                exp[::-1],
-                width=bar_width,
-                align="center",
-                label="Expected",
-                alpha=0.7,
-            )
-            ax1.set_xlabel("Groups (from lowest to highest predicted probability)")
-            ax1.set_xticks(indices)
-            ax1.set_ylabel("Probabilities")
-            ax1.legend()
-            fig1.tight_layout()
-
-            # P-P plot, reverse the order so that lower probs are at left
-            fig2, ax2 = pp_plot(
-                obs[::-1],
-                exp[::-1],
-                xlim=(-0.05, 1.05),
-                ylim=(-0.05, 1.05),
-                color="blue",
-            )
-
-            details = {
-                "p_value": p_value,
-                "statistics": hl_stats,
-                "observed_probabilities": obs,
-                "expected_probabilities": exp,
-                "slope": slope,
-                "intercept": intercept,
-                "max_local_deviation": max_local_dev,
-                "histogram_plot": (fig1, ax1),
-                "pp_plot": (fig2, ax2),
-            }
+            details = _calibration_curve_details(obs, exp)
+            details.update(p_value=p_value, statistics=hl_stats)
             return p_value, details
 
         return p_value, obs, exp
@@ -1731,44 +1680,8 @@ class SingleTimeEvaluator:
             method=method,
         )
         if return_details:
-            # Fit least squares line
-            slope, intercept = fit_least_squares(
-                np.array(exp), np.array(obs), left_anchor=True, right_anchor=True
-            )
-
-            # Maximum local deviation, x is expected, y is observed
-            max_local_dev = _maximum_local_deviation(obs, exp)
-
-            # Vertical Histogram plot, two bars for each bin, one for observed, one for expected
-            fig1, ax1 = plt.subplots()
-            bar_width = 0.35
-            indices = np.arange(len(obs))
-            ax1.bar(indices, obs, width=bar_width, label="Observed", alpha=0.7)
-            ax1.bar(
-                indices + bar_width, exp, width=bar_width, label="Expected", alpha=0.7
-            )
-            ax1.set_xlabel("Bins")
-            ax1.set_xticks(indices + bar_width / 2)
-            ax1.set_ylabel("Probabilities")
-            ax1.legend()
-            fig1.tight_layout()
-
-            # P-P plot
-            fig2, ax2 = pp_plot(
-                exp, obs, xlim=(-0.05, 1.05), ylim=(-0.05, 1.05), color="blue"
-            )
-
-            details = {
-                "p_value": p_value,
-                "statistics": hl_stats,
-                "observed_probabilities": obs,
-                "expected_probabilities": exp,
-                "slope": slope,
-                "intercept": intercept,
-                "max_local_deviation": max_local_dev,
-                "histogram_plot": (fig1, ax1),
-                "pp_plot": (fig2, ax2),
-            }
+            details = _calibration_curve_details(obs, exp)
+            details.update(p_value=p_value, statistics=hl_stats)
             return p_value, details
 
         return p_value, obs, exp

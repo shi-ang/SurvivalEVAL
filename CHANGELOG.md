@@ -73,6 +73,9 @@
     with survival Brier scores; fit censoring once per call and process causes
     with one floating-point error workspace. Share survival/competing-risk IBS
     grid resolution and integration, and correct the survival Simpson call.
+16. Add cause-specific fixed-time calibration curves through `one_calibration_cr`
+    and `CompetingRisksEvaluator.one_calibration`, using within-group
+    Aalen–Johansen incidence and the existing C/H bins. 
 
 ## 2026-10-08: Version 0.8.7
 

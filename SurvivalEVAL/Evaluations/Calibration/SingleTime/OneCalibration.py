@@ -1,4 +1,4 @@
-"""One-calibration for right- and interval-censored survival outcomes."""
+"""Grouped fixed-time calibration for survival and competing-risk outcomes."""
 
 from __future__ import annotations
 
@@ -6,6 +6,14 @@ import numpy as np
 from scipy.stats import chi2
 
 from SurvivalEVAL.Evaluations.custom_types import Numeric
+from SurvivalEVAL.Evaluations.util import (
+    check_and_convert,
+    check_and_convert_event_data,
+    validate_time_point,
+)
+from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
+    AalenJohansenCompetingRisks,
+)
 from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
@@ -164,6 +172,85 @@ def one_calibration(
     return _calibration_result(
         observed, expected, bin_sizes, uncensored=method == "uncensored"
     )
+
+
+def one_calibration_cr(
+    preds: np.ndarray,
+    event_time: np.ndarray,
+    event_indicator: np.ndarray,
+    target_time: Numeric,
+    event_of_interest: int = 1,
+    num_bins: int = 10,
+    binning_strategy: str = "C",
+) -> tuple[list[float], list[float]]:
+    """Calculate a cause-specific calibration curve at one time.
+
+    Compare each group's mean predicted CIF with its Aalen–Johansen estimate
+    for the selected cause. All observed causes contribute to the risk sets;
+    competing events are not treated as censorings. Assumes independent
+    censoring within each group. This curve does not provide a calibration test.
+
+    Args:
+        preds: One finite CIF probability in [0, 1] per subject at target_time.
+        event_time: Finite, non-negative observed event or censoring times.
+        event_indicator: Matching non-negative integer labels, with 0 for censoring.
+        target_time: Finite, non-negative evaluation time. Events at this time
+            contribute to observed incidence (right continuity).
+        event_of_interest: Positive integer cause label, including an absent cause.
+        num_bins: Positive integer number of groups. Empty groups are omitted.
+        binning_strategy: "C" (default) splits descending risks into approximately
+            equal-sized groups; "H" uses equal-width groups on [0, 1].
+            Case-insensitive, with the same grouping as survival one_calibration.
+
+    Returns:
+        Observed and mean predicted probabilities for each nonempty group.
+        C groups follow descending risk; H groups follow ascending risk.
+        All-censored groups and groups without the selected cause have observed
+        probability zero. AJ estimates stay constant after the final event.
+
+    Raises:
+        ValueError: If predictions, outcomes, time, cause, or bin count are invalid.
+        TypeError: If the binning strategy is unsupported.
+    """
+    event_time, event_indicator = check_and_convert_event_data(
+        event_time, event_indicator, competing_risks=True
+    )
+    preds = check_and_convert(preds)
+    if preds.shape != event_time.shape:
+        raise ValueError("preds must have one probability per observed subject.")
+    if not np.all(np.isfinite(preds)) or np.any((preds < 0) | (preds > 1)):
+        raise ValueError("preds must contain finite probabilities in [0, 1].")
+    target_time = validate_time_point(target_time)
+    if not np.isfinite(target_time):
+        raise ValueError("target_time must be finite.")
+    if (
+        isinstance(event_of_interest, (bool, np.bool_))
+        or not isinstance(event_of_interest, (int, np.integer))
+        or event_of_interest < 1
+    ):
+        raise ValueError("event_of_interest must be a positive integer cause label.")
+    if (
+        isinstance(num_bins, (bool, np.bool_))
+        or not isinstance(num_bins, (int, np.integer))
+        or num_bins < 1
+    ):
+        raise ValueError("num_bins must be a positive integer.")
+
+    # Pool competing causes: only the selected cause's CIF is needed.
+    # Our way is an equivalent computational simplification of the original labels,
+    # it avoids calculating separate CIFs that this function never uses. 
+    events = np.where(event_indicator > 0, 2, 0)
+    events[event_indicator == event_of_interest] = 1
+    observed, expected = [], []
+    for indices in _probability_bins(preds, num_bins, binning_strategy.lower()):
+        if indices.size == 0:
+            continue
+        aj = AalenJohansenCompetingRisks(n_causes=2).fit(
+            event_time[indices], events[indices]
+        )
+        observed.append(float(aj.predict_cif(target_time)[0]))
+        expected.append(float(np.mean(preds[indices], dtype=float)))
+    return observed, expected
 
 
 def one_cal_ic(

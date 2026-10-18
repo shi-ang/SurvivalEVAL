@@ -13,7 +13,10 @@ from SurvivalEVAL.Evaluations.BrierScore import (
     brier_multiple_points_cr,
     brier_multiple_points_cr_per_event,
 )
-from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration
+from SurvivalEVAL.Evaluations.Calibration import cr_d_calibration, one_calibration_cr
+from SurvivalEVAL.Evaluations.Calibration.SingleTime.util import (
+    _calibration_curve_details,
+)
 from SurvivalEVAL.Evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.Evaluations.Discrimination import (
     auc_cr,
@@ -910,6 +913,53 @@ class CompetingRisksEvaluator:
             tau=tau,
             event_of_interest=event_of_interest,
         )
+
+    def one_calibration(
+        self,
+        target_time: float | None = None,
+        event_of_interest: int = 1,
+        num_bins: int = 10,
+        binning_strategy: str = "C",
+        return_details: bool = False,
+    ) -> tuple[list[float], list[float]] | dict:
+        """Compare grouped predicted CIFs with observed incidence at one time.
+
+        Args:
+            target_time: Finite, non-negative time within the prediction grid.
+                None uses default_target_time, the median available observed time.
+            event_of_interest: Integer cause label from 1 through n_causes.
+            num_bins: Positive integer number of groups. Empty groups are omitted.
+            binning_strategy: "C" (default) for approximately equal-sized risk
+                groups, or "H" for equal-width probability groups; case-insensitive.
+            return_details: Return a dictionary with observed/expected probabilities,
+                anchored least-squares slope and intercept, maximum local deviation,
+                histogram_plot and pp_plot figure/axes pairs. Figures are not shown.
+
+        Returns:
+            Observed and mean predicted probabilities for each nonempty group,
+            or the diagnostics dictionary when return_details is True. Observed
+            probabilities are within-group Aalen–Johansen estimates for the
+            selected cause, including events at target_time. No p-value or
+            chi-square statistic is reported; this is a calibration curve.
+        """
+        self._check_event_of_interest(event_of_interest)
+        if target_time is None:
+            target_time = self.default_target_time
+        probabilities = self.predict_risks(
+            "CIF", target_time=target_time, event_of_interest=event_of_interest
+        )
+        observed, expected = one_calibration_cr(
+            probabilities,
+            self.event_times,
+            self.event_indicators,
+            target_time,
+            event_of_interest,
+            num_bins,
+            binning_strategy,
+        )
+        if return_details:
+            return _calibration_curve_details(observed, expected)
+        return observed, expected
 
     def cr_d_calibration(
         self,

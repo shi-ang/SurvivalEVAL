@@ -176,6 +176,14 @@ def test_constant_calibration_details_handle_tied_or_single_bins(kind, strategy)
         assert p_value == 0.0 if strategy == "C" else np.isnan(p_value)
         assert details["statistics"] == np.inf
         assert np.isnan(details["max_local_deviation"])
+        order = np.argsort(details["expected_probabilities"], kind="stable")
+        line = details["pp_plot"][1].lines[1]
+        np.testing.assert_allclose(
+            line.get_xdata(), np.asarray(details["expected_probabilities"])[order]
+        )
+        np.testing.assert_allclose(
+            line.get_ydata(), np.asarray(details["observed_probabilities"])[order]
+        )
     finally:
         plt.close(details["histogram_plot"][0])
         plt.close(details["pp_plot"][0])

@@ -13,7 +13,12 @@ from .Distributional import (
     ksd_calibration,
     residuals,
 )
-from .SingleTime import integrated_calibration_index, one_cal_ic, one_calibration
+from .SingleTime import (
+    integrated_calibration_index,
+    one_cal_ic,
+    one_calibration,
+    one_calibration_cr,
+)
 
 __all__ = [
     "aj_calibration",
@@ -30,4 +35,5 @@ __all__ = [
     "integrated_calibration_index",
     "one_cal_ic",
     "one_calibration",
+    "one_calibration_cr",
 ]
