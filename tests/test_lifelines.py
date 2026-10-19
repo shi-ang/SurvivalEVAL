@@ -2,7 +2,7 @@ import numpy as np
 from lifelines import CoxPHFitter
 from lifelines.datasets import load_rossi
 
-from SurvivalEVAL.Evaluator import LifelinesEvaluator
+from SurvivalEVAL.Evaluators import LifelinesEvaluator
 
 np.random.seed(42)
 # Load the data

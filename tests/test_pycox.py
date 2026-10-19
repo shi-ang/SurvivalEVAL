@@ -13,7 +13,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from SurvivalEVAL.Evaluator import PycoxEvaluator
+from SurvivalEVAL.Evaluators import PycoxEvaluator
 
 
 def _build_preprocessor():

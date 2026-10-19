@@ -13,7 +13,7 @@ from scipy.integrate import simpson, trapezoid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from SurvivalEVAL.Evaluations.PredictionError import brier_multiple_points_ic
-from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
+from SurvivalEVAL.Evaluators.IntervalCenEvaluator import IntervalCenEvaluator
 
 
 def ibs_hinge_ic(

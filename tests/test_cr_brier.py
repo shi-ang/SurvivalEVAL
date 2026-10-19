@@ -471,7 +471,7 @@ def test_multi_time_interpolation_fits_each_selected_curve_once(
     cr_data: tuple,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module("SurvivalEVAL.CompetingRisksEvaluator")
+    module = importlib.import_module("SurvivalEVAL.Evaluators.CompetingRisksEvaluator")
     original = module.interpolated_curve
     fits = []
 

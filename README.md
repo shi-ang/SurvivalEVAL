@@ -386,6 +386,13 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 
 ## Other Evaluators And Helper APIs
 
+Evaluator classes live in `SurvivalEVAL.Evaluators`, with one class per module.
+Import them from that package or directly from `SurvivalEVAL`, for example:
+
+```python
+from SurvivalEVAL import SurvivalEvaluator
+```
+
 | API | Description | Typical Code |
 | --- | --- | --- |
 | `PointEvaluator` | Evaluates already-computed point survival-time predictions with concordance, MAE, MSE, RMSE, and log-rank tests. | `PointEvaluator(predicted_times, event_times, event_indicators, ...)` |

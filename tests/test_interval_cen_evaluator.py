@@ -8,7 +8,7 @@ from lifelines import WeibullAFTFitter
 from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_cal_ic
 from SurvivalEVAL.Evaluations.PredictionError import inclusion_rate, mean_error_ic
-from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
+from SurvivalEVAL.Evaluators.IntervalCenEvaluator import IntervalCenEvaluator
 
 
 def _load_breast_data():

@@ -1,4 +1,3 @@
-from SurvivalEVAL.CompetingRisksEvaluator import CompetingRisksEvaluator
 from SurvivalEVAL.Evaluations.Calibration import (
     aj_calibration,
     aj_calibration_per_event,
@@ -36,9 +35,12 @@ from SurvivalEVAL.Evaluations.PredictionError import (
     mean_error,
     mean_error_ic,
 )
-from SurvivalEVAL.Evaluator import (
+from SurvivalEVAL.Evaluators import (
+    CompetingRisksEvaluator,
     DistributionEvaluator,
+    IntervalCenEvaluator,
     LifelinesEvaluator,
+    MultiStateEvaluator,
     PointEvaluator,
     PycoxEvaluator,
     QuantileRegEvaluator,
@@ -46,8 +48,6 @@ from SurvivalEVAL.Evaluator import (
     SingleTimeEvaluator,
     SurvivalEvaluator,
 )
-from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
-from SurvivalEVAL.MultiStateEvaluator import MultiStateEvaluator
 from SurvivalEVAL.version import __version__
 
 __author__ = ("Shi-ang Qi", "Weijie Sun")

@@ -7,7 +7,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.integrate import simpson, trapezoid
 
-from SurvivalEVAL._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 from SurvivalEVAL.Evaluations.Calibration import (
     coverage_ic,
     d_cal_ic,
@@ -36,6 +35,8 @@ from SurvivalEVAL.Evaluations.util import (
     validate_time_points,
 )
 from SurvivalEVAL.Evaluations.util_plots import pp_plot
+
+from ._BaseSurvivalEvaluator import _BaseSurvivalEvaluator
 
 
 class IntervalCenEvaluator(_BaseSurvivalEvaluator):
