@@ -441,7 +441,9 @@ def test_one_censoring_fit_and_vector_queries(
     cr_data: tuple,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module("SurvivalEVAL.evaluations.prediction_error.brier_score")
+    module = importlib.import_module(
+        "SurvivalEVAL.evaluations.prediction_error.brier_score"
+    )
     original_predict = module.KaplanMeier.predict
     queries = []
 
@@ -471,7 +473,9 @@ def test_multi_time_interpolation_fits_each_selected_curve_once(
     cr_data: tuple,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = importlib.import_module("SurvivalEVAL.evaluators.competing_risks_evaluator")
+    module = importlib.import_module(
+        "SurvivalEVAL.evaluators.competing_risks_evaluator"
+    )
     original = module.interpolated_curve
     fits = []
 

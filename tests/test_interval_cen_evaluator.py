@@ -71,7 +71,9 @@ def test_interval_cen_time_coordinates_setter_updates_predictions() -> None:
 
     evaluator.time_coordinates = np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])
 
-    np.testing.assert_allclose(evaluator.predict_probability_from_curve(1.0), [0.8, 0.8])
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(1.0), [0.8, 0.8]
+    )
 
 
 def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():

@@ -55,9 +55,7 @@ def test_aj_variance_batch_preserves_repeated_steps_and_query_order(
     events: list,
 ) -> None:
     aj = AalenJohansenCompetingRisks(3).fit([1, 1, 2, 4], events)
-    queries = np.array(
-        [[[4, 1, 0], [2, 1.5, np.inf]], [[0.5, 4.5, 2.5], [2, 4, 1]]]
-    )
+    queries = np.array([[[4, 1, 0], [2, 1.5, np.inf]], [[0.5, 4.5, 2.5], [2, 4, 1]]])
     expected = np.array([aj.predict_cif_variance(t) for t in queries.ravel()])
     np.testing.assert_array_equal(
         aj.predict_cif_variance(queries), expected.reshape(queries.shape + (3,))

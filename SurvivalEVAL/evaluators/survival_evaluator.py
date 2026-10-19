@@ -643,7 +643,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         ----------
         .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
            Targets". ICDM, 655-660.
-           https://ieeexplore.ieee.org/document/4470306/ 
+           https://ieeexplore.ieee.org/document/4470306/
         .. [2] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
            Ranganath, R.; Henao, R.; Greiner, R. (2023).
            "An Effective Meaningful Way to Evaluate Survival Models".

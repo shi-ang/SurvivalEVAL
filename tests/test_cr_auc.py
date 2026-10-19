@@ -475,7 +475,9 @@ def test_cr_evaluator_auc_matches_standalone(
             **outcomes,
             **options,
         )
-        module = importlib.import_module("SurvivalEVAL.evaluators.competing_risks_evaluator")
+        module = importlib.import_module(
+            "SurvivalEVAL.evaluators.competing_risks_evaluator"
+        )
         with patch.object(
             module, "interpolated_curve", wraps=module.interpolated_curve
         ) as interpolate:

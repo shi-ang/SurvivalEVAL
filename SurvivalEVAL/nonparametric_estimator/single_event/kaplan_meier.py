@@ -217,6 +217,7 @@ class KaplanMeierArea(KaplanMeier):
     reverse : bool, default=False
         Whether to fit the reverse Kaplan-Meier curve.
     """
+
     area_times: np.ndarray = field(init=False)
     area_probabilities: np.ndarray = field(init=False)
     area: np.ndarray = field(init=False)

@@ -15,11 +15,15 @@ def quantile_evaluator() -> QuantileRegEvaluator:
     )
 
 
-def test_quantile_predictions_and_scores(quantile_evaluator: QuantileRegEvaluator) -> None:
+def test_quantile_predictions_and_scores(
+    quantile_evaluator: QuantileRegEvaluator,
+) -> None:
     """Check quantile conversion and inherited metrics against known values."""
     evaluator = quantile_evaluator
     np.testing.assert_allclose(evaluator.predicted_event_times, [2.0, 4.0])
-    np.testing.assert_allclose(evaluator.predict_probability_from_curve(2.0), [0.5, 0.75])
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(2.0), [0.5, 0.75]
+    )
     np.testing.assert_allclose(
         evaluator.predict_probability_from_curve(np.array([1.5, 3.0])), [0.625, 0.625]
     )
@@ -27,9 +31,13 @@ def test_quantile_predictions_and_scores(quantile_evaluator: QuantileRegEvaluato
         evaluator.predict_multi_probabilities_from_curve(np.array([1.0, 2.0, 3.0])),
         [[0.75, 0.5, 0.25], [0.875, 0.75, 0.625]],
     )
-    np.testing.assert_allclose(evaluator.predict_interval(cov_level=0.5), [[1, 3], [2, 6]])
+    np.testing.assert_allclose(
+        evaluator.predict_interval(cov_level=0.5), [[1, 3], [2, 6]]
+    )
     np.testing.assert_allclose(evaluator.concordance(), (1, 1, 1))
-    np.testing.assert_allclose(evaluator.residuals(method="CoxSnell"), -np.log([0.75, 0.75]))
+    np.testing.assert_allclose(
+        evaluator.residuals(method="CoxSnell"), -np.log([0.75, 0.75])
+    )
     assert evaluator.brier_score(target_time=2.0) == pytest.approx(13 / 32)
     assert evaluator.mae() == pytest.approx(1.5)
     assert evaluator.mse() == pytest.approx(2.5)

@@ -128,9 +128,7 @@ def _restricted_cubic_spline(
     outer = 0.1 if knots == 3 else 0.05 if knots <= 6 else 0.025
     locations = np.quantile(x, np.linspace(outer, 1 - outer, knots))
     if np.unique(x).size < knots or np.unique(locations).size < knots:
-        raise ValueError(
-            "Values do not support the requested distinct spline knots."
-        )
+        raise ValueError("Values do not support the requested distinct spline knots.")
     settings = {
         "interior_knots": locations[1:-1],
         "lower": locations[0],

@@ -83,8 +83,12 @@ def test_dataframe_evaluators_preserve_curves_and_metric_values(
     assert evaluator.pred_survs.dtype == np.float32
     np.testing.assert_allclose(evaluator.pred_survs, [[1, 0.8, 0.5], [1, 0.7, 0.4]])
     np.testing.assert_allclose(evaluator.predicted_event_times, [2, 5 / 3])
-    np.testing.assert_allclose(evaluator.predict_probability_from_curve(1.5), [0.65, 0.55])
-    assert evaluator.brier_score(target_time=1.5, IPCW_weighted=False) == pytest.approx(0.3125)
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(1.5), [0.65, 0.55]
+    )
+    assert evaluator.brier_score(target_time=1.5, IPCW_weighted=False) == pytest.approx(
+        0.3125
+    )
 
 
 def test_pycox_evaluator_does_not_mutate_dataframe_when_clipping():

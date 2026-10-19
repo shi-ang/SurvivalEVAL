@@ -178,7 +178,7 @@ class PointEvaluator:
     ) -> float:
         """
         Calculate the MAE score for the test set.
-        
+
         The ``Hinge`` method uses the one-sided censored-target loss in [1]_.
         The ``IPCW-D``, ``IPCW-T``, and ``Pseudo_obs`` MAE formulations are
         described in [2]_. For truncated ``Margin`` error, see [3]_.
