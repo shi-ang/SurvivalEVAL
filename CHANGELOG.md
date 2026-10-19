@@ -106,9 +106,7 @@ Update imports that used the former module layout:
 
 - `MultiStateEvaluator` is exported as a scaffold and has no prediction or metric
   methods. The multi-state AJ estimator is implemented; multi-state evaluation
-  metrics are not yet available.
-- The existing log-transformation ordering TODO in interval point-error scoring
-  (`mean_error_ic(log_scale=True)`) remains unresolved.
+  metrics are not yet available. We will add them in a future release.
 
 ## 2026-10-08: Version 0.8.7
 
