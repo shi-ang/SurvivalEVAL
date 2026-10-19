@@ -278,44 +278,36 @@ ICI, AJ-calibration, and CR-D-calibration, including KS deviations.
 See the executed [competing risks notebook](examples/CompetingRisks_Example.ipynb)
 for a complete walkthrough with per-cause results, aggregation, and calibration plots.
 
-```python
-p_value, observed, expected = evl.one_calibration(
-    target_time=25, event_of_interest=1, adjust_variance=True
-)
-p_value, details = evl.one_calibration(
-    target_time=25, event_of_interest=1, return_details=True
-)
-```
+In the tables, `t` is a fixed evaluation horizon, `times` is an explicit evaluation grid,
+and `event_of_interest=1` selects cause 1. Cause labels are `1, ..., K`; `0` denotes censoring.
+Predicted CIF arrays have shape `(n_samples, n_causes, n_times)`.
 
-`one_calibration_cr` provides the same cause-specific test for CIF probabilities
-at a fixed time. C/H binning and curve diagnostics match single-event calibration;
-competing causes remain observed events in the AJ estimate and variance.
+### Discrimination
 
-AJ-calibration compares each mean predicted CIF with the marginal
-Aalen–Johansen estimate, analogous to single-event `km_calibration`:
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Naive competing-risks C-index | Ranks observable cause-specific event pairs without censoring weights. | `evl.concordance(method="Naive")` or `evl.concordance_per_event(event_of_interest=1, method="Naive")` | [Wolbers et al.](https://doi.org/10.1093/biostatistics/kxt059) |
+| IPCW competing-risks C-index | Applies training-based inverse censoring weights to comparable pairs. | `evl.concordance(method="IPCW", tau=t)` or `evl.concordance_per_event(event_of_interest=1, method="IPCW", tau=t)` | [Wolbers et al.](https://doi.org/10.1093/biostatistics/kxt059) |
+| Plain AUC/AUROC | Separates selected-cause cases from controls at a fixed horizon without censoring weights. | `evl.auc(target_time=t, method="Naive")` or `evl.auc_per_event(event_of_interest=1, target_time=t, method="Naive")` | [Blanche et al.](https://doi.org/10.1002/sim.5958) |
+| IPCW AUC/AUROC | Uses training-based censoring weights for fixed-time case/control comparisons. | `evl.auc(target_time=t, method="IPCW")` or `evl.auc_per_event(event_of_interest=1, target_time=t, method="IPCW")` | [Blanche et al.](https://doi.org/10.1002/sim.5958) |
 
-```python
-score = evl.aj_calibration()  # mean across all predicted causes
-score, details = evl.aj_calibration(return_details=True)
-cause_score, (fig, ax) = evl.aj_calibration_per_event(
-    event_of_interest=1, draw_figure=True
-)
-```
+### Prediction Errors
 
-The default is the time-averaged squared curve difference (`alpha=2`); zero is
-best. `alpha=1` uses absolute differences. Scores use trapezoidal integration on
-the retained prediction grid and normalize by its final time. By default, grid
-points with fewer than 5% of subjects still at risk are excluded; set
-`min_prop_at_risk=0` to use the full grid. This grid can differ from the event
-grid used by KM-calibration. Independent censoring is required for the marginal
-AJ reference. These are calibration errors, not hypothesis-test p-values.
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Plain Brier score | Scores squared CIF errors without censoring weights; earlier censorings contribute zero to the full-sample mean. | `evl.brier_score(target_time=t, IPCW_weighted=False)` or `evl.brier_score_per_event(event_of_interest=1, target_time=t, IPCW_weighted=False)` | [Schoop et al.](https://doi.org/10.1002/bimj.201000073) |
+| IPCW Brier score | Scores cause-specific event indicators against predicted CIFs with censoring adjustment. | `evl.brier_score(target_time=t)` or `evl.brier_score_per_event(event_of_interest=1, target_time=t)` | [Schoop et al.](https://doi.org/10.1002/bimj.201000073) |
+| Integrated Brier score | Integrates the Brier-score curve and divides by the selected time span; IPCW is enabled by default. | `evl.integrated_brier_score(target_times=times)` or `evl.integrated_brier_score_per_event(event_of_interest=1, target_times=times)` | [Schoop et al.](https://doi.org/10.1002/bimj.201000073) |
 
-Aggregate details include `per_event_scores`, `time_coordinates`,
-`mean_pred_cifs`, and `aj_cifs`. All predicted causes are included, even when
-unobserved; censoring is not scored as a separate cause. The per-cause plot
-returns its figure and axes without displaying it. The standalone
-`aj_calibration` and `aj_calibration_per_event` functions expose the same scores
-and optional curve details.
+### Calibration
+
+| Metric Name | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| One-calibration | Compares grouped predicted CIFs with AJ incidence, using AJ variance adjustment by default. | `evl.one_calibration(target_time=t, event_of_interest=1, adjust_variance=True)` | [Allignol et al. (AJ variance)](https://doi.org/10.1002/bimj.200900039) |
+| Integrated calibration index | Fits a Fine–Gray spline calibration curve at a fixed horizon and returns ICI, E50, E90, and E_max. | `evl.integrated_calibration_index(target_time=t, event_of_interest=1, draw_figure=False)` | [Austin et al.](https://doi.org/10.1186/s41512-021-00114-6) |
+| CR-D-calibration | Measures the integral norm of distributional calibration deviations; `alpha=2` gives the root integrated squared deviation. | `evl.cr_d_calibration(method="integral", alpha=2, pred_event_probs=event_probs)` | [Alberge et al.](https://proceedings.mlr.press/v300/alberge26a.html) |
+| K-S CR-D-calibration | Measures the maximum distributional calibration deviation on the risk grid; optional p-values are heuristic. | `evl.cr_d_calibration(method="ks", pred_event_probs=event_probs)` | [Alberge et al.](https://proceedings.mlr.press/v300/alberge26a.html) |
+| AJ calibration | Compares mean predicted CIFs with marginal AJ estimates using time-averaged squared error by default. | `evl.aj_calibration()` or `evl.aj_calibration_per_event(event_of_interest=1)` | [Alberge et al.](https://proceedings.mlr.press/v300/alberge26a.html) |
 
 ## Interval-Censored Metrics
 
@@ -346,6 +338,7 @@ censoring, and right censoring within one interface.
 | Interval MSE | One-sided squared error that penalizes predictions outside the observed interval. | `evl.mse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
 | Interval RMSE | Square root of interval MSE. | `evl.rmse()` | [Shivaswamy et al.](https://ieeexplore.ieee.org/document/4470306/) |
 | Inclusion rate | Fraction of point predictions that fall inside observed event intervals. | `evl.inclusion_rate()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
+| Coefficient of variation | Measures predictive sharpness as event-time standard deviation divided by mean, conditional on the supplied time grid. | `cov(...)` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 | Interval prediction coverage | Fractional coverage of observed intervals by predicted intervals. | `evl.coverage(cov_level=...)` | N/A |
 
 The `"Tsouprou-conditional"` method requires test and train covariates through
@@ -359,6 +352,7 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 | Midpoint one-calibration | One-time calibration after midpoint imputation of observed intervals. | `evl.one_calibration(target_time=..., method="MidPoint")` | N/A |
 | Interval D-calibration | D-calibration using probability intervals instead of exact event probabilities. | `evl.d_calibration()` | N/A |
 | Interval K-S D-calibration | Kolmogorov-Smirnov D-calibration for interval-censored outcomes. | `evl.ksd_calibration()` | N/A |
+| Interval quantile calibration slope | Fits a slope between predicted quantile levels and event proportions, omitting intervals whose status is unknown at each quantile. | `calibration_slope_interval_censor(...)` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 
 ## Other Evaluators And Helper APIs
 
@@ -375,9 +369,6 @@ from SurvivalEVAL import SurvivalEvaluator
 | `SingleTimeEvaluator` | Evaluates already-computed survival probabilities at one target time with AUC, Brier score, one-calibration, and ICI. | `SingleTimeEvaluator(predicted_probs, event_times, event_indicators, ...)` |
 | `QuantileRegEvaluator` | Converts event-time quantile predictions into survival curves and reuses right-censored survival-curve metrics. | `QuantileRegEvaluator(predicted_quantiles, quantile_levels, ...)` |
 | Lower-level functions | Evaluation metrics are also available under `SurvivalEVAL.evaluations` for advanced use cases. | `SurvivalEVAL.evaluations.discrimination.concordance(...)` |
-
-`SurvivalEVAL.evaluations.others` includes research helpers such as
-calibration slope and coefficient of variation.
 
 ## Nonparametric Estimators
 
@@ -414,61 +405,10 @@ step estimate, independently of the linear tail used by `km.predict`.
 
 ### Competing risks and multi-state models
 
-`AalenJohansenCompetingRisks` estimates overall survival and one cumulative
-incidence function (CIF) per cause from right-censored observations. Event labels
-are `0` for censoring and `1..K` for causes. Set `n_causes` in the constructor to
-include unobserved causes or fit data containing only censorings; otherwise it is
-inferred on each fit.
-
-```python
-from SurvivalEVAL.nonparametric_estimator.competing_risks import AalenJohansenCompetingRisks
-
-aj = AalenJohansenCompetingRisks(n_causes=2).fit(
-    times=[1, 1, 1, 2, 3], events=[1, 2, 0, 2, 0]
-)
-survival = aj.predict_surv([0, 1, 2])  # [1.0, 0.6, 0.3]
-cif = aj.predict_cif([0, 1, 2])       # [[0, 0], [0.2, 0.2], [0.2, 0.5]]
-variance = aj.predict_cif_variance([0, 1, 2])  # shape (3, 2)
-```
-
-AJ variance uses the fitted counts and risk sets, preserves simultaneous ties,
-and follows `predict_cif`'s time and cause dimensions. Both estimators calculate
-variance on request. Single-event and competing-risk one-calibration reuse these
-methods for their variance adjustment.
-
-`AalenJohansenMultiState` estimates full transition matrices from aggregated
-data. Supply strictly increasing times, risk sets with shape `(J, n_states)`,
-and transition counts with shape `(J, n_states, n_states)`. Counts run from row
-(source) to column (destination); their diagonal must be zero. The estimator
-computes the negative outgoing hazard on the diagonal itself. Total departures
-cannot exceed the corresponding risk set.
-
-```python
-from SurvivalEVAL.nonparametric_estimator.multi_state import AalenJohansenMultiState
-
-aj = AalenJohansenMultiState(n_states=2).fit(
-    event_times=[1, 2],
-    risk_sets=[[4, 0], [2, 2]],
-    transitions=[[[0, 2], [0, 0]], [[0, 1], [0, 0]]],
-)
-matrix = aj.predict_P(2)  # [[0.25, 0.75], [0.0, 1.0]]
-# For any initial state distribution p0, occupation probabilities are p0 @ matrix.
-```
-
-Both estimators aggregate tied transitions without jittering. Risk sets include
-censorings at the update time. Predictions are right-continuous steps: before
-the first update, survival is one, CIFs are zero, and transition matrices are
-identity. Beyond the final update, including positive infinity, estimates remain
-constant. Scalar and array queries are supported; CIFs and matrices append their
-cause/state dimensions to the query shape. Every transition matrix has rows that
-sum to one, and absorbing states retain their identity rows.
-
-The multi-state estimator exposes transition matrices directly; state occupation
-probabilities can decrease when onward or return transitions occur. Full
-transition probabilities use the usual Markov interpretation. See the
-[R survival documentation, sections 2.3–2.4](https://stat.ethz.ch/R-manual/R-patched/library/survival/doc/survival.pdf)
-for the Aalen–Johansen construction. These estimators provide point estimates;
-confidence intervals and individual delayed-entry data are not implemented.
+| Method | Description | Code | Paper Link |
+| --- | --- | --- | --- |
+| Aalen–Johansen for competing risks | Estimates overall survival and cause-specific cumulative incidence functions from right-censored times and cause labels. | `SurvivalEVAL.nonparametric_estimator.competing_risks.AalenJohansenCompetingRisks(n_causes=2)` | [Aalen and Johansen](https://www.jstor.org/stable/4615704) |
+| Aalen–Johansen for multi-state models | Estimates transition probability matrices from aggregated risk sets and transition counts. | `SurvivalEVAL.nonparametric_estimator.multi_state.AalenJohansenMultiState(n_states=3)` | [Aalen and Johansen](https://www.jstor.org/stable/4615704) |
 
 ## Citing This Work
 
