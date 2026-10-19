@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
+from typing_extensions import Self
 
 from SurvivalEVAL.evaluations.util import (
     _inverse_censoring_weights,
@@ -112,7 +113,7 @@ class _ConcordanceCounts:
     risk_tie_pairs: float = 0.0
     time_tie_pairs: float = 0.0
 
-    def __iadd__(self, other: _ConcordanceCounts) -> _ConcordanceCounts:
+    def __iadd__(self, other: _ConcordanceCounts) -> Self:
         """
         Add another count object in place.
 
@@ -123,7 +124,7 @@ class _ConcordanceCounts:
 
         Returns
         -------
-        _ConcordanceCounts
+        Self
             This count object after mutation.
         """
         self.concordant += other.concordant

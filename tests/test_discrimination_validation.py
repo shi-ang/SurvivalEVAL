@@ -9,7 +9,7 @@ from SurvivalEVAL.evaluations.discrimination import (
 
 
 def _evaluate(metric, **changes):
-    kwargs = dict(event_times=[1, 2, 3], event_indicators=[1, 0, 1])
+    kwargs = {"event_times": [1, 2, 3], "event_indicators": [1, 0, 1]}
     if metric == "auc":
         kwargs.update(predict_probs=[0.1, 0.7, 0.8], target_time=2)
         function = auc
@@ -69,9 +69,11 @@ def test_discrimination_rejects_invalid_evaluation_times(metric, time):
     ],
 )
 def test_ipcw_validates_training_outcomes(metric, changes):
-    kwargs = dict(
-        train_event_times=[1, 2, 3], train_event_indicators=[0, 1, 1], method="IPCW"
-    )
+    kwargs = {
+        "train_event_times": [1, 2, 3],
+        "train_event_indicators": [0, 1, 1],
+        "method": "IPCW",
+    }
     kwargs.update(changes)
     with pytest.raises(ValueError):
         _evaluate(metric, **kwargs)
@@ -126,14 +128,14 @@ def test_readonly_inputs_are_not_modified_by_shared_ipcw_setup():
     before = [value.copy() for value in (times, events, train_times, train_events)]
     for value in (times, events, train_times, train_events):
         value.flags.writeable = False
-    common = dict(
-        event_times=times,
-        event_indicators=events,
-        train_event_times=train_times,
-        train_event_indicators=train_events,
-        method="IPCW",
-        tau=3,
-    )
+    common = {
+        "event_times": times,
+        "event_indicators": events,
+        "train_event_times": train_times,
+        "train_event_indicators": train_events,
+        "method": "IPCW",
+        "tau": 3,
+    }
     ordinary = concordance([1, 3, 2], **common)
     dynamic = concordance_time_dependent([[0.9, 0.9], [0.1, 0.1], [0.3, 0.3]], **common)
     np.testing.assert_allclose(ordinary, dynamic)
