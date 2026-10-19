@@ -665,15 +665,17 @@ def _brier_scores(
     return scores / pred_mat.shape[0]
 
 
-def _brier_time_grid(
+def _default_bs_grid(
     event_times: np.ndarray,
     event_indicators: np.ndarray,
     train_event_times: np.ndarray | None,
     num_points: int | None,
     target_times: np.ndarray | None,
+    *,
+    prediction_horizon: float | None = None,
 ) -> np.ndarray:
     """
-    Resolve the IBS grid, retaining the survival evaluator's censor-time default.
+    Resolve the evaluation time grid for integrated Brier scores.
 
     Parameters
     ----------
@@ -687,6 +689,8 @@ def _brier_time_grid(
         Number of equally spaced evaluation times; mutually exclusive with target_times.
     target_times : ndarray | None
         One-dimensional array of non-negative evaluation times.
+    prediction_horizon : float | None, default=None
+        Upper bound for the grid generated with num_points.
 
     Returns
     -------
@@ -713,6 +717,8 @@ def _brier_time_grid(
         max_time = event_times.max()
         if train_event_times is not None:
             max_time = max(max_time, train_event_times.max())
+        if prediction_horizon is not None:
+            max_time = min(max_time, prediction_horizon)
         times = np.linspace(0.0, max_time, num_points)
     else:
         times = np.unique(event_times[event_indicators == 0])

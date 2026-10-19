@@ -558,19 +558,35 @@ def test_invalid_training_outcomes(train_times: object, train_events: object) ->
         )
 
 
-def test_generated_grid_exceeding_cif_horizon_is_rejected(cr_data: tuple) -> None:
+@pytest.mark.parametrize("train_end", [7, 8, 10])
+@pytest.mark.parametrize("cause", [None, 2])
+def test_generated_grid_respects_cif_horizon(
+    cr_data: tuple,
+    train_end: float,
+    cause: int | None,
+) -> None:
     cifs, grid, times, events, _, _ = cr_data
     evaluator = CompetingRisksEvaluator(
         cifs,
         grid,
         times,
         events,
-        train_event_times=[1, 10],
+        train_event_times=[1, train_end],
         train_event_indicators=[0, 1],
     )
-    with pytest.raises(ValueError, match="prediction horizon"):
-        evaluator.integrated_brier_score(num_points=5)
-    assert np.isfinite(evaluator.integrated_brier_score(target_times=[1, 2]))
+    metric = (
+        evaluator.integrated_brier_score
+        if cause is None
+        else evaluator.integrated_brier_score_per_event
+    )
+    options = {} if cause is None else {"event_of_interest": cause}
+    targets = np.linspace(0, min(train_end, 8), 5)
+    expected = metric(target_times=targets, **options)
+    score, (fig, ax) = metric(num_points=5, draw_figure=True, **options)
+    assert np.isfinite(score)
+    assert score == pytest.approx(expected)
+    np.testing.assert_array_equal(ax.lines[0].get_xdata(), targets)
+    plt.close(fig)
 
 
 def test_default_ipcw_matches_explicit_weighting(cr_data: tuple) -> None:

@@ -31,7 +31,7 @@ from SurvivalEVAL.evaluations.discrimination.distributional.time_dependent_conco
 from SurvivalEVAL.evaluations.others import auprc_right_censor
 from SurvivalEVAL.evaluations.prediction_error import brier_multiple_points, mean_error
 from SurvivalEVAL.evaluations.prediction_error.brier_score import (
-    _brier_time_grid,
+    _default_bs_grid,
     _integrate_brier_scores,
 )
 from SurvivalEVAL.evaluations.util import (
@@ -577,7 +577,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         if IPCW_weighted:
             self._error_trainset("IPCW-weighted Integrated Brier Score (IBS)")
 
-        target_times = _brier_time_grid(
+        target_times = _default_bs_grid(
             self.event_times,
             self.event_indicators,
             self.train_event_times,

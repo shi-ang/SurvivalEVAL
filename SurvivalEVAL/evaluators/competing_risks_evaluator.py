@@ -31,7 +31,7 @@ from SurvivalEVAL.evaluations.prediction_error import (
     brier_multiple_points_cr_per_event,
 )
 from SurvivalEVAL.evaluations.prediction_error.brier_score import (
-    _brier_time_grid,
+    _default_bs_grid,
     _integrate_brier_scores,
 )
 from SurvivalEVAL.evaluations.util import (
@@ -940,7 +940,8 @@ class CompetingRisksEvaluator:
         ----------
         num_points : int | None
             Generate this many times from zero through the maximum
-            train/test observed time. Mutually exclusive with target_times.
+            train/test observed time, capped at the CIF horizon.
+            Mutually exclusive with target_times.
         target_times : ndarray | None
             Explicit integration grid within the CIF horizon.
             Unsorted times are sorted with a warning. If neither grid option
@@ -996,7 +997,7 @@ class CompetingRisksEvaluator:
             Integer cause label from 1 through n_causes.
         num_points : int | None
             Generate times from zero through the maximum train/test
-            observed time. Mutually exclusive with target_times.
+            observed time, capped at the CIF horizon. Mutually exclusive with target_times.
         target_times : ndarray | None
             Explicit grid within the CIF horizon, sorted with a
             warning if needed. With neither grid option, infer unique test
@@ -1566,12 +1567,13 @@ class CompetingRisksEvaluator:
         float | tuple[float, tuple[plt.Figure, plt.Axes]]
             Integrated Brier score; when draw_figure is True, return (score, (figure, axes)).
         """
-        target_times = _brier_time_grid(
+        target_times = _default_bs_grid(
             self.event_times,
             self.event_indicators,
             self.train_event_times,
             num_points,
             target_times,
+            prediction_horizon=self.time_coordinates[-1],
         )
         scores = self._brier_score_multiple_points(
             target_times, ipcw, event_of_interest
