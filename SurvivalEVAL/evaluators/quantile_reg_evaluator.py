@@ -7,7 +7,7 @@ import numpy as np
 
 from SurvivalEVAL.evaluations.calibration import km_calibration
 from SurvivalEVAL.evaluations.custom_types import NumericArrayLike
-from SurvivalEVAL.evaluations.util import check_and_convert, quantile_to_survival
+from SurvivalEVAL.evaluations.util import check_and_convert
 
 from .survival_evaluator import SurvivalEvaluator
 
@@ -102,12 +102,7 @@ class QuantileRegEvaluator(SurvivalEvaluator):
            https://proceedings.mlr.press/v202/yanagisawa23a.html
         """
         unique_times = np.unique(self.event_times[self.event_indicators == 1])
-        survival_curves = quantile_to_survival(
-            1 - self._pred_survs,
-            self.time_coordinates,
-            unique_times,
-            interpolate=self.interpolation,
-        )
+        survival_curves = self.predict_multi_probabilities_from_curve(unique_times)
         avg_surv = np.mean(survival_curves, axis=0, dtype=float)
 
         return km_calibration(
