@@ -266,24 +266,8 @@ These metrics evaluate the full predicted survival curve.
 | Modified Cox-Snell residuals | Adds an excess residual for censored subjects. | `evl.residuals(method="Modified CoxSnell-v1")` or `evl.residuals(method="Modified CoxSnell-v2")` | [Collett](https://www.taylorfrancis.com/books/mono/10.1201/b18041/modelling-survival-data-medical-research-david-collett) |
 | Martingale residuals | Calculates event indicator minus cumulative hazard. | `evl.residuals(method="Martingale")` | [Barlow and Prentice](https://academic.oup.com/biomet/article-abstract/75/1/65/352141) |
 | Deviance residuals | Transforms martingale residuals toward a normal residual scale. | `evl.residuals(method="Deviance")` | [Therneau et al.](https://academic.oup.com/biomet/article-abstract/77/1/147/271076) |
-
-For time-dependent concordance, `risks="Survival"` uses `-S(t | z)` as the risk
-score at each event anchor, while `risks="Hazard"` uses estimated hazard rates
-directly. `method="IPCW"` requires training event times and indicators. `tau`
-keeps event anchors whose observed time is strictly before `tau`; when omitted,
-no truncation is applied.
-
-The evaluator predicts each sample's curve at most once and counts comparisons by
-ranking risks within equal-event-time groups. Counting uses O(n) working memory
-and O(n log n + n U log(M + 1)) time, where U is the number of contributing
-event times and M is the largest event group. This avoids visiting every pair
-when many events share a time; it remains quadratic when all event times differ.
-With mostly distinct event times, rank-query overhead can outweigh the savings.
-Interpolation adds O(k) temporary storage for a curve with k grid points. These
-bounds exclude the input curves and IPCW training data. The lower-level
-`concordance_time_dependent` function still accepts a dense sample-by-event risk
-matrix and counts its pairs directly, since separate columns at the same event
-time may contain different scores.
+| Quantile calibration slope | Fits a slope between predicted event-time quantile levels and available-outcome event proportions. | `calibration_slope_right_censor(...)` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
+| Coefficient of variation | Measures predictive sharpness as event-time standard deviation divided by mean, averaged across subjects. | `cov(...)` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 
 ## Competing-Risks Metrics
 
