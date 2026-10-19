@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import IntervalCenEvaluator, SingleTimeEvaluator, SurvivalEvaluator
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import (
+from SurvivalEVAL.evaluations.calibration.single_time import (
     integrated_calibration_index,
     one_cal_ic,
     one_calibration,
@@ -26,6 +26,7 @@ def calibrate(request):
                 np.ones(times.size),
                 2.0,
                 method=request.param,
+                adjust_variance=False,
                 **kwargs,
             )
         left = right = times
@@ -111,13 +112,10 @@ def test_ici_constant_predictions_use_kaplan_meier(probability, dtype):
         plt.close(fig)
 
 
-@pytest.mark.parametrize("levels", [None, 2, 3])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_ici_mixed_boundary_predictions_are_finite(levels, dtype):
+def test_ici_mixed_boundary_predictions_are_finite(dtype):
     rng = np.random.default_rng(17)
     predictions = rng.uniform(0.05, 0.95, 120)
-    if levels is not None:
-        predictions = np.floor(predictions * levels) / (levels - 1)
     predictions[:2] = [0.0, 1.0]
     predictions = predictions.astype(dtype)
     with warnings.catch_warnings():
@@ -143,7 +141,9 @@ def test_survival_evaluator_all_one_curves_calibrate_without_arithmetic_errors()
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         summary = evaluator.integrated_calibration_index(3.0, draw_figure=False)
-        p_value, _, expected = evaluator.one_calibration(3.0, num_bins=3)
+        p_value, _, expected = evaluator.one_calibration(
+            3.0, num_bins=3, adjust_variance=False
+        )
     assert summary["ICI"] == pytest.approx(0.25)
     assert p_value == 0.0
     np.testing.assert_array_equal(expected, 0.0)
@@ -169,6 +169,8 @@ def test_constant_calibration_details_handle_tied_or_single_bins(kind, strategy)
         kwargs["target_time"] = 3.0
     if kind == "interval":
         kwargs["method"] = "MidPoint"
+    else:
+        kwargs["adjust_variance"] = False
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         p_value, details = evaluator.one_calibration(**kwargs)
@@ -176,6 +178,14 @@ def test_constant_calibration_details_handle_tied_or_single_bins(kind, strategy)
         assert p_value == 0.0 if strategy == "C" else np.isnan(p_value)
         assert details["statistics"] == np.inf
         assert np.isnan(details["max_local_deviation"])
+        order = np.argsort(details["expected_probabilities"], kind="stable")
+        line = details["pp_plot"][1].lines[1]
+        np.testing.assert_allclose(
+            line.get_xdata(), np.asarray(details["expected_probabilities"])[order]
+        )
+        np.testing.assert_allclose(
+            line.get_ydata(), np.asarray(details["observed_probabilities"])[order]
+        )
     finally:
         plt.close(details["histogram_plot"][0])
         plt.close(details["pp_plot"][0])

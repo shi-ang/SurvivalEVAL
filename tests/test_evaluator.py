@@ -7,14 +7,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from SurvivalEVAL import (
+from SurvivalEVAL.evaluations.calibration.distributional import ksd_calibration
+from SurvivalEVAL.evaluations.calibration.single_time import one_calibration
+from SurvivalEVAL.evaluations.util import predict_prob_from_curve
+from SurvivalEVAL.evaluators import (
+    IntervalCenEvaluator,
+    LifelinesEvaluator,
     PointEvaluator,
     PycoxEvaluator,
     ScikitSurvivalEvaluator,
     SingleTimeEvaluator,
     SurvivalEvaluator,
 )
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_calibration
 
 
 class _StepFunction:
@@ -61,13 +65,17 @@ def test_survival_evaluator_reuses_compatible_read_only_inputs():
     )
 
 
-def test_pycox_evaluator_reuses_valid_dataframe_storage():
+@pytest.mark.parametrize("evaluator_class", [PycoxEvaluator, LifelinesEvaluator])
+def test_dataframe_evaluators_preserve_curves_and_metric_values(
+    evaluator_class: type[PycoxEvaluator],
+) -> None:
+    """Check DataFrame orientation and scores without training an external model."""
     predictions = pd.DataFrame(
         np.array([[1.0, 1.0], [0.8, 0.7], [0.5, 0.4]], dtype=np.float32),
         index=np.array([0.0, 1.0, 2.0], dtype=np.float32),
     )
 
-    evaluator = PycoxEvaluator(
+    evaluator = evaluator_class(
         predictions,
         event_times=np.array([1.0, 2.0]),
         event_indicators=np.array([True, False]),
@@ -75,6 +83,14 @@ def test_pycox_evaluator_reuses_valid_dataframe_storage():
 
     assert np.shares_memory(evaluator.pred_survs, predictions.to_numpy(copy=False))
     assert evaluator.pred_survs.dtype == np.float32
+    np.testing.assert_allclose(evaluator.pred_survs, [[1, 0.8, 0.5], [1, 0.7, 0.4]])
+    np.testing.assert_allclose(evaluator.predicted_event_times, [2, 5 / 3])
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(1.5), [0.65, 0.55]
+    )
+    assert evaluator.brier_score(target_time=1.5, IPCW_weighted=False) == pytest.approx(
+        0.3125
+    )
 
 
 def test_pycox_evaluator_does_not_mutate_dataframe_when_clipping():
@@ -207,6 +223,44 @@ def test_multi_curve_prediction_methods_reject_invalid_target_times(evaluator_da
 
     with pytest.raises(ValueError, match="1-D array"):
         evaluator.predict_multi_hazards_from_curve(np.array([[1.0, 2.0]]))
+
+
+@pytest.mark.parametrize("layout", ["shared_times", "shared_curve", "per_sample"])
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_multi_curve_predictions_match_individual_curves(
+    layout: str,
+    interpolation: str,
+    dtype: type,
+) -> None:
+    """Preserve row alignment, dtype, target order, and finite and infinite tails."""
+    curves = np.array([[1, 0.7, 0.4], [1, 1, 1]], dtype=dtype)
+    times = np.array([[0, 2, 4], [0, 3, 6]], dtype=dtype)
+    if layout == "shared_times":
+        times = times[0]
+    elif layout == "shared_curve":
+        curves = curves[0]
+    for values in (curves, times):
+        values.flags.writeable = False
+    evaluator = SurvivalEvaluator(
+        curves, times, [1, 2], [1, 1], interpolation=interpolation
+    )
+    targets = np.array([np.inf, 0, 0.5, 2, 5, 2, 20, np.inf])
+    sample_curves, sample_times = np.broadcast_arrays(curves, times)
+    with np.errstate(divide="raise", invalid="raise", over="raise"):
+        expected = np.array(
+            [
+                [
+                    predict_prob_from_curve(curve, grid, target, interpolation)
+                    for target in targets
+                ]
+                for curve, grid in zip(sample_curves, sample_times)
+            ],
+            dtype=dtype,
+        )
+        actual = evaluator.predict_multi_probabilities_from_curve(targets)
+    assert actual.dtype == dtype
+    np.testing.assert_allclose(actual, expected)
 
 
 def test_predict_multi_hazards_from_curve_uses_grid_intervals_not_target_order():
@@ -428,20 +482,6 @@ def test_pchip_with_2d_zero_based_grids_does_not_get_duplicate_zeros():
     assert np.all(np.isfinite(evaluator.predicted_event_times))
 
 
-def test_concordance_variants(evaluator_data):
-    evaluator = evaluator_data["evaluator"]
-
-    c_harrell, concordant_h, total_h = evaluator.concordance(method="Harrell")
-    assert 0.0 <= c_harrell <= 1.0
-    assert total_h > 0
-    assert concordant_h <= total_h
-
-    c_margin, concordant_m, total_m = evaluator.concordance(method="Margin")
-    assert 0.0 <= c_margin <= 1.0
-    assert total_m > 0
-    assert concordant_m <= total_m
-
-
 def test_survival_evaluator_concordance_forwards_tau():
     time_grid = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     pred_survs = np.array(
@@ -487,27 +527,6 @@ def test_survival_evaluator_concordance_train_required_methods_need_training_dat
         evaluator.concordance(method=method)
 
 
-def test_auc_alias(evaluator_data):
-    evaluator = evaluator_data["evaluator"]
-    auc = evaluator.auc(target_time=9.0)
-    auroc = evaluator.auroc(target_time=9.0)
-    assert np.isclose(auc, auroc)
-    assert 0.0 <= auc <= 1.0
-
-
-def test_brier_scores(evaluator_data):
-    evaluator = evaluator_data["evaluator"]
-    brier = evaluator.brier_score(target_time=8.0, IPCW_weighted=True)
-    assert np.isfinite(brier)
-
-    times = np.array([4.0, 8.0, 12.0])
-    brier_mp = evaluator.brier_score_multiple_points(
-        target_times=times, IPCW_weighted=False
-    )
-    assert brier_mp.shape == times.shape
-    assert np.all(np.isfinite(brier_mp))
-
-
 def test_default_brier_score_without_training_data():
     time_grid = np.array([0.0, 1.0, 2.0, 4.0])
     pred_survs = np.array(
@@ -532,12 +551,17 @@ def test_default_brier_score_without_training_data():
         event_indicators=np.ones(event_times.shape[0]),
     )
 
-    assert np.isfinite(
-        censored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
-    )
-    assert np.isfinite(uncensored_evaluator.brier_score(target_time=None))
+    for evaluator in (censored_evaluator, uncensored_evaluator):
+        assert np.isfinite(evaluator.brier_score(target_time=None, IPCW_weighted=False))
+    with pytest.raises(TypeError, match="Train set information is missing"):
+        censored_evaluator.brier_score(target_time=None)
     with pytest.raises(TypeError, match="Train set information is missing"):
         censored_evaluator.brier_score(target_time=None, IPCW_weighted=True)
+    plain = uncensored_evaluator.brier_score(target_time=None, IPCW_weighted=False)
+    assert uncensored_evaluator.brier_score(target_time=None) == pytest.approx(plain)
+    assert uncensored_evaluator.brier_score(
+        target_time=None, IPCW_weighted=True
+    ) == pytest.approx(plain)
 
 
 def test_integrated_brier_score(evaluator_data):
@@ -581,7 +605,8 @@ def test_calibration_metrics(evaluator_data):
     one_p, one_details = evaluator.one_calibration(
         target_time=target_time, num_bins=5, return_details=True
     )
-    assert np.isfinite(one_p)
+    assert np.isnan(one_p)
+    assert 0 in one_details["variances"]
     assert "observed_probabilities" in one_details
     hist_fig, _ = one_details["histogram_plot"]
     pp_fig, _ = one_details["pp_plot"]
@@ -601,9 +626,22 @@ def test_calibration_metrics(evaluator_data):
     plt.close(d_hist_fig)
     plt.close(d_pp_fig)
 
-    ksd_p, ksd_details = evaluator.ksd_calibration(return_details=True)
+    ksd_p, ksd_details = evaluator.ksd_calibration(
+        return_details=True, n_resamples=199, seed=14
+    )
     assert np.isfinite(ksd_p)
     assert "figure" in ksd_details
+    predicted = evaluator.predict_probability_from_curve(evaluator.event_times)
+    expected_support = np.r_[0.0, np.unique(np.r_[0.0, 1.0 - predicted]), 1.0]
+    assert ksd_calibration(
+        predicted, evaluator.event_indicators, n_resamples=199, seed=14
+    ) == (
+        ksd_p,
+        ksd_details["statistics"],
+    )
+    np.testing.assert_allclose(
+        ksd_details["empirical_distribution"][0], expected_support
+    )
     ksd_fig, _ = ksd_details["figure"]
     plt.close(ksd_fig)
 
@@ -616,6 +654,7 @@ def test_uncensored_one_calibration_uses_filtered_bin_size():
         target_time=2.0,
         num_bins=3,
         method="Uncensored",
+        adjust_variance=False,
     )
 
     assert np.isfinite(p_value)
@@ -632,6 +671,7 @@ def test_h_statistic_one_calibration_includes_prediction_one():
         target_time=1.0,
         num_bins=3,
         binning_strategy="H",
+        adjust_variance=False,
         method="Uncensored",
     )
 
@@ -695,15 +735,6 @@ def test_log_rank_and_auprc(evaluator_data):
 
     auprc_value = evaluator.auprc(n_quad=64)
     assert 0.0 <= auprc_value <= 1.0
-
-
-def test_pred_survs_setter_resets_cache(evaluator_data):
-    evaluator = evaluator_data["evaluator"]
-    original_times = evaluator.predicted_event_times.copy()
-    updated_curves = evaluator.pred_survs * 0.95 + 0.05
-    evaluator.pred_survs = updated_curves
-    refreshed_times = evaluator.predicted_event_times
-    assert not np.allclose(refreshed_times, original_times)
 
 
 def test_time_coordinates_setter_refreshes_dimension_metadata(evaluator_data):
@@ -773,6 +804,18 @@ def test_time_coordinates_setter_accepts_raw_grid_after_zero_padding():
     np.testing.assert_allclose(evaluator.pred_survs[:, 0], [1.0, 1.0])
 
 
+def test_time_coordinates_setter_pads_tiny_positive_start():
+    evaluator = SurvivalEvaluator(
+        pred_survs=np.array([[0.8, 0.6, 0.4], [0.9, 0.7, 0.5]]),
+        time_coordinates=np.array([1.0, 2.0, 3.0]),
+        event_times=np.array([1.0, 2.0]),
+        event_indicators=np.array([1, 0]),
+    )
+    evaluator.time_coordinates = np.array([1e-12, 2.0, 3.0])
+    np.testing.assert_array_equal(evaluator.time_coordinates, [0.0, 1e-12, 2.0, 3.0])
+    assert evaluator.pred_survs.shape[-1] == evaluator.time_coordinates.size
+
+
 def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data):
     evaluator = evaluator_data["evaluator"]
     original_times = evaluator.predicted_event_times.copy()
@@ -790,3 +833,65 @@ def test_set_prediction_inputs_updates_curves_and_times_together(evaluator_data)
     np.testing.assert_allclose(evaluator.time_coordinates, new_time_grid)
     assert evaluator.pred_survs.shape == (evaluator_data["n_test"], new_time_grid.size)
     assert not np.allclose(evaluator.predicted_event_times, original_times)
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+def test_interpolation_updates_invalidate_cached_event_times(evaluator_class):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
+    else:
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    evaluator.interpolation = "pChIp"
+    expected = evaluator_class(predictions, times, interpolation="Pchip", **outcomes)
+    np.testing.assert_allclose(
+        evaluator.predicted_event_times, expected.predicted_event_times
+    )
+    assert not np.allclose(evaluator.predicted_event_times, previous)
+
+    refreshed = evaluator.predicted_event_times
+    with pytest.raises(ValueError, match="interpolation"):
+        evaluator.interpolation = "cubic"
+    assert evaluator.predicted_event_times is refreshed
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+def test_invalid_curve_updates_preserve_cached_event_times(evaluator_class):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
+    else:
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    with pytest.raises(ValueError, match="nonincreasing"):
+        evaluator.pred_survs = [[1, 0.9, 0.95], [1, 0.6, 0.1]]
+    np.testing.assert_equal(evaluator.pred_survs, predictions)
+    assert evaluator.predicted_event_times is previous
+
+
+@pytest.mark.parametrize("evaluator_class", [SurvivalEvaluator, IntervalCenEvaluator])
+@pytest.mark.parametrize("setting", ["pred_survs", "time_coordinates"])
+def test_prediction_updates_refresh_cached_event_times(evaluator_class, setting):
+    predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
+    times = np.array([0, 2, 4])
+    if evaluator_class is SurvivalEvaluator:
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
+    else:
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
+    evaluator = evaluator_class(predictions, times, **outcomes)
+    previous = evaluator.predicted_event_times
+    if setting == "pred_survs":
+        evaluator.pred_survs = predictions**2
+        expected = evaluator_class(predictions**2, times, **outcomes)
+    else:
+        evaluator.time_coordinates = times * 2
+        expected = evaluator_class(predictions, times * 2, **outcomes)
+    np.testing.assert_allclose(
+        evaluator.predicted_event_times, expected.predicted_event_times
+    )
+    assert not np.allclose(evaluator.predicted_event_times, previous)

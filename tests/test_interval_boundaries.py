@@ -8,17 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from SurvivalEVAL import IntervalCenEvaluator
-from SurvivalEVAL.Evaluations.DistributionCalibration import (
+from SurvivalEVAL import IntervalCenEvaluator, SurvivalEvaluator
+from SurvivalEVAL.evaluations.calibration.distributional import (
     coverage_ic,
     create_censor_hist,
     create_interval_c_hist,
 )
-from SurvivalEVAL.Evaluations.util import (
-    predict_multi_probs_from_curve,
-    predict_prob_from_curve,
-)
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+from SurvivalEVAL.evaluations.util import predict_prob_from_curve
+from SurvivalEVAL.nonparametric_estimator.single_event import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
 )
@@ -30,8 +27,11 @@ def test_survival_predictions_at_infinity_are_zero(interpolation, flat):
     curve = np.ones(3) if flat else np.array([1.0, 0.8, 0.6])
     times = np.array([0.0, 1.0, 2.0])
     targets = np.array([np.inf, 1.0, 4.0, np.inf])
+    evaluator = SurvivalEvaluator(
+        curve[None, :], times, [1], [1], interpolation=interpolation
+    )
     with np.errstate(divide="raise", invalid="raise", over="raise"):
-        result = predict_multi_probs_from_curve(curve, times, targets, interpolation)
+        result = evaluator.predict_multi_probabilities_from_curve(targets)[0]
         scalar = predict_prob_from_curve(curve, times, np.inf, interpolation)
     np.testing.assert_allclose(
         result, [0.0, 1.0 if flat else 0.8, 1.0 if flat else 0.2, 0.0]

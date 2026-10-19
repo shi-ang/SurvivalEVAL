@@ -1,27 +1,41 @@
-#!/usr/bin/env python
-
 import os
 from pathlib import Path
 
 from setuptools import find_packages, setup
 
-exec(compile(open("SurvivalEVAL/version.py").read(), "SurvivalEVAL/version.py", "exec"))
 
+def read(filename: str) -> str:
+    """
+    Read a UTF-8 file relative to this setup script.
 
-def read(filename):
+    Parameters
+    ----------
+    filename : str
+        Relative path to the file.
+
+    Returns
+    -------
+    str
+        File contents.
+    """
     with open(os.path.join(os.path.dirname(__file__), filename), encoding="utf8") as f:
         return f.read()
 
 
-def read_version():
-    version_file = Path(__file__).parent / "SurvivalEVAL" / "version.py"
-    for line in version_file.read_text().splitlines():
-        if line.startswith("__version__"):
-            return line.split("=", 1)[1].strip().strip("\"'")
-    raise RuntimeError("Unable to find __version__ in SurvivalEVAL/version.py")
+def read_version() -> str:
+    """
+    Read the package version without importing SurvivalEVAL.
 
+    Returns
+    -------
+    str
+        Package version declared in ``SurvivalEVAL/version.py``.
 
-def read_version():
+    Raises
+    ------
+    RuntimeError
+        If the version declaration is missing.
+    """
     version_file = Path(__file__).parent / "SurvivalEVAL" / "version.py"
     for line in version_file.read_text().splitlines():
         if line.startswith("__version__"):

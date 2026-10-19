@@ -24,9 +24,6 @@ def right_censor_to_interval(
     left = np.empty(N, dtype=float)
     right = np.empty(N, dtype=float)
 
-    # small tolerance for alignment checks
-    eps = 1e-12
-
     for i in range(N):
         t = y[i]
 
@@ -64,7 +61,10 @@ def _visits_poisson(rng: np.random.Generator, end: float, rate: float) -> np.nda
 
 
 def _visits_lognormal(
-    rng: np.random.Generator, end: float, mean: float, sigma: float
+    rng: np.random.Generator,
+    end: float,
+    mean: float,
+    sigma: float,
 ) -> np.ndarray:
     times = [0.0]
     t = float(rng.lognormal(mean, sigma))
@@ -159,22 +159,22 @@ def interval_censor_DGP_from_synthetic_times(
         end_i = max(end_i, 0.0)
 
         if method == "fixed":
-            step = params["step"] if "step" in params else 1.0
+            step = params.get("step", 1.0)
             visits = _visits_fixed(end=end_i, step=step)
         elif method == "poisson":
-            rate = params["rate"] if "rate" in params else 1.0
+            rate = params.get("rate", 1.0)
             visits = _visits_poisson(rng, end=end_i, rate=rate)
         elif method == "lognormal":
-            ln_mean = params["ln_mean"] if "ln_mean" in params else 0.0
-            ln_sigma = params["ln_sigma"] if "ln_sigma" in params else 1.0
+            ln_mean = params.get("ln_mean", 0.0)
+            ln_sigma = params.get("ln_sigma", 1.0)
             visits = _visits_lognormal(rng, end=end_i, mean=ln_mean, sigma=ln_sigma)
         elif method == "exp":
-            rate = params["rate"] if "rate" in params else 2.0
+            rate = params.get("rate", 2.0)
             visits = _visits_exp(rng, end=end_i, rate=rate)
         elif method == "hawkes":
-            mu = params["mu"] if "mu" in params else 0.2
-            alpha = params["alpha"] if "alpha" in params else 0.3
-            beta = params["beta"] if "beta" in params else 1.5
+            mu = params.get("mu", 0.2)
+            alpha = params.get("alpha", 0.3)
+            beta = params.get("beta", 1.5)
             visits = _hawkes_times(rng, end=end_i, mu=mu, alpha=alpha, beta=beta)
         else:
             raise ValueError(
@@ -193,9 +193,7 @@ def interval_censor_DGP_from_synthetic_times(
         # interval censor: find j let visits[j] < t <= visits[j+1]
         j = int(np.searchsorted(visits, t, side="right") - 1)
         # print (visits, j, t)
-        if np.isclose(t, float(visits[j])):
-            left[i] = right[i] = t  # exact
-        elif np.isclose(t, float(visits[j + 1])):
+        if np.isclose(t, float(visits[j])) or np.isclose(t, float(visits[j + 1])):
             left[i] = right[i] = t  # exact
         else:
             L, U = float(visits[j]), float(visits[j + 1])

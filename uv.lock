@@ -3454,6 +3454,7 @@ dependencies = [
     { name = "setuptools" },
     { name = "torch" },
     { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -3493,6 +3494,7 @@ requires-dist = [
     { name = "setuptools", specifier = ">=83.0.0" },
     { name = "torch", specifier = ">=2.13.0" },
     { name = "tqdm", specifier = ">=4.49.0" },
+    { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "urllib3", marker = "extra == 'dev'", specifier = ">=2.7.0" },
 ]
 provides-extras = ["dev"]

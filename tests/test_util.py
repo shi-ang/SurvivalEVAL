@@ -3,18 +3,19 @@ import pandas as pd
 import pytest
 import torch
 
-from SurvivalEVAL.Evaluations.AreaUnderPRCurve import (
+from SurvivalEVAL.evaluations.others import (
     auprc_ic,
     auprc_right_censored_grid,
     auprc_uncensored_grid,
 )
-from SurvivalEVAL.Evaluations.util import (
+from SurvivalEVAL.evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
     check_and_convert_event_data,
+    check_and_convert_event_indicators,
+    check_and_convert_probabilities,
     check_monotonicity,
     make_monotonic,
-    predict_multi_probs_from_curve,
     predict_prob_from_curve,
     predict_rmst,
     survival_to_quantile,
@@ -119,6 +120,58 @@ def test_check_and_convert_reuses_cpu_torch_storage():
     assert np.shares_memory(converted, values.detach().numpy())
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+@pytest.mark.parametrize("shape", [(8,), (2, 4), (2, 2, 2)])
+@pytest.mark.parametrize("copy", [False, True])
+def test_probability_validation_preserves_shape_and_storage(
+    dtype: type,
+    shape: tuple[int, ...],
+    copy: bool,
+) -> None:
+    values = np.linspace(0, 1, 16, dtype=dtype)[::2].reshape(shape)
+    values.flags.writeable = False
+    converted = check_and_convert_probabilities(values, copy=copy)
+    np.testing.assert_array_equal(converted, values)
+    assert converted.dtype == dtype
+    assert np.shares_memory(converted, values) == (not copy)
+    assert not values.flags.writeable
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1, np.inf, -np.inf, np.nan])
+def test_probability_validation_rejects_invalid_values(value: float) -> None:
+    with pytest.raises(ValueError, match="predictions"):
+        check_and_convert_probabilities([0, value, 1], input_name="predictions")
+
+
+@pytest.mark.parametrize("competing_risks", [False, True])
+@pytest.mark.parametrize("copy", [False, True])
+def test_event_indicator_validation_without_times(
+    competing_risks: bool,
+    copy: bool,
+) -> None:
+    values = np.array([0, 1, 2] if competing_risks else [0, 1, 1], dtype=np.int64)
+    values.flags.writeable = False
+    converted = check_and_convert_event_indicators(
+        values, competing_risks=competing_risks, copy=copy
+    )
+    np.testing.assert_array_equal(converted, values)
+    assert converted.dtype == (values.dtype if competing_risks else bool)
+    assert np.shares_memory(converted, values) == (competing_risks and not copy)
+    assert not values.flags.writeable
+
+
+@pytest.mark.parametrize("competing_risks", [False, True])
+@pytest.mark.parametrize(
+    "labels", [[-1, 0], [0, 0.5], [0, np.inf], [0, np.nan], [[0, 1]]]
+)
+def test_event_indicator_validation_rejects_invalid_labels(
+    labels: list,
+    competing_risks: bool,
+) -> None:
+    with pytest.raises(ValueError):
+        check_and_convert_event_indicators(labels, competing_risks=competing_risks)
+
+
 def test_check_and_convert_event_data_preserves_compatible_arrays():
     event_times = np.array([1.0, 2.0, 3.0], dtype=np.float32)
     event_indicators = np.array([True, False, True])
@@ -146,6 +199,28 @@ def test_check_and_convert_event_data_validates_binary_indicators():
 def test_check_and_convert_event_data_rejects_mismatched_shapes():
     with pytest.raises(ValueError, match="same shape"):
         check_and_convert_event_data([1.0, 2.0], [1])
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.float32, np.bool_])
+@pytest.mark.parametrize("copy", [False, True])
+def test_check_and_convert_event_data_preserves_cause_labels(dtype, copy):
+    times = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    labels = np.array([0, 1, 2] if dtype != np.bool_ else [0, 1, 1], dtype=dtype)
+    times.flags.writeable = labels.flags.writeable = False
+    converted_times, converted_labels = check_and_convert_event_data(
+        times, labels, competing_risks=True, copy=copy
+    )
+    np.testing.assert_array_equal(converted_times, times)
+    np.testing.assert_array_equal(converted_labels, labels)
+    assert converted_labels.dtype == labels.dtype
+    assert np.shares_memory(converted_times, times) == (not copy)
+    assert np.shares_memory(converted_labels, labels) == (not copy)
+
+
+@pytest.mark.parametrize("labels", [[0, -1], [0, 1.5], [0, np.inf], [0, np.nan]])
+def test_check_and_convert_event_data_rejects_invalid_causes(labels):
+    with pytest.raises(ValueError):
+        check_and_convert_event_data([0, 1], labels, competing_risks=True)
 
 
 @pytest.mark.parametrize("interpolation", ["None", "Linear"])
@@ -180,7 +255,10 @@ def test_predict_rmst_accumulates_float32_inputs_in_float64(interpolation):
     ],
 )
 def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
-    curves, time_coordinates, expected_curves, expected_times
+    curves,
+    time_coordinates,
+    expected_curves,
+    expected_times,
 ):
     aligned_curves, aligned_times = align_curve_and_time_coordinates(
         curves, time_coordinates
@@ -188,6 +266,41 @@ def test_align_curve_and_time_coordinates_broadcasts_shared_inputs(
 
     np.testing.assert_allclose(aligned_curves, expected_curves)
     np.testing.assert_allclose(aligned_times, expected_times)
+
+
+@pytest.mark.parametrize(
+    "times, indicators, message",
+    [
+        ([[1.0, 2.0]], [[1, 0]], "1D"),
+        ([-1.0, 2.0], [1, 0], "non-negative"),
+        ([1.0, np.inf], [1, 0], "finite"),
+        ([1.0, -np.inf], [1, 0], "finite"),
+        ([1.0, np.nan], [1, 0], "null values"),
+    ],
+)
+def test_check_and_convert_event_data_validates_observed_times(
+    times,
+    indicators,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        check_and_convert_event_data(times, indicators)
+
+
+def test_check_and_convert_event_data_copies_readonly_outcomes():
+    times = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    indicators = np.array([True, False, True])
+    times.flags.writeable = False
+    indicators.flags.writeable = False
+    converted_times, converted_indicators = check_and_convert_event_data(
+        times, indicators, copy=True
+    )
+    np.testing.assert_array_equal(converted_times, times)
+    np.testing.assert_array_equal(converted_indicators, indicators)
+    assert not np.shares_memory(converted_times, times)
+    assert not np.shares_memory(converted_indicators, indicators)
+    assert not times.flags.writeable
+    assert not indicators.flags.writeable
 
 
 def test_align_curve_and_time_coordinates_accepts_external_sample_count():
@@ -204,8 +317,7 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     curve = np.array([0.8, 0.5, 0.1], dtype=np.float32)
     time_coordinates = np.array([1.0, 2.0, 3.0], dtype=np.float32)
 
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        padded_curve, padded_times = zero_padding(curve, time_coordinates)
+    padded_curve, padded_times = zero_padding(curve, time_coordinates)
 
     np.testing.assert_allclose(padded_curve, [1.0, 0.8, 0.5, 0.1])
     np.testing.assert_allclose(padded_times, [0.0, 1.0, 2.0, 3.0])
@@ -217,14 +329,14 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
 
 
 @pytest.mark.parametrize(
-    ("pred_survs", "time_coordinates", "message"),
+    ("pred_curves", "time_coordinates", "message"),
     [
-        ([0.8, 0.5, 0.1], np.array([1.0, 2.0, 3.0]), "pred_survs"),
+        ([0.8, 0.5, 0.1], np.array([1.0, 2.0, 3.0]), "pred_curves"),
         (np.array([0.8, 0.5, 0.1]), [1.0, 2.0, 3.0], "time_coordinates"),
         (
             np.array(["0.8", "0.5", "0.1"]),
             np.array([1.0, 2.0, 3.0]),
-            "pred_survs",
+            "pred_curves",
         ),
         (
             np.array([0.8, 0.5, 0.1]),
@@ -234,10 +346,12 @@ def test_zero_padding_supports_1d_curve_and_1d_time_coordinates():
     ],
 )
 def test_zero_padding_rejects_invalid_input_datatypes(
-    pred_survs, time_coordinates, message
+    pred_curves,
+    time_coordinates,
+    message,
 ):
     with pytest.raises(TypeError, match=message):
-        zero_padding(pred_survs, time_coordinates)
+        zero_padding(pred_curves, time_coordinates)
 
 
 def test_zero_padding_rejects_empty_inputs():
@@ -256,8 +370,8 @@ def test_zero_padding_preserves_1d_curve_that_already_starts_at_zero():
 
     padded_curve, padded_times = zero_padding(curve, time_coordinates)
 
-    np.testing.assert_allclose(padded_curve, curve)
-    np.testing.assert_allclose(padded_times, time_coordinates)
+    assert padded_curve is curve
+    assert padded_times is time_coordinates
 
 
 @pytest.mark.parametrize(
@@ -270,8 +384,7 @@ def test_zero_padding_preserves_1d_curve_that_already_starts_at_zero():
 def test_zero_padding_uses_2d_time_coordinates(curves):
     time_coordinates = np.array([[1.0, 2.0, 3.0], [1.5, 2.5, 3.5]])
 
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        padded_curves, padded_times = zero_padding(curves, time_coordinates)
+    padded_curves, padded_times = zero_padding(curves, time_coordinates)
 
     np.testing.assert_allclose(padded_times[:, 0], 0.0)
     np.testing.assert_allclose(padded_times[:, 1:], time_coordinates)
@@ -300,6 +413,121 @@ def test_zero_padding_rejects_mixed_2d_grid_starts():
             np.array([[1.0, 0.5, 0.1], [1.0, 0.4, 0.1]]),
             np.array([[0.0, 1.0, 2.0], [1.0, 2.0, 3.0]]),
         )
+
+
+@pytest.mark.parametrize("shape", [(3,), (2, 3), (2, 2, 3)])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64])
+@pytest.mark.parametrize("shared_grid", [True, False])
+@pytest.mark.parametrize("initial_value", [0.0, 1.0])
+def test_zero_padding_preserves_ranks_dtypes_and_readonly_inputs(
+    shape,
+    dtype,
+    shared_grid,
+    initial_value,
+):
+    # Noncontiguous inputs must also remain unchanged.
+    curves = np.arange(np.prod(shape) * 2, dtype=dtype).reshape(*shape[:-1], 6)[
+        ..., ::2
+    ]
+    times = np.array([1, 2, 3], dtype=dtype)
+    if not shared_grid:
+        times = np.stack((times, times * 2))
+    original_curves, original_times = curves.copy(), times.copy()
+    curves.flags.writeable = False
+    times.flags.writeable = False
+
+    padded_curves, padded_times = zero_padding(
+        pred_curves=curves, time_coordinates=times, initial_value=initial_value
+    )
+
+    assert padded_curves.shape == (*shape[:-1], 4)
+    assert padded_times.shape == (*times.shape[:-1], 4)
+    assert padded_curves.dtype == curves.dtype
+    assert padded_times.dtype == times.dtype
+    np.testing.assert_array_equal(padded_curves[..., 0], initial_value)
+    np.testing.assert_array_equal(padded_times[..., 0], 0)
+    np.testing.assert_array_equal(padded_curves[..., 1:], original_curves)
+    np.testing.assert_array_equal(padded_times[..., 1:], original_times)
+    np.testing.assert_array_equal(curves, original_curves)
+    np.testing.assert_array_equal(times, original_times)
+
+
+def test_zero_padding_returns_original_cifs_on_existing_zero_grid():
+    cifs = np.zeros((2, 3, 4), dtype=np.float32)
+    times = np.array([0, 1, 2, 3], dtype=np.float32)
+    padded_cifs, padded_times = zero_padding(cifs, times, initial_value=0.0)
+    assert padded_cifs is cifs
+    assert padded_times is times
+
+
+def test_zero_padding_supports_fractional_initial_probability():
+    curves, times = zero_padding(
+        np.array([0.2, 0.1]), np.array([1, 2]), initial_value=0.5
+    )
+    np.testing.assert_equal(curves, [0.5, 0.2, 0.1])
+    np.testing.assert_equal(times, [0, 1, 2])
+
+
+@pytest.mark.parametrize("first_time", [1e-12, np.nextafter(0.0, 1.0)])
+def test_zero_padding_includes_exact_zero_for_tiny_positive_starts(first_time):
+    curves, times = zero_padding(
+        np.array([0.1, 0.2]), np.array([first_time, 1.0]), initial_value=0.0
+    )
+    np.testing.assert_equal(times, [0.0, first_time, 1.0])
+    np.testing.assert_equal(curves, [0.0, 0.1, 0.2])
+
+
+@pytest.mark.parametrize("time", [np.nan, np.inf, -np.inf])
+def test_zero_padding_rejects_nonfinite_times(time):
+    with pytest.raises(ValueError, match="finite"):
+        zero_padding(np.array([0.8, 0.5]), np.array([0, time]))
+
+
+@pytest.mark.parametrize("initial_value", [-1, 2, np.nan, np.inf])
+def test_zero_padding_rejects_invalid_initial_probabilities(initial_value):
+    with pytest.raises(ValueError, match="initial_value"):
+        zero_padding(
+            np.array([0.8, 0.5]), np.array([1, 2]), initial_value=initial_value
+        )
+
+
+@pytest.mark.parametrize("initial_value", ["0", [0], 1j])
+def test_zero_padding_rejects_nonnumeric_initial_probabilities(initial_value):
+    with pytest.raises(TypeError, match="initial_value"):
+        zero_padding(
+            np.array([0.8, 0.5]), np.array([1, 2]), initial_value=initial_value
+        )
+
+
+def test_zero_padding_rejects_fractional_initial_value_for_integer_curves():
+    with pytest.raises(ValueError, match="integral"):
+        zero_padding(np.array([1, 0]), np.array([1, 2]), initial_value=0.5)
+
+
+@pytest.mark.parametrize(
+    "curves, times, error, match",
+    [
+        (np.array(1), np.array([1]), TypeError, "1D, 2D or 3D"),
+        (np.zeros((1, 1, 1, 2)), np.array([1, 2]), TypeError, "1D, 2D or 3D"),
+        (np.zeros(2), np.array(1), TypeError, "1D or 2D"),
+        (np.zeros(2), np.ones((1, 1, 2)), TypeError, "1D or 2D"),
+        (np.ones(3), np.array([1, 2]), ValueError, "same number of time points"),
+        (np.ones((0, 2)), np.array([1, 2]), ValueError, "non-empty"),
+        (np.ones((2, 0, 2)), np.array([1, 2]), ValueError, "non-empty"),
+        (np.ones(2), np.zeros((0, 2)), ValueError, "non-empty"),
+        (np.array([1j, 0j]), np.array([1, 2]), TypeError, "real numeric"),
+        (np.ones(2), np.array([1j, 2j]), TypeError, "real numeric"),
+        (np.ones((2, 2)), np.array([[0, 1], [1e-12, 1]]), ValueError, "All rows"),
+    ],
+)
+def test_zero_padding_rejects_invalid_shapes_and_complex_arrays(
+    curves,
+    times,
+    error,
+    match,
+):
+    with pytest.raises(error, match=match):
+        zero_padding(curves, times)
 
 
 @pytest.mark.parametrize(
@@ -469,15 +697,18 @@ def test_make_monotonic_rejects_invalid_inputs(curves, times, kwargs, message):
         make_monotonic(curves, times, **kwargs)
 
 
-def test_predict_prob_from_curve_pads_time_grid_starting_after_zero():
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        prob = predict_prob_from_curve(
-            survival_curve=np.array([0.8, 0.5, 0.2]),
-            times_coordinate=np.array([1.0, 2.0, 3.0]),
-            target_time=0.5,
-        )
+@pytest.mark.parametrize("target_time, expected", [(0, 1), (0.5, 0.9), (1, 0.8)])
+def test_predict_prob_from_curve_pads_time_grid_starting_after_zero(
+    target_time: float,
+    expected: float,
+) -> None:
+    prob = predict_prob_from_curve(
+        survival_curve=np.array([0.8, 0.5, 0.2]),
+        times_coordinate=np.array([1.0, 2.0, 3.0]),
+        target_time=target_time,
+    )
 
-    assert prob == pytest.approx(0.9)
+    assert prob == pytest.approx(expected)
 
 
 def test_predict_prob_from_curve_accepts_curve_below_one_at_origin():
@@ -547,24 +778,20 @@ def test_validate_time_points_reuses_compatible_numpy_array():
     assert validated is time_points
 
 
-def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
-    with pytest.warns(UserWarning, match="first time coordinate"):
-        probs = predict_multi_probs_from_curve(
-            survival_curve=np.array([0.8, 0.5, 0.2]),
-            times_coordinate=np.array([1.0, 2.0, 3.0]),
-            target_times=np.array([0.0, 0.5, 1.0]),
-        )
-
-    np.testing.assert_allclose(probs, [1.0, 0.9, 0.8])
-
-
-def test_predict_multi_probs_from_curve_rejects_negative_target_times():
-    with pytest.raises(ValueError, match="non-negative"):
-        predict_multi_probs_from_curve(
-            survival_curve=np.array([1.0, 0.8, 0.5]),
-            times_coordinate=np.array([0.0, 1.0, 2.0]),
-            target_times=np.array([0.5, -0.1]),
-        )
+@pytest.mark.parametrize(
+    "curves, times",
+    [
+        (np.array([[1, 0.8, 0.5]]), np.array([0, 1, 2])),
+        (np.array([1, 0.8, 0.5]), np.array([[0, 1, 2]])),
+        (np.array([[1, 0.8, 0.5]]), np.array([[0, 1, 2]])),
+    ],
+)
+def test_predict_prob_from_curve_rejects_non_1d_inputs(
+    curves: np.ndarray,
+    times: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError, match="must be 1-D arrays"):
+        predict_prob_from_curve(curves, times, 1.0)
 
 
 def test_survival_to_quantile_rejects_increasing_survival_probabilities():

@@ -1,5 +1,115 @@
 # CHANGELOG
 
+## 2026-10-19: Version 0.9.0
+
+### Key new features
+
+- Add `CompetingRisksEvaluator` for cause-specific CIF predictions, with naive/IPCW
+  concordance and AUC, Brier scores and IBS, AJ-based one-calibration, Fine-Gray
+  ICI, CR-D/KS calibration, marginal AJ calibration, and CIF/survival plots.
+  Support cause-specific scores and explicit equal-weight aggregation.
+- Add `AalenJohansenCompetingRisks` and `AalenJohansenMultiState` under
+  `SurvivalEVAL.nonparametric_estimator.competing_risks` and
+  `SurvivalEVAL.nonparametric_estimator.multi_state`. Support tied updates,
+  transition matrices, competing-risk CIF variances, and scalar/array predictions.
+  Multi-state fits use aggregated `risk_sets` and `transitions`.
+- Add comprehensive single-event and competing-risk notebooks and refresh all
+  eleven examples with explanations, plots, and metric interpretation.
+
+### Bug fixes and behavior changes
+
+- Correct single-event K-S D-calibration to fit Kaplan–Meier on CDF probabilities
+  `F(t) = 1 - S(t)`, preserving right censoring and completing the step CDF with
+  endpoints (0, 0) and (1, 1). Replace the uncensored KS reference p-value with
+  an approximate null bootstrap using independent reverse-KM censoring.
+  Add `n_resamples` and `seed` controls. Returned empirical distributions and
+  plots now use CDF probabilities; inputs remain survival probabilities.
+- Use left-limit censoring survival `G(t-)` consistently in IPCW metrics. Original
+  events leave reverse-KM risk sets before tied censorings. Reject nonpositive or
+  nonfinite censoring probabilities for observations contributing to a score.
+- Correct survival ICI to use restricted cubic splines and Efron fitting. Share
+  spline, partial-likelihood, baseline, and error-summary utilities with the
+  Fine-Gray competing-risk implementation. Validate against R reference fixtures
+  with censoring and ties. Constant risks use exact KM/AJ estimates; nonconstant
+  designs require distinct knots and an identifiable fit.
+- Default single-event and competing-risk one-calibration to
+  `adjust_variance=True`, using Greenwood/KM or AJ variances in a grouped Wald
+  test. Include events at the target time and return undefined tests when group
+  variances are zero. `adjust_variance=False` selects expected-binomial scoring.
+- Clamp default single-event and competing-risk evaluation times to prediction
+  support. For sample-specific survival grids, use the earliest final grid time.
+  Cap automatically generated competing-risk IBS grids at the CIF horizon while
+  retaining the requested number of equally spaced points. Explicit unsupported
+  competing-risk target times continue to raise errors.
+- Support per-sample quantile levels in `QuantileRegEvaluator.km_calibration`,
+  with either shared or per-sample event-time quantiles.
+- Preserve IPCW defaults and fully observed evaluator shortcuts for Brier scores,
+  concordance, and point errors. IPCW AUC still requires training outcomes.
+- Correct Simpson integration for survival IBS and share Brier scoring,
+  integration, outcome validation, and grouped calibration machinery.
+
+### Performance and organization
+
+- Vectorize competing-risk AJ updates over grouped event counts. Construct
+  complete transition matrices on demand; keep multi-state AJ independent of
+  competing-risk estimation.
+- Validate prediction targets once, batch survival interpolation on shared time
+  grids, and reuse the interpolation implementation for sample-specific grids,
+  scalar predictions, and quantile calibration. Preserve dtypes and linear tails;
+  survival at positive infinity remains zero, including for flat curves.
+- Split evaluators into one module per class and standardize method ordering:
+  configuration, prediction, discrimination, prediction error, calibration, other
+  metrics, plotting, then private helpers.
+- Add pytest CI on Python 3.10 and 3.13, plus Ruff, isort, and Black checks.
+  Make interval evaluator integration data deterministic and self-contained,
+  removing the test suite's dependency on an untracked local CSV.
+
+### Migrating from 0.8.x
+
+Root imports remain the preferred evaluator interface:
+
+```python
+from SurvivalEVAL import CompetingRisksEvaluator, SurvivalEvaluator
+```
+
+Update imports that used the former module layout:
+
+| Previous import path | Current import path |
+| --- | --- |
+| `SurvivalEVAL.Evaluator` / `SurvivalEVAL.IntervalCenEvaluator` | `SurvivalEVAL` or `SurvivalEVAL.evaluators` |
+| `SurvivalEVAL.Evaluations.Concordance` | `SurvivalEVAL.evaluations.discrimination` |
+| `SurvivalEVAL.Evaluations.AreaUnderROCurve` | `SurvivalEVAL.evaluations.discrimination` |
+| `SurvivalEVAL.Evaluations.BrierScore` / `MeanError` | `SurvivalEVAL.evaluations.prediction_error` |
+| `SurvivalEVAL.Evaluations.DistributionCalibration` / `SingleTimeCalibration` | `SurvivalEVAL.evaluations.calibration` |
+| `SurvivalEVAL.Evaluations.OtherMetrics` / `AreaUnderPRCurve` | `SurvivalEVAL.evaluations.others` |
+| `SurvivalEVAL.Evaluations.util` | `SurvivalEVAL.evaluations.util` |
+| `SurvivalEVAL.NonparametricEstimator.SingleEvent` | `SurvivalEVAL.nonparametric_estimator.single_event` |
+| `SurvivalEVAL.NonparametricEstimator.SingleEvent.util` | `SurvivalEVAL.nonparametric_estimator.util` |
+
+- Remove calls to `single_brier_score`. Use an evaluator's `brier_score`, or
+  `brier_multiple_points` with one prediction column and a one-element time array.
+- The unused `quantile_to_survival` and `predict_multi_probs_from_curve` utilities
+  are removed. For matrices of survival predictions, use the evaluator method
+  `predict_multi_probabilities_from_curve`; `predict_prob_from_curve` remains
+  available for one curve at one time.
+- ICI `knots` now specifies the total restricted cubic spline knot count, with a
+  minimum of three. Unsupported nonconstant designs raise errors rather than
+  silently reducing spline complexity.
+- IPCW, ICI, and variance-adjusted one-calibration can produce different numerical
+  results from 0.8.x. Recompute stored baselines when upgrading; do not compare
+  old and new scores as though their estimation conventions were identical.
+- Single-event K-S D-calibration statistics now include the completed upper tail,
+  and p-values use 999 bootstrap samples by default. Set `seed` for reproducible
+  p-values; increase `n_resamples` for finer resolution.
+
+### Known limitations
+
+- `MultiStateEvaluator` is exported as a scaffold and has no prediction or metric
+  methods. The multi-state AJ estimator is implemented; multi-state evaluation
+  metrics are not yet available.
+- The existing log-transformation ordering TODO in interval point-error scoring
+  (`mean_error_ic(log_scale=True)`) remains unresolved.
+
 ## 2026-10-08: Version 0.8.7
 
 1. Handle event-probability boundaries in ICI with a finite complementary log-log transform, preserving original

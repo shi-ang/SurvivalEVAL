@@ -1,30 +1,11 @@
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
-from SurvivalEVAL.Evaluations.MeanError import inclusion_rate, mean_error_ic
-from SurvivalEVAL.Evaluations.SingleTimeCalibration import one_cal_ic
-from SurvivalEVAL.IntervalCenEvaluator import IntervalCenEvaluator
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import TurnbullEstimator
-
-
-def _load_breast_data():
-    data_path = Path(__file__).resolve().parents[1] / "data" / "breast.csv"
-    df = pd.read_csv(data_path)
-    df["right"] = df["right"].fillna(np.inf)
-    return df
-
-
-def _midpoint_times(interval_df: pd.DataFrame):
-    left = interval_df["left"].to_numpy(float)
-    right = interval_df["right"].to_numpy(float)
-    is_finite = np.isfinite(right)
-    times = np.where(is_finite, (left + right) / 2.0, left)
-    indicators = is_finite.astype(int)
-    return times, indicators
+from SurvivalEVAL.evaluations.calibration.single_time import one_cal_ic
+from SurvivalEVAL.evaluations.prediction_error import inclusion_rate, mean_error_ic
+from SurvivalEVAL.evaluators.interval_cen_evaluator import IntervalCenEvaluator
 
 
 def test_h_statistic_interval_one_calibration_includes_prediction_one():
@@ -70,7 +51,8 @@ def test_interval_cen_evaluator_rejects_time_coordinate_row_count_mismatch():
         )
 
 
-def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
+def test_interval_cen_time_coordinates_setter_updates_predictions() -> None:
+    """Use each sample's new time grid when interpolating its survival curve."""
     evaluator = IntervalCenEvaluator(
         pred_survs=np.array([[1.0, 0.8, 0.5], [1.0, 0.7, 0.4]]),
         time_coordinates=np.array([0.0, 1.0, 2.0]),
@@ -80,8 +62,9 @@ def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
 
     evaluator.time_coordinates = np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])
 
-    assert evaluator.ndim_time == 2
-    assert evaluator.predict_probability_from_curve(1.0).shape == (2,)
+    np.testing.assert_allclose(
+        evaluator.predict_probability_from_curve(1.0), [0.8, 0.8]
+    )
 
 
 def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():
@@ -98,7 +81,13 @@ def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():
 
 @pytest.fixture(scope="module")
 def interval_evaluator():
-    df = _load_breast_data()
+    rng = np.random.default_rng(42)
+    covariate = rng.normal(size=100)
+    event_times = rng.weibull(2, size=100) * np.exp(2 + 0.3 * covariate)
+    # Unit-spaced visits observe finite intervals; follow-up ends at time 12.
+    left = np.minimum(np.floor(event_times), 12)
+    right = np.where(event_times < 12, left + 1, np.inf)
+    df = pd.DataFrame({"left": left, "right": right, "covariate": covariate})
     train_df = df.iloc[:60].copy()
     test_df = df.iloc[60:].copy()
 
@@ -118,14 +107,6 @@ def interval_evaluator():
         train_right_limits=train_df["right"].values,
     )
 
-    test_times, test_indicators = _midpoint_times(test_df)
-    train_times, train_indicators = _midpoint_times(train_df)
-
-    evaluator.event_times = test_times
-    evaluator.event_indicators = test_indicators
-    evaluator.train_event_times = train_times
-    evaluator.train_event_indicators = train_indicators
-
     return evaluator, time_coords
 
 
@@ -134,10 +115,6 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
 
     predicted_times = evaluator.predicted_event_times
     assert predicted_times.shape[0] == evaluator.left_limits.shape[0]
-
-    evaluator._clear_cache()
-    assert "predicted_event_times" not in evaluator.__dict__
-    assert evaluator.predicted_event_times.shape == predicted_times.shape
 
     c_prob, num_prob, den_prob = evaluator.concordance(method="probability")
     assert np.isfinite(c_prob)

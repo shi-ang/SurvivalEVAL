@@ -24,6 +24,7 @@ dependencies = [
     "lifelines>=0.30.0",
     "osqp>=0.6.3",
     "patsy>=1.0.1",
+    "typing-extensions>=4.0.0",
     # Security floors for dependencies pulled in by matplotlib, torch, and osqp.
     "pillow>=12.3.0",
     "filelock>=3.20.3",
@@ -69,6 +70,10 @@ addopts = ["--ignore=tests/private"]
 
 [tool.isort]
 profile = "black"
+
+[tool.ruff.lint.pep8-naming]
+# Keep the established public import name; internal modules use snake_case.
+extend-ignore-names = ["SurvivalEVAL"]
 
 [project.optional-dependencies]
 dev = [
