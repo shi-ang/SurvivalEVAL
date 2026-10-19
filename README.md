@@ -192,6 +192,9 @@ Right-censored survival-curve evaluators include `SurvivalEvaluator`,
 `LifelinesEvaluator`, `PycoxEvaluator`, `ScikitSurvivalEvaluator`, and
 `QuantileRegEvaluator`.
 
+See the executed [single-event metrics notebook](examples/SingleEvent_Example.ipynb)
+for all metric families, censoring-method comparisons, and calibration diagnostics.
+
 ### Point Prediction Discrimination
 
 These metrics compare predicted survival times with observed event/censoring
@@ -284,9 +287,12 @@ time may contain different scores.
 
 ## Competing-Risks Metrics
 
-`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios. It supports per-cause and aggregated concordance, AUC, Brier scores, integrated Brier scores, single-time calibration, AJ-calibration, and CR-D-calibration.
+`CompetingRisksEvaluator` evaluates predicted cumulative incidence functions (CIFs) for competing risks scenarios.
+It supports per-cause and aggregated concordance, AUC, Brier scores, integrated Brier scores, single-time calibration,
+ICI, AJ-calibration, and CR-D-calibration, including KS deviations.
 
-Readme docs to be updated before formal release
+See the executed [competing risks notebook](examples/CompetingRisks_Example.ipynb)
+for a complete walkthrough with per-cause results, aggregation, and calibration plots.
 
 ```python
 p_value, observed, expected = evl.one_calibration(
