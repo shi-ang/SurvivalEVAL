@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from SurvivalEVAL import (
+from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_calibration
+from SurvivalEVAL.Evaluators import (
     IntervalCenEvaluator,
     PointEvaluator,
     PycoxEvaluator,
@@ -15,7 +16,6 @@ from SurvivalEVAL import (
     SingleTimeEvaluator,
     SurvivalEvaluator,
 )
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_calibration
 
 
 class _StepFunction:
@@ -819,9 +819,9 @@ def test_interpolation_updates_invalidate_cached_event_times(evaluator_class):
     predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
     times = np.array([0, 2, 4])
     if evaluator_class is SurvivalEvaluator:
-        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
     else:
-        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
     evaluator = evaluator_class(predictions, times, **outcomes)
     previous = evaluator.predicted_event_times
     evaluator.interpolation = "pChIp"
@@ -843,9 +843,9 @@ def test_invalid_curve_updates_preserve_cached_event_times(evaluator_class):
     predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
     times = np.array([0, 2, 4])
     if evaluator_class is SurvivalEvaluator:
-        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
     else:
-        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
     evaluator = evaluator_class(predictions, times, **outcomes)
     previous = evaluator.predicted_event_times
     with pytest.raises(ValueError, match="nonincreasing"):
@@ -860,9 +860,9 @@ def test_prediction_updates_refresh_cached_event_times(evaluator_class, setting)
     predictions = np.array([[1, 0.9, 0.2], [1, 0.6, 0.1]])
     times = np.array([0, 2, 4])
     if evaluator_class is SurvivalEvaluator:
-        outcomes = dict(event_times=[1, 3], event_indicators=[1, 0])
+        outcomes = {"event_times": [1, 3], "event_indicators": [1, 0]}
     else:
-        outcomes = dict(left_limits=[1, 2], right_limits=[2, 3])
+        outcomes = {"left_limits": [1, 2], "right_limits": [2, 3]}
     evaluator = evaluator_class(predictions, times, **outcomes)
     previous = evaluator.predicted_event_times
     if setting == "pred_survs":
