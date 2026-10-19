@@ -128,26 +128,6 @@ class IntervalCenEvaluator(_BaseSurvivalEvaluator):
         times = np.concatenate(bounds)
         return float(np.quantile(np.unique(times[np.isfinite(times)]), 0.5))
 
-    def _error_trainset(self, method_name: str) -> None:
-        """
-        Require training outcomes for a metric that estimates censoring or event distributions.
-
-        Parameters
-        ----------
-        method_name : str
-            Metric name to include in the missing-training-data error.
-
-        Raises
-        ------
-        TypeError
-            If the training outcomes required by the metric are unavailable.
-        """
-        if (self.train_left_limits is None) or (self.train_right_limits is None):
-            raise TypeError(
-                "Train set information is missing. "
-                f"Evaluator cannot perform {method_name} evaluation."
-            )
-
     def concordance(
         self,
         method: str = "comparable",
@@ -619,6 +599,135 @@ class IntervalCenEvaluator(_BaseSurvivalEvaluator):
             draw_figure=False,
         )
 
+    def mae(
+        self,
+        log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate MAE from point predictions produced by the configured prediction-time method.
+
+        This uses the interval-censoring hinge loss in [1]_; its absolute-error
+        form is the ``d_out`` metric in [2]_.
+
+        Parameters
+        ----------
+        log_scale : bool, default=False
+            Whether to calculate errors after applying the natural logarithm to times.
+
+        Returns
+        -------
+        mae : float
+            The Mean Absolute Error (MAE) of the configured point predictions.
+
+        References
+        ----------
+        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+           Targets". ICDM, 655-660.
+           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
+        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
+        """
+        return mean_error_ic(
+            self.left_limits,
+            self.right_limits,
+            self.predicted_event_times,
+            error_type="absolute",
+            log_scale=log_scale,
+        )
+
+    def mse(
+        self,
+        log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate MSE from point predictions produced by the configured prediction-time method.
+
+        This uses the interval-censoring hinge loss in [1]_; its absolute-error
+        form is the ``d_out`` metric in [2]_.
+
+        Parameters
+        ----------
+        log_scale : bool, default=False
+            Whether to calculate errors after applying the natural logarithm to times.
+
+        Returns
+        -------
+        mse : float
+            The Mean Squared Error (MSE) of the configured point predictions.
+
+        References
+        ----------
+        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+           Targets". ICDM, 655-660.
+           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
+        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
+        """
+        return mean_error_ic(
+            self.left_limits,
+            self.right_limits,
+            self.predicted_event_times,
+            error_type="squared",
+            log_scale=log_scale,
+        )
+
+    def rmse(
+        self,
+        log_scale: bool = False,
+    ) -> float:
+        """
+        Calculate RMSE from point predictions produced by the configured prediction-time method.
+
+        This uses the interval-censoring hinge loss in [1]_; its absolute-error
+        form is the ``d_out`` metric in [2]_.
+
+        Parameters
+        ----------
+        log_scale : bool, default=False
+            Whether to calculate errors after applying the natural logarithm to times.
+
+        Returns
+        -------
+        rmse : float
+            The Root Mean Squared Error (RMSE) of the configured point predictions.
+
+        References
+        ----------
+        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+           Targets". ICDM, 655-660.
+           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
+        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
+        """
+        return self.mse(log_scale=log_scale) ** 0.5
+
+    def inclusion_rate(self) -> float:
+        """
+        Calculate the inclusion rate of the configured point predictions within the observed intervals.
+
+        Point predictions use the evaluator's `predict_time_method`, which may
+        be "Median", "Mean", or "RMST".
+
+        The fraction of predictions within the observed intervals is described in [1]_.
+
+        Returns
+        -------
+        inclusion_rate : float
+            Proportion of configured point predictions within the observed intervals.
+
+        References
+        ----------
+        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
+        """
+        return inclusion_rate(
+            self.left_limits, self.right_limits, self.predicted_event_times
+        )
+
     def one_calibration(
         self,
         target_time: Numeric | None = None,
@@ -856,166 +965,6 @@ class IntervalCenEvaluator(_BaseSurvivalEvaluator):
             return_details=return_details,
         )
 
-    def auprc(self, n_quad: int = 256) -> float:
-        """
-        Calculate the Survival-AUPRC from the predicted survival curve for interval-censored data.
-
-        The interval-censored survival precision-recall measure follows [1]_.
-
-        Parameters
-        ----------
-        n_quad : int, default=256
-            Number of quadrature points to use for numerical integration.
-
-        Returns
-        -------
-        auprc : float
-            The mean AUPRC across all testing samples.
-
-        References
-        ----------
-        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
-        """
-        return auprc_ic(
-            pred_cdf=1 - self._pred_survs,
-            time_grid=self._time_coordinates,
-            left=self.left_limits,
-            right=self.right_limits,
-            n_quad=n_quad,
-            return_details=False,
-        )
-
-    def inclusion_rate(self) -> float:
-        """
-        Calculate the inclusion rate of the configured point predictions within the observed intervals.
-
-        Point predictions use the evaluator's `predict_time_method`, which may
-        be "Median", "Mean", or "RMST".
-
-        The fraction of predictions within the observed intervals is described in [1]_.
-
-        Returns
-        -------
-        inclusion_rate : float
-            Proportion of configured point predictions within the observed intervals.
-
-        References
-        ----------
-        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
-        """
-        return inclusion_rate(
-            self.left_limits, self.right_limits, self.predicted_event_times
-        )
-
-    def mae(
-        self,
-        log_scale: bool = False,
-    ) -> float:
-        """
-        Calculate MAE from point predictions produced by the configured prediction-time method.
-
-        This uses the interval-censoring hinge loss in [1]_; its absolute-error
-        form is the ``d_out`` metric in [2]_.
-
-        Parameters
-        ----------
-        log_scale : bool, default=False
-            Whether to calculate errors after applying the natural logarithm to times.
-
-        Returns
-        -------
-        mae : float
-            The Mean Absolute Error (MAE) of the configured point predictions.
-
-        References
-        ----------
-        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
-           Targets". ICDM, 655-660.
-           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
-        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
-        """
-        return mean_error_ic(
-            self.left_limits,
-            self.right_limits,
-            self.predicted_event_times,
-            error_type="absolute",
-            log_scale=log_scale,
-        )
-
-    def mse(
-        self,
-        log_scale: bool = False,
-    ) -> float:
-        """
-        Calculate MSE from point predictions produced by the configured prediction-time method.
-
-        This uses the interval-censoring hinge loss in [1]_; its absolute-error
-        form is the ``d_out`` metric in [2]_.
-
-        Parameters
-        ----------
-        log_scale : bool, default=False
-            Whether to calculate errors after applying the natural logarithm to times.
-
-        Returns
-        -------
-        mse : float
-            The Mean Squared Error (MSE) of the configured point predictions.
-
-        References
-        ----------
-        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
-           Targets". ICDM, 655-660.
-           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
-        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
-        """
-        return mean_error_ic(
-            self.left_limits,
-            self.right_limits,
-            self.predicted_event_times,
-            error_type="squared",
-            log_scale=log_scale,
-        )
-
-    def rmse(
-        self,
-        log_scale: bool = False,
-    ) -> float:
-        """
-        Calculate RMSE from point predictions produced by the configured prediction-time method.
-
-        This uses the interval-censoring hinge loss in [1]_; its absolute-error
-        form is the ``d_out`` metric in [2]_.
-
-        Parameters
-        ----------
-        log_scale : bool, default=False
-            Whether to calculate errors after applying the natural logarithm to times.
-
-        Returns
-        -------
-        rmse : float
-            The Root Mean Squared Error (RMSE) of the configured point predictions.
-
-        References
-        ----------
-        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
-           Targets". ICDM, 655-660.
-           https://research.google/pubs/a-support-vector-approach-to-censored-targets/
-        .. [2] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
-        """
-        return self.mse(log_scale=log_scale) ** 0.5
-
     def coverage(
         self,
         quantile_range: tuple[float, float] | None = None,
@@ -1065,3 +1014,54 @@ class IntervalCenEvaluator(_BaseSurvivalEvaluator):
             ),
             method=method,
         )
+
+    def auprc(self, n_quad: int = 256) -> float:
+        """
+        Calculate the Survival-AUPRC from the predicted survival curve for interval-censored data.
+
+        The interval-censored survival precision-recall measure follows [1]_.
+
+        Parameters
+        ----------
+        n_quad : int, default=256
+            Number of quadrature points to use for numerical integration.
+
+        Returns
+        -------
+        auprc : float
+            The mean AUPRC across all testing samples.
+
+        References
+        ----------
+        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
+        """
+        return auprc_ic(
+            pred_cdf=1 - self._pred_survs,
+            time_grid=self._time_coordinates,
+            left=self.left_limits,
+            right=self.right_limits,
+            n_quad=n_quad,
+            return_details=False,
+        )
+
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
+        if (self.train_left_limits is None) or (self.train_right_limits is None):
+            raise TypeError(
+                "Train set information is missing. "
+                f"Evaluator cannot perform {method_name} evaluation."
+            )

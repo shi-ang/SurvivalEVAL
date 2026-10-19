@@ -75,26 +75,6 @@ class SingleTimeEvaluator:
         self.target_time = target_time
         self._NO_CENSOR = np.all(self.event_indicators == 1)
 
-    def _error_trainset(self, method_name: str) -> None:
-        """
-        Require training outcomes for a metric that estimates censoring or event distributions.
-
-        Parameters
-        ----------
-        method_name : str
-            Metric name to include in the missing-training-data error.
-
-        Raises
-        ------
-        TypeError
-            If the training outcomes required by the metric are unavailable.
-        """
-        if (self.train_event_times is None) or (self.train_event_indicators is None):
-            raise TypeError(
-                "Train set information is missing. "
-                f"Evaluator cannot perform {method_name} evaluation."
-            )
-
     @property
     def pred_probs(self) -> np.ndarray:
         """
@@ -368,3 +348,23 @@ class SingleTimeEvaluator:
             draw_figure=draw_figure,
             figure_range=figure_range,
         )
+
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError(
+                "Train set information is missing. "
+                f"Evaluator cannot perform {method_name} evaluation."
+            )

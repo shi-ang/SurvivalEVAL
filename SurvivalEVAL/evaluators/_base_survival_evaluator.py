@@ -70,80 +70,6 @@ class _BaseSurvivalEvaluator:
 
         self.interpolation = interpolation
 
-    @staticmethod
-    def _validate_prediction_sample_count(
-        pred_survs: np.ndarray,
-        time_coordinates: np.ndarray,
-        n_samples: int,
-    ) -> None:
-        """
-        Validate that prediction inputs have one row per testing sample.
-
-        Parameters
-        ----------
-        pred_survs : ndarray
-            Predicted survival curves, either shared across samples or one row
-            per sample.
-        time_coordinates : ndarray
-            Time coordinates, either shared across samples or one row per sample.
-        n_samples : int
-            Expected number of testing samples.
-
-        Raises
-        ------
-        ValueError
-            If a 2-D prediction input has a row count different from
-            ``n_samples``.
-        """
-        sample_counts = {}
-        if pred_survs.ndim == 2:
-            sample_counts["pred_survs"] = pred_survs.shape[0]
-        if time_coordinates.ndim == 2:
-            sample_counts["time_coordinates"] = time_coordinates.shape[0]
-
-        mismatched_counts = {
-            name: count for name, count in sample_counts.items() if count != n_samples
-        }
-        if mismatched_counts:
-            count_details = ", ".join(
-                f"{name} has {count}" for name, count in mismatched_counts.items()
-            )
-            raise ValueError(
-                "The number of prediction rows must match the number of testing "
-                f"samples ({n_samples}); {count_details}."
-            )
-
-    @staticmethod
-    def _validate_prediction_curve_inputs(
-        pred_survs: np.ndarray,
-        time_coordinates: np.ndarray,
-    ) -> None:
-        """
-        Validate survival-curve probability and time-grid invariants.
-
-        Parameters
-        ----------
-        pred_survs : ndarray
-            Predicted survival probabilities after any zero-padding.
-        time_coordinates : ndarray
-            Time coordinates after any zero-padding.
-
-        Raises
-        ------
-        ValueError
-            If time coordinates are not strictly increasing along each row, if
-            survival probabilities are outside ``[0, 1]``, or if survival curves
-            increase over time.
-        """
-        if np.any(np.diff(time_coordinates, axis=-1) <= 0):
-            raise ValueError(
-                "Each row of time_coordinates must be strictly increasing."
-            )
-        if np.any((pred_survs < 0) | (pred_survs > 1)):
-            raise ValueError("Survival probabilities must be between 0 and 1.")
-        if np.any(np.diff(pred_survs, axis=-1) > 1e-8):
-            raise ValueError("Survival probabilities must be nonincreasing.")
-
     def set_prediction_inputs(
         self,
         pred_survs: NumericArrayLike,
@@ -302,13 +228,6 @@ class _BaseSurvivalEvaluator:
             One event-time point prediction per sample using the configured prediction method.
         """
         return self.predict_time_from_curve(self.predict_time_method)
-
-    def _clear_cache(self) -> None:
-        # See how to clear cache in functools:
-        # https://docs.python.org/3/library/functools.html#functools.cached_property
-        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
-        """Invalidate cached event-time predictions."""
-        self.__dict__.pop("predicted_event_times", None)
 
     def predict_time_from_curve(
         self,
@@ -513,66 +432,6 @@ class _BaseSurvivalEvaluator:
 
         return hazard_mat
 
-    def _predict_risks_from_curve(
-        self,
-        sample_index: int,
-        target_times: np.ndarray,
-        risks: str,
-    ) -> np.ndarray:
-        """
-        Predict one sample's risks without allocating a matrix of scores.
-
-        Parameters
-        ----------
-        sample_index : int
-            Zero-based index of the sample whose curve is evaluated.
-        target_times : ndarray
-            One-dimensional array of non-negative evaluation times.
-        risks : str
-            "survival" returns negative survival probabilities; "hazard" returns interval hazard rates.
-
-        Returns
-        -------
-        ndarray
-            One risk score per target time for the selected sample.
-        """
-        target_times = validate_time_points(target_times, input_name="target_times")
-        survival_curve = (
-            self._pred_survs[sample_index] if self.ndim_surv == 2 else self._pred_survs
-        )
-        time_grid = (
-            self._time_coordinates[sample_index]
-            if self.ndim_time == 2
-            else self._time_coordinates
-        )
-        if risks == "survival":
-            predicted_risks = np.asarray(
-                predict_multi_probs_from_curve(
-                    survival_curve, time_grid, target_times, self.interpolation
-                ),
-                dtype=self._pred_survs.dtype,
-            )
-            np.negative(predicted_risks, out=predicted_risks)
-            return predicted_risks
-
-        if time_grid.size < 2:
-            raise ValueError(
-                "At least two time points are required to estimate hazards."
-            )
-        if np.any(target_times > time_grid[-1]):
-            raise ValueError(
-                "target_times must not exceed the largest time coordinate "
-                "when estimating hazard rates."
-            )
-
-        interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
-        interval_indices = np.clip(interval_indices, 0, time_grid.size - 2)
-        eps = 1e-12
-        left_survival = np.clip(survival_curve[interval_indices], eps, None)
-        right_survival = np.clip(survival_curve[interval_indices + 1], eps, None)
-        interval_widths = time_grid[interval_indices + 1] - time_grid[interval_indices]
-        return -np.log(right_survival / left_survival) / interval_widths
-
     def predict_interval(
         self,
         quantile_range: tuple[float, float] | None = None,
@@ -634,37 +493,6 @@ class _BaseSurvivalEvaluator:
             interpolate=self.interpolation,
         )
         return interval_pred
-
-    def _select_plot_inputs(
-        self,
-        curve_indices: int | list[int],
-    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-        """
-        Select requested samples, keeping shared 1D inputs without broadcasting.
-
-        Return survival curves, their time coordinates and sample labels in
-        selection order. Copy only selected rows of sample-specific inputs.
-
-        Parameters
-        ----------
-        curve_indices : int | list[int]
-            Zero-based sample indices to select, in the requested order.
-
-        Returns
-        -------
-        tuple[ndarray, ndarray, list[str]]
-            Selected survival curves, matching time grids, and sample labels in selection order.
-        """
-        indices = _validate_plot_indices(curve_indices, self._n_samples)
-        return (
-            self._pred_survs[indices] if self.ndim_surv == 2 else self._pred_survs,
-            (
-                self._time_coordinates[indices]
-                if self.ndim_time == 2
-                else self._time_coordinates
-            ),
-            [f"Sample {i}" for i in indices],
-        )
 
     def plot_survival_curves(
         self,
@@ -770,4 +598,176 @@ class _BaseSurvivalEvaluator:
             y_lim=(0, float(np.max(times)) * 1.02) if y_lim is None else y_lim,
             ax=ax,
             **kwargs,
+        )
+
+    def _clear_cache(self) -> None:
+        # See how to clear cache in functools:
+        # https://docs.python.org/3/library/functools.html#functools.cached_property
+        # https://stackoverflow.com/questions/62662564/how-do-i-clear-the-cache-from-cached-property-decorator
+        """Invalidate cached event-time predictions."""
+        self.__dict__.pop("predicted_event_times", None)
+
+    @staticmethod
+    def _validate_prediction_curve_inputs(
+        pred_survs: np.ndarray,
+        time_coordinates: np.ndarray,
+    ) -> None:
+        """
+        Validate survival-curve probability and time-grid invariants.
+
+        Parameters
+        ----------
+        pred_survs : ndarray
+            Predicted survival probabilities after any zero-padding.
+        time_coordinates : ndarray
+            Time coordinates after any zero-padding.
+
+        Raises
+        ------
+        ValueError
+            If time coordinates are not strictly increasing along each row, if
+            survival probabilities are outside ``[0, 1]``, or if survival curves
+            increase over time.
+        """
+        if np.any(np.diff(time_coordinates, axis=-1) <= 0):
+            raise ValueError(
+                "Each row of time_coordinates must be strictly increasing."
+            )
+        if np.any((pred_survs < 0) | (pred_survs > 1)):
+            raise ValueError("Survival probabilities must be between 0 and 1.")
+        if np.any(np.diff(pred_survs, axis=-1) > 1e-8):
+            raise ValueError("Survival probabilities must be nonincreasing.")
+
+    @staticmethod
+    def _validate_prediction_sample_count(
+        pred_survs: np.ndarray,
+        time_coordinates: np.ndarray,
+        n_samples: int,
+    ) -> None:
+        """
+        Validate that prediction inputs have one row per testing sample.
+
+        Parameters
+        ----------
+        pred_survs : ndarray
+            Predicted survival curves, either shared across samples or one row
+            per sample.
+        time_coordinates : ndarray
+            Time coordinates, either shared across samples or one row per sample.
+        n_samples : int
+            Expected number of testing samples.
+
+        Raises
+        ------
+        ValueError
+            If a 2-D prediction input has a row count different from
+            ``n_samples``.
+        """
+        sample_counts = {}
+        if pred_survs.ndim == 2:
+            sample_counts["pred_survs"] = pred_survs.shape[0]
+        if time_coordinates.ndim == 2:
+            sample_counts["time_coordinates"] = time_coordinates.shape[0]
+
+        mismatched_counts = {
+            name: count for name, count in sample_counts.items() if count != n_samples
+        }
+        if mismatched_counts:
+            count_details = ", ".join(
+                f"{name} has {count}" for name, count in mismatched_counts.items()
+            )
+            raise ValueError(
+                "The number of prediction rows must match the number of testing "
+                f"samples ({n_samples}); {count_details}."
+            )
+
+    def _predict_risks_from_curve(
+        self,
+        sample_index: int,
+        target_times: np.ndarray,
+        risks: str,
+    ) -> np.ndarray:
+        """
+        Predict one sample's risks without allocating a matrix of scores.
+
+        Parameters
+        ----------
+        sample_index : int
+            Zero-based index of the sample whose curve is evaluated.
+        target_times : ndarray
+            One-dimensional array of non-negative evaluation times.
+        risks : str
+            "survival" returns negative survival probabilities; "hazard" returns interval hazard rates.
+
+        Returns
+        -------
+        ndarray
+            One risk score per target time for the selected sample.
+        """
+        target_times = validate_time_points(target_times, input_name="target_times")
+        survival_curve = (
+            self._pred_survs[sample_index] if self.ndim_surv == 2 else self._pred_survs
+        )
+        time_grid = (
+            self._time_coordinates[sample_index]
+            if self.ndim_time == 2
+            else self._time_coordinates
+        )
+        if risks == "survival":
+            predicted_risks = np.asarray(
+                predict_multi_probs_from_curve(
+                    survival_curve, time_grid, target_times, self.interpolation
+                ),
+                dtype=self._pred_survs.dtype,
+            )
+            np.negative(predicted_risks, out=predicted_risks)
+            return predicted_risks
+
+        if time_grid.size < 2:
+            raise ValueError(
+                "At least two time points are required to estimate hazards."
+            )
+        if np.any(target_times > time_grid[-1]):
+            raise ValueError(
+                "target_times must not exceed the largest time coordinate "
+                "when estimating hazard rates."
+            )
+
+        interval_indices = np.searchsorted(time_grid[1:], target_times, side="left")
+        interval_indices = np.clip(interval_indices, 0, time_grid.size - 2)
+        eps = 1e-12
+        left_survival = np.clip(survival_curve[interval_indices], eps, None)
+        right_survival = np.clip(survival_curve[interval_indices + 1], eps, None)
+        interval_widths = time_grid[interval_indices + 1] - time_grid[interval_indices]
+        return -np.log(right_survival / left_survival) / interval_widths
+
+    def _select_plot_inputs(
+        self,
+        curve_indices: int | list[int],
+    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
+        """
+        Select requested samples, keeping shared 1D inputs without broadcasting.
+
+        Return survival curves, their time coordinates and sample labels in
+        selection order. Copy only selected rows of sample-specific inputs.
+
+        Parameters
+        ----------
+        curve_indices : int | list[int]
+            Zero-based sample indices to select, in the requested order.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray, list[str]]
+            Selected survival curves, matching time grids, and sample labels in selection order.
+        """
+        indices = _validate_plot_indices(curve_indices, self._n_samples)
+        return (
+            self._pred_survs[indices] if self.ndim_surv == 2 else self._pred_survs,
+            (
+                self._time_coordinates[indices]
+                if self.ndim_time == 2
+                else self._time_coordinates
+            ),
+            [f"Sample {i}" for i in indices],
         )

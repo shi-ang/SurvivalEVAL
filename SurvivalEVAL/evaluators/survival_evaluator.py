@@ -105,26 +105,6 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             interpolation=interpolation,
         )
 
-    def _error_trainset(self, method_name: str) -> None:
-        """
-        Require training outcomes for a metric that estimates censoring or event distributions.
-
-        Parameters
-        ----------
-        method_name : str
-            Metric name to include in the missing-training-data error.
-
-        Raises
-        ------
-        TypeError
-            If the training outcomes required by the metric are unavailable.
-        """
-        if (self.train_event_times is None) or (self.train_event_indicators is None):
-            raise TypeError(
-                "Train set information is missing. "
-                f"Evaluator cannot perform {method_name} evaluation."
-            )
-
     @property
     def default_target_time(self) -> float:
         """
@@ -217,6 +197,102 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
 
         return concordance(
             predicted_times=self.predicted_event_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
+            ties=ties,
+            tau=tau,
+        )
+
+    def concordance_time_dependent(
+        self,
+        ties: str = "Risk",
+        method: str = "Antolini",
+        risks: str = "Survival",
+        tau: Numeric | None = None,
+    ) -> tuple[float, float, float]:
+        """
+        Calculate the time-dependent concordance index.
+
+        Risk scores are evaluated at observed-event anchor times, processing
+        one sample's curve at a time. Each contributing time is predicted at
+        most once per sample; observed events tied on time remain separate
+        anchors for pair counting.
+
+        The ``Antolini`` and ``Naive`` methods follow [1]_. For ``IPCW``, see
+        the approaches in [2]_ and [3]_.
+
+        Parameters
+        ----------
+        ties : str, default="Risk"
+            A string indicating the way ties should be handled.
+            Options: "None", "Time", "Risk" (default), or "All"
+            "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
+            "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
+            "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
+            "All" includes all ties.
+            Note the concordance calculation is given by
+            (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
+        method : str, default="Antolini"
+            A string indicating the method for constructing the pairs of samples.
+            Options are "Antolini" (default), "Naive", "IPCW".
+            "Antolini": comparable pairs are anchored by samples with observed
+            events. If sample i has an observed event at time t_i, it is compared
+            with samples whose observed event/censoring time is greater than t_i.
+            "Naive": alias of "Antolini".
+            "IPCW": Antolini-style comparable pairs weighted by inverse probability
+            of censoring weights from the training data.
+        risks : str, default="Survival"
+            A string indicating the type of risk scores to be used for concordance calculation.
+            Options are "Survival" (default) and "Hazard".
+            "Survival": predicted survival probabilities at anchor event times are converted to risk scores
+            using -S(t | z).
+            "Hazard": predicted hazard rates at anchor event times are used directly as risk scores.
+        tau : float, optional, default=None
+            Truncation time. If provided, only pairs whose effective earlier or
+            anchor time is strictly before ``tau`` are counted. If None, no
+            truncation is applied.
+
+        Returns
+        -------
+        concordance_index : float
+            The time-dependent concordance index.
+        num_concordant_pairs : float
+            The number of concordant pairs.
+        num_total_pairs : float
+            The number of total pairs.
+
+        References
+        ----------
+        .. [1] Antolini, L.; Boracchi, P.; Biganzoli, E. (2005). "A time-dependent
+           discrimination index for survival data". Statistics in Medicine,
+           24(24), 3927-3944. https://doi.org/10.1002/sim.2427
+        .. [2] Gandy, A.; Matcham, T. J. (2025). "A proper concordance index for
+           models with crossing hazards". Scandinavian Journal of Statistics,
+           52(4), 1479-1504. https://doi.org/10.1111/sjos.70000
+        .. [3] Faruk, A.; Palczewski, J.; Aivaliotis, G. (2025). "A new discrimination
+           measure for assessing predictive performance of non-linear survival models".
+           arXiv preprint, arXiv:2504.05630. https://arxiv.org/abs/2504.05630
+        """
+        risks = risks.lower()
+
+        if self._NO_CENSOR:
+            method = "antolini"
+
+        method = _normalize_time_dependent_method(method)
+        ties = _normalize_ties(ties)
+
+        if risks not in {"survival", "hazard"}:
+            error = "Risks must be 'Survival' or 'Hazard', " f"got '{risks}' instead"
+            raise ValueError(error)
+
+        if method == "ipcw":
+            self._error_trainset("IPCW time-dependent concordance")
+
+        return _concordance_time_dependent(
+            risk_scores=partial(self._predict_risks_from_curve, risks=risks),
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             train_event_times=self.train_event_times,
@@ -322,102 +398,6 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
            https://doi.org/10.1198/016214507000000149
         """
         return self.auc(target_time, method=method)
-
-    def concordance_time_dependent(
-        self,
-        ties: str = "Risk",
-        method: str = "Antolini",
-        risks: str = "Survival",
-        tau: Numeric | None = None,
-    ) -> tuple[float, float, float]:
-        """
-        Calculate the time-dependent concordance index.
-
-        Risk scores are evaluated at observed-event anchor times, processing
-        one sample's curve at a time. Each contributing time is predicted at
-        most once per sample; observed events tied on time remain separate
-        anchors for pair counting.
-
-        The ``Antolini`` and ``Naive`` methods follow [1]_. For ``IPCW``, see
-        the approaches in [2]_ and [3]_.
-
-        Parameters
-        ----------
-        ties : str, default="Risk"
-            A string indicating the way ties should be handled.
-            Options: "None", "Time", "Risk" (default), or "All"
-            "None" will throw out all ties in true survival time and all ties in predict survival times (risk scores).
-            "Time" includes ties in true survival time but removes ties in predict survival times (risk scores).
-            "Risk" includes ties in predict survival times (risk scores) but not in true survival time.
-            "All" includes all ties.
-            Note the concordance calculation is given by
-            (Concordant Pairs + (Number of Ties/2))/(Concordant Pairs + Discordant Pairs + Number of Ties).
-        method : str, default="Antolini"
-            A string indicating the method for constructing the pairs of samples.
-            Options are "Antolini" (default), "Naive", "IPCW".
-            "Antolini": comparable pairs are anchored by samples with observed
-            events. If sample i has an observed event at time t_i, it is compared
-            with samples whose observed event/censoring time is greater than t_i.
-            "Naive": alias of "Antolini".
-            "IPCW": Antolini-style comparable pairs weighted by inverse probability
-            of censoring weights from the training data.
-        risks : str, default="Survival"
-            A string indicating the type of risk scores to be used for concordance calculation.
-            Options are "Survival" (default) and "Hazard".
-            "Survival": predicted survival probabilities at anchor event times are converted to risk scores
-            using -S(t | z).
-            "Hazard": predicted hazard rates at anchor event times are used directly as risk scores.
-        tau : float, optional, default=None
-            Truncation time. If provided, only pairs whose effective earlier or
-            anchor time is strictly before ``tau`` are counted. If None, no
-            truncation is applied.
-
-        Returns
-        -------
-        concordance_index : float
-            The time-dependent concordance index.
-        num_concordant_pairs : float
-            The number of concordant pairs.
-        num_total_pairs : float
-            The number of total pairs.
-
-        References
-        ----------
-        .. [1] Antolini, L.; Boracchi, P.; Biganzoli, E. (2005). "A time-dependent
-           discrimination index for survival data". Statistics in Medicine,
-           24(24), 3927-3944. https://doi.org/10.1002/sim.2427
-        .. [2] Gandy, A.; Matcham, T. J. (2025). "A proper concordance index for
-           models with crossing hazards". Scandinavian Journal of Statistics,
-           52(4), 1479-1504. https://doi.org/10.1111/sjos.70000
-        .. [3] Faruk, A.; Palczewski, J.; Aivaliotis, G. (2025). "A new discrimination
-           measure for assessing predictive performance of non-linear survival models".
-           arXiv preprint, arXiv:2504.05630. https://arxiv.org/abs/2504.05630
-        """
-        risks = risks.lower()
-
-        if self._NO_CENSOR:
-            method = "antolini"
-
-        method = _normalize_time_dependent_method(method)
-        ties = _normalize_ties(ties)
-
-        if risks not in {"survival", "hazard"}:
-            error = "Risks must be 'Survival' or 'Hazard', " f"got '{risks}' instead"
-            raise ValueError(error)
-
-        if method == "ipcw":
-            self._error_trainset("IPCW time-dependent concordance")
-
-        return _concordance_time_dependent(
-            risk_scores=partial(self._predict_risks_from_curve, risks=risks),
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            method=method,
-            ties=ties,
-            tau=tau,
-        )
 
     def brier_score(
         self,
@@ -1110,6 +1090,58 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             return_details=return_details,
         )
 
+    def km_calibration(
+        self,
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """
+        Calculate the KM calibration score from the predicted survival curve.
+
+        Related marginal-calibration diagnostics compare survival curves
+        visually [1]_ or through KL divergence [2]_. This method uses
+        integrated squared error.
+
+        Parameters
+        ----------
+        draw_figure : bool, default=False
+            Whether to draw the figure of the KM calibration curve.
+
+        Returns
+        -------
+        float or tuple[float, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
+            Normalized integrated squared error between the mean predicted survival curve and the
+            Kaplan-Meier estimate. When draw_figure is True, return (score, (figure, axes)).
+
+        References
+        ----------
+        .. [1] Chapfuwa et al. (2020). "Calibration and Uncertainty in Neural
+           Time-to-Event Modeling". IEEE Transactions on Neural Networks and Learning Systems.
+           https://pmc.ncbi.nlm.nih.gov/articles/PMC8439415/
+        .. [2] Yanagisawa (2023). "Proper Scoring Rules for Survival Analysis".
+           Proceedings of Machine Learning Research, 202, 39165-39182.
+           https://proceedings.mlr.press/v202/yanagisawa23a.html
+        """
+        if self.ndim_time == 1:
+            average_survival_curve = np.mean(self._pred_survs, axis=0, dtype=float)
+            calibration_times = self._time_coordinates
+        else:
+            calibration_times = np.unique(self.event_times[self.event_indicators == 1])
+            sample_survival_curves = self.predict_multi_probabilities_from_curve(
+                calibration_times
+            )
+            average_survival_curve = np.mean(
+                sample_survival_curves, axis=0, dtype=float
+            )
+
+        return km_calibration(
+            average_survival_curve=average_survival_curve,
+            time_coordinates=calibration_times,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            interpolation_method=self.interpolation,
+            draw_figure=draw_figure,
+        )
+
     def residuals(
         self,
         method: str = "CoxSnell",
@@ -1168,56 +1200,36 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             draw_figure=draw_figure,
         )
 
-    def km_calibration(
-        self,
-        draw_figure: bool = False,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+    def auprc(self, n_quad: int = 256) -> float:
         """
-        Calculate the KM calibration score from the predicted survival curve.
+        Calculate the survival AUPRC for right-censored data.
 
-        Related marginal-calibration diagnostics compare survival curves
-        visually [1]_ or through KL divergence [2]_. This method uses
-        integrated squared error.
+        The survival precision-recall measure follows [1]_.
 
         Parameters
         ----------
-        draw_figure : bool, default=False
-            Whether to draw the figure of the KM calibration curve.
+        n_quad : int, default=256
+            Number of quadrature intervals used for numerical integration.
 
         Returns
         -------
-        float or tuple[float, tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]]
-            Normalized integrated squared error between the mean predicted survival curve and the
-            Kaplan-Meier estimate. When draw_figure is True, return (score, (figure, axes)).
+        auprc : float
+            The survival AUPRC.
 
         References
         ----------
-        .. [1] Chapfuwa et al. (2020). "Calibration and Uncertainty in Neural
-           Time-to-Event Modeling". IEEE Transactions on Neural Networks and Learning Systems.
-           https://pmc.ncbi.nlm.nih.gov/articles/PMC8439415/
-        .. [2] Yanagisawa (2023). "Proper Scoring Rules for Survival Analysis".
-           Proceedings of Machine Learning Research, 202, 39165-39182.
-           https://proceedings.mlr.press/v202/yanagisawa23a.html
+        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
+           Proceedings of Machine Learning Research, 115, 145-155.
+           https://proceedings.mlr.press/v115/avati20a.html
         """
-        if self.ndim_time == 1:
-            average_survival_curve = np.mean(self._pred_survs, axis=0, dtype=float)
-            calibration_times = self._time_coordinates
-        else:
-            calibration_times = np.unique(self.event_times[self.event_indicators == 1])
-            sample_survival_curves = self.predict_multi_probabilities_from_curve(
-                calibration_times
-            )
-            average_survival_curve = np.mean(
-                sample_survival_curves, axis=0, dtype=float
-            )
-
-        return km_calibration(
-            average_survival_curve=average_survival_curve,
-            time_coordinates=calibration_times,
+        predictions_cdf = 1 - self._pred_survs
+        return auprc_right_censor(
+            pred_cdf=predictions_cdf,
+            time_grid=self._time_coordinates,
             event_times=self.event_times,
             event_indicators=self.event_indicators,
-            interpolation_method=self.interpolation,
-            draw_figure=draw_figure,
+            n_quad=n_quad,
+            return_details=False,
         )
 
     def log_rank(
@@ -1263,34 +1275,22 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         )
         return results.p_value, results.test_statistic
 
-    def auprc(self, n_quad: int = 256) -> float:
+    def _error_trainset(self, method_name: str) -> None:
         """
-        Calculate the survival AUPRC for right-censored data.
-
-        The survival precision-recall measure follows [1]_.
+        Require training outcomes for a metric that estimates censoring or event distributions.
 
         Parameters
         ----------
-        n_quad : int, default=256
-            Number of quadrature intervals used for numerical integration.
+        method_name : str
+            Metric name to include in the missing-training-data error.
 
-        Returns
-        -------
-        auprc : float
-            The survival AUPRC.
-
-        References
-        ----------
-        .. [1] Avati et al. (2020). "Countdown Regression: Sharp and Calibrated Survival Predictions".
-           Proceedings of Machine Learning Research, 115, 145-155.
-           https://proceedings.mlr.press/v115/avati20a.html
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
         """
-        predictions_cdf = 1 - self._pred_survs
-        return auprc_right_censor(
-            pred_cdf=predictions_cdf,
-            time_grid=self._time_coordinates,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            n_quad=n_quad,
-            return_details=False,
-        )
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError(
+                "Train set information is missing. "
+                f"Evaluator cannot perform {method_name} evaluation."
+            )

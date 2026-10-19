@@ -55,26 +55,6 @@ class PointEvaluator:
 
         self._NO_CENSOR = np.all(self.event_indicators == 1)
 
-    def _error_trainset(self, method_name: str) -> None:
-        """
-        Require training outcomes for a metric that estimates censoring or event distributions.
-
-        Parameters
-        ----------
-        method_name : str
-            Metric name to include in the missing-training-data error.
-
-        Raises
-        ------
-        TypeError
-            If the training outcomes required by the metric are unavailable.
-        """
-        if (self.train_event_times is None) or (self.train_event_indicators is None):
-            raise TypeError(
-                "Train set information is missing. "
-                f"Evaluator cannot perform {method_name} evaluation."
-            )
-
     @property
     def pred_times(self) -> np.ndarray:
         """
@@ -418,3 +398,23 @@ class PointEvaluator:
             q=q,
         )
         return results.p_value, results.test_statistic
+
+    def _error_trainset(self, method_name: str) -> None:
+        """
+        Require training outcomes for a metric that estimates censoring or event distributions.
+
+        Parameters
+        ----------
+        method_name : str
+            Metric name to include in the missing-training-data error.
+
+        Raises
+        ------
+        TypeError
+            If the training outcomes required by the metric are unavailable.
+        """
+        if (self.train_event_times is None) or (self.train_event_indicators is None):
+            raise TypeError(
+                "Train set information is missing. "
+                f"Evaluator cannot perform {method_name} evaluation."
+            )

@@ -172,21 +172,6 @@ class CompetingRisksEvaluator:
         self._time_coordinates = time_coordinates
 
     @property
-    def default_target_time(self) -> float:
-        """
-        Median observed time across the available training and test outcomes.
-
-        Returns
-        -------
-        float
-            Median observed time in the combined training and test outcomes, or the test outcomes alone.
-        """
-        times = self.event_times
-        if self.train_event_times is not None:
-            times = np.concatenate((times, self.train_event_times))
-        return float(np.median(times))
-
-    @property
     def pred_cifs(self) -> np.ndarray:
         """
         Read-only CIF curves; assignment validates against the current grid.
@@ -260,137 +245,67 @@ class CompetingRisksEvaluator:
             raise ValueError("interpolation must be 'Linear' or 'Pchip'.")
         self._interpolation = value.lower()
 
-    def plot_cif_curves(
-        self,
-        curve_indices: int | list[int],
-        event_of_interest: int | list[int] | None = None,
-        color: str | list[str] | None = None,
-        x_lim: float | tuple[float, float] | None = None,
-        y_lim: float | tuple[float, float] | None = None,
-        x_label: str = "Time",
-        y_label: str = "Cumulative incidence",
-        *,
-        ax: plt.Axes | None = None,
-        **kwargs: Any,
-    ) -> tuple[plt.Figure, plt.Axes]:
+    @property
+    def default_target_time(self) -> float:
         """
-        Plot selected samples' cause-specific cumulative incidence curves.
-
-        Parameters
-        ----------
-        curve_indices : int or list of int
-            Zero-based sample indices, plotted in the supplied order.
-        event_of_interest : int or list of int, optional
-            One-based cause labels. None includes all predicted causes.
-        color : str or list of str, optional
-            One shared color or one color per plotted sample/cause combination,
-            ordered by sample, then cause. By default, colors identify causes
-            and line styles identify samples, cycling through four styles.
-        x_lim, y_lim : float or tuple of float, optional
-            Axis limits. Probabilities default to [0, 1.02].
-        x_label, y_label : str
-            Axis labels, defaulting to Time and Cumulative incidence.
-        ax : matplotlib.axes.Axes, optional
-            Existing axes to reuse. Otherwise create a new figure.
-        **kwargs : Any
-            Matplotlib line options. An explicit linestyle overrides the
-            sample styles; label overrides the generated sample/cause labels.
+        Median observed time across the available training and test outcomes.
 
         Returns
         -------
-        fig, ax : tuple
-            Figure and axes, without displaying the plot. Stored CIF values
-            are connected directly, without interpolation or extrapolation.
+        float
+            Median observed time in the combined training and test outcomes, or the test outcomes alone.
         """
-        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
-        if event_of_interest is None:
-            causes = np.arange(self.pred_cifs.shape[1])
-        else:
-            causes = (
-                _validate_plot_indices(
-                    event_of_interest,
-                    self.pred_cifs.shape[1],
-                    "event_of_interest",
-                    one_based=True,
-                )
-                - 1
+        times = self.event_times
+        if self.train_event_times is not None:
+            times = np.concatenate((times, self.train_event_times))
+        return float(np.median(times))
+
+    def predict_cifs(
+        self,
+        target_times: np.ndarray,
+        event_of_interest: int | None = None,
+    ) -> np.ndarray:
+        """
+        Predict cumulative incidence probabilities at the requested times.
+
+        Parameters
+        ----------
+        target_times : ndarray
+            One-dimensional array of finite, non-negative times
+            within the prediction horizon. Order and repeated times are preserved.
+        event_of_interest : int | None
+            Integer cause label from 1 through n_causes.
+            None returns predictions for all causes.
+
+        Returns
+        -------
+        ndarray
+            Array of shape (n_samples, n_causes, n_times), or (n_samples, n_times)
+            when selecting one cause. Uses the evaluator's Linear or Pchip interpolation.
+
+        Raises
+        ------
+        ValueError
+            If times or the cause label are invalid.
+        """
+        target_times = validate_time_points(target_times, input_name="target_times")
+        if not np.all(np.isfinite(target_times)) or np.any(
+            target_times > self.time_coordinates[-1]
+        ):
+            raise ValueError(
+                "target_times must be finite and within the prediction horizon."
             )
-        curves = self.pred_cifs[indices[:, None], causes[None, :], :].reshape(
-            -1, self.time_coordinates.size
-        )
-        labels = [f"Sample {i} · Cause {k + 1}" for i in indices for k in causes]
-        if color is None:
-            color = [f"C{k % 10}" for k in causes] * indices.size
-        styles = ("-", "--", ":", "-.")
-        line_styles = [
-            styles[i % len(styles)] for i in range(indices.size) for _ in causes
-        ]
-        return _plot_curves(
-            self.time_coordinates,
-            curves,
-            labels,
-            title="Predicted cumulative incidence",
-            x_label=x_label,
-            y_label=y_label,
-            color=color,
-            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
-            y_lim=(0, 1.02) if y_lim is None else y_lim,
-            ax=ax,
-            line_styles=line_styles,
-            **kwargs,
-        )
-
-    def plot_survival_curves(
-        self,
-        curve_indices: int | list[int],
-        color: str | list[str] | None = None,
-        x_lim: float | tuple[float, float] | None = None,
-        y_lim: float | tuple[float, float] | None = None,
-        x_label: str = "Time",
-        y_label: str = "Survival probability",
-        *,
-        ax: plt.Axes | None = None,
-        **kwargs: Any,
-    ) -> tuple[plt.Figure, plt.Axes]:
-        """
-        Plot overall event-free survival, 1 minus the sum of cause-specific CIFs.
-
-        Parameters
-        ----------
-        curve_indices : int or list of int
-            Zero-based sample indices, plotted in the supplied order.
-        color : str or list of str, optional
-            One shared color or one color per selected curve.
-        x_lim, y_lim : float or tuple of float, optional
-            Axis limits. Survival probabilities default to [0, 1.02].
-        x_label, y_label : str
-            Axis labels, defaulting to Time and Survival probability.
-        ax : matplotlib.axes.Axes, optional
-            Existing axes to reuse. Otherwise create a new figure.
-        **kwargs : Any
-            Matplotlib line options, including label overrides.
-
-        Returns
-        -------
-        fig, ax : tuple
-            Figure and axes, without displaying the plot. Predictions are
-            connected on their stored grid without extrapolation.
-        """
-        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
-        survs = np.clip(1 - self.pred_cifs[indices].sum(axis=1, dtype=float), 0, 1)
-        return _plot_curves(
-            self.time_coordinates,
-            survs,
-            [f"Sample {i}" for i in indices],
-            title="Predicted event-free survival",
-            x_label=x_label,
-            y_label=y_label,
-            color=color,
-            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
-            y_lim=(0, 1.02) if y_lim is None else y_lim,
-            ax=ax,
-            **kwargs,
-        )
+        cifs = self.pred_cifs
+        if event_of_interest is not None:
+            self._check_event_of_interest(event_of_interest)
+            cifs = cifs[:, event_of_interest - 1, :]
+        probabilities = np.empty((*cifs.shape[:-1], target_times.size), dtype=float)
+        for index in np.ndindex(cifs.shape[:-1]):
+            probabilities[index] = interpolated_curve(
+                self.time_coordinates, cifs[index], self.interpolation
+            )(target_times)
+        np.clip(probabilities, 0, cifs[..., -1, None], out=probabilities)
+        return probabilities
 
     def predict_rmtl(self, tau: float | None = None) -> np.ndarray:
         """
@@ -498,437 +413,153 @@ class CompetingRisksEvaluator:
         target_time = validate_time_point(target_time, "target_time")
         return self.predict_cifs(np.array([target_time]), event_of_interest)[..., 0]
 
-    def predict_cifs(
+    def concordance(
         self,
-        target_times: np.ndarray,
-        event_of_interest: int | None = None,
-    ) -> np.ndarray:
-        """
-        Predict cumulative incidence probabilities at the requested times.
-
-        Parameters
-        ----------
-        target_times : ndarray
-            One-dimensional array of finite, non-negative times
-            within the prediction horizon. Order and repeated times are preserved.
-        event_of_interest : int | None
-            Integer cause label from 1 through n_causes.
-            None returns predictions for all causes.
-
-        Returns
-        -------
-        ndarray
-            Array of shape (n_samples, n_causes, n_times), or (n_samples, n_times)
-            when selecting one cause. Uses the evaluator's Linear or Pchip interpolation.
-
-        Raises
-        ------
-        ValueError
-            If times or the cause label are invalid.
-        """
-        target_times = validate_time_points(target_times, input_name="target_times")
-        if not np.all(np.isfinite(target_times)) or np.any(
-            target_times > self.time_coordinates[-1]
-        ):
-            raise ValueError(
-                "target_times must be finite and within the prediction horizon."
-            )
-        cifs = self.pred_cifs
-        if event_of_interest is not None:
-            self._check_event_of_interest(event_of_interest)
-            cifs = cifs[:, event_of_interest - 1, :]
-        probabilities = np.empty((*cifs.shape[:-1], target_times.size), dtype=float)
-        for index in np.ndindex(cifs.shape[:-1]):
-            probabilities[index] = interpolated_curve(
-                self.time_coordinates, cifs[index], self.interpolation
-            )(target_times)
-        np.clip(probabilities, 0, cifs[..., -1, None], out=probabilities)
-        return probabilities
-
-    def brier_score(
-        self,
+        ties: str = "Risk",
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+        tau: float | None = None,
+        reduction: str = "mean",
+        return_details: bool = False,
+        *,
+        predict_risk_method: str = "RMTL",
         target_time: float | None = None,
-        IPCW_weighted: bool = True,
-    ) -> float:
+    ) -> float | tuple[float, dict]:
         """
-        Calculate the mean cause-specific Brier score at one time.
+        Calculate competing-risks concordance across all predicted causes.
 
-        Each component uses the competing-risk prediction error in [1]_.
-        The evaluator averages these scores equally across predicted causes.
+        The ``NotCase`` definition follows Wolbers et al. [1]_. ``EventFree``
+        restricts controls to subjects still event-free at the anchor time.
 
         Parameters
         ----------
-        target_time : float | None
-            Finite time within the CIF horizon. None uses
-            default_target_time, the median available train/test observed time.
-        IPCW_weighted : bool
-            Use training-based IPCW. Defaults to True. Fully
-            observed test data automatically use plain scoring.
+        ties : {"None", "Time", "Risk", "All"}, default="Risk"
+            Tie policy from ``concordance_cr_per_event``. Risk ties receive
+            half credit by default; selected-cause event-time ties are excluded.
+        method : {"Naive", "IPCW"}, default="Naive"
+            Unit pair weights or inverse censoring weights estimated from
+            the training outcomes supplied at initialization.
+        control_definition : {"NotCase", "EventFree"}, default="NotCase"
+            NotCase includes competing events before or at each anchor time
+            as controls; EventFree excludes them. Both include later subjects
+            and censorings exactly at the anchor. Case-insensitive.
+        tau : float, optional
+            Only selected-cause anchors with event time strictly below tau
+            contribute. Also sets the RMTL integration horizon, which must lie
+            within the prediction grid. None uses the final prediction time
+            for RMTL and applies no pair truncation. For CIF, tau only
+            truncates pairs.
+        reduction : {"mean", "pooled"}, default="mean"
+            Equal-weight mean of per-cause scores or pooling of pair counts.
+            The mean is NaN if any cause has undefined concordance.
+        return_details : bool, default=False
+            Also return per-cause scores, concordant counts and total counts,
+            keyed by cause label, as in ``concordance_cr``.
+        predict_risk_method : {"RMTL", "CIF"}, default="RMTL"
+            Positive area under each CIF up to tau, or CIF probability at
+            target_time. Computed from the evaluator's CIF curves on each call.
+        target_time : float, optional
+            Shared finite, non-negative prediction time within the grid.
+            Required for CIF; must be omitted for RMTL.
 
         Returns
         -------
-        float
-            Equal-weight mean across every predicted cause.
+        c_index : float
+            Aggregated competing-risks concordance.
+        details : dict, optional
+            Per-cause scores and counts; counts are weighted for IPCW.
 
         References
         ----------
-        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
+        .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
+           Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
+           Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
         """
-        if target_time is None:
-            target_time = self.default_target_time
-        target_time = validate_time_point(target_time, "target_time")
-        return float(
-            self.brier_score_multiple_points(np.array([target_time]), IPCW_weighted)[0]
-        )
-
-    def brier_score_per_event(
-        self,
-        event_of_interest: int = 1,
-        target_time: float | None = None,
-        IPCW_weighted: bool = True,
-    ) -> float:
-        """
-        Calculate a cause-specific Brier score at one time.
-
-        The competing-risk prediction error follows [2]_, extending the IPCW
-        approach in [1]_.
-
-        Parameters
-        ----------
-        event_of_interest : int
-            Integer cause label from 1 through n_causes.
-        target_time : float | None
-            Finite time within the CIF horizon. None uses
-            default_target_time, the median available train/test observed time.
-        IPCW_weighted : bool
-            Use training-based IPCW, defaulting to True.
-            Fully observed test data automatically use plain scoring.
-
-        Returns
-        -------
-        float
-            Brier score for the selected cause, including competing-event
-            negative outcomes. An absent cause still has a defined score.
-
-        References
-        ----------
-        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
-           Expected Brier Score in General Survival Models with Right-Censored
-           Event Times". Biometrical Journal, 48(6), 1029-1040.
-           https://doi.org/10.1002/bimj.200610301
-        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
-        """
-        if target_time is None:
-            target_time = self.default_target_time
-        target_time = validate_time_point(target_time, "target_time")
-        return float(
-            self.brier_score_multiple_points_per_event(
-                np.array([target_time]), event_of_interest, IPCW_weighted
-            )[0]
-        )
-
-    def brier_score_multiple_points(
-        self,
-        target_times: np.ndarray,
-        IPCW_weighted: bool = True,
-    ) -> np.ndarray:
-        """
-        Calculate mean cause-specific Brier scores at multiple times.
-
-        Each component uses the competing-risk prediction error in [1]_.
-        The evaluator averages these scores equally across predicted causes.
-
-        Parameters
-        ----------
-        target_times : ndarray
-            Finite, non-negative times within the CIF horizon.
-            Scores follow this order, including repeated times.
-        IPCW_weighted : bool
-            Use training-based IPCW, defaulting to True.
-            Fully observed test data automatically use plain scoring.
-
-        Returns
-        -------
-        ndarray
-            A vector of equal-weight means across all predicted causes. Earlier
-            censorings contribute zero; the denominator is the full test size.
-            IPCW fits one censoring model for all causes and times.
-
-        References
-        ----------
-        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
-        """
-        return self._brier_score_multiple_points(target_times, IPCW_weighted, None)
-
-    def brier_score_multiple_points_per_event(
-        self,
-        target_times: np.ndarray,
-        event_of_interest: int = 1,
-        IPCW_weighted: bool = True,
-    ) -> np.ndarray:
-        """
-        Calculate a selected cause's Brier scores at multiple times.
-
-        The competing-risk prediction error follows [2]_, extending the IPCW
-        approach in [1]_.
-
-        Parameters
-        ----------
-        target_times : ndarray
-            Finite, non-negative times within the CIF horizon.
-        event_of_interest : int
-            Integer cause label from 1 through n_causes.
-        IPCW_weighted : bool
-            Use training-based IPCW, defaulting to True.
-            Fully observed test data automatically use plain scoring.
-
-        Returns
-        -------
-        ndarray
-            One score per target time, including competing events as negative
-            outcomes. Earlier censorings contribute zero; divide by full test size.
-
-        References
-        ----------
-        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
-           Expected Brier Score in General Survival Models with Right-Censored
-           Event Times". Biometrical Journal, 48(6), 1029-1040.
-           https://doi.org/10.1002/bimj.200610301
-        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
-        """
-        self._check_event_of_interest(event_of_interest)
-        return self._brier_score_multiple_points(
-            target_times, IPCW_weighted, event_of_interest
-        )
-
-    def _brier_score_multiple_points(
-        self,
-        target_times: np.ndarray,
-        ipcw: bool,
-        event_of_interest: int | None,
-    ) -> np.ndarray:
-        """
-        Predict CIFs and dispatch to aggregate or selected-cause scoring.
-
-        Parameters
-        ----------
-        target_times : ndarray
-            One-dimensional array of non-negative evaluation times.
-        ipcw : bool
-            Whether to apply inverse probability of censoring weights estimated from the training outcomes.
-        event_of_interest : int | None
-            Positive cause label to evaluate; None requests the mean across all predicted causes.
-
-        Returns
-        -------
-        ndarray
-            Mean Brier score across causes, or the selected-cause score, at each target time.
-        """
-        probabilities = self.predict_cifs(target_times, event_of_interest)
-        if np.all(self.event_indicators > 0):
-            ipcw = False
-        metric = (
-            brier_multiple_points_cr
-            if event_of_interest is None
-            else brier_multiple_points_cr_per_event
-        )
-        options = (
-            {}
-            if event_of_interest is None
-            else {"event_of_interest": event_of_interest}
-        )
-        return metric(
-            pred_mat=probabilities,
+        risks = self.predict_risks(predict_risk_method, tau, target_time)
+        return concordance_cr(
+            predicted_risks=risks,
             event_times=self.event_times,
             event_indicators=self.event_indicators,
             train_event_times=self.train_event_times,
             train_event_indicators=self.train_event_indicators,
-            target_times=target_times,
-            ipcw=ipcw,
-            **options,
+            method=method,
+            control_definition=control_definition,
+            ties=ties,
+            tau=tau,
+            reduction=reduction,
+            return_details=return_details,
         )
 
-    def integrated_brier_score(
-        self,
-        num_points: int | None = None,
-        target_times: np.ndarray | None = None,
-        IPCW_weighted: bool = True,
-        integration_method: str = "trapz",
-        draw_figure: bool = False,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
-        """
-        Integrate the mean cause-specific Brier score over a time grid.
-
-        This integrates the equal-weight mean of the cause-specific prediction
-        errors in [1]_ over the selected time interval.
-
-        Parameters
-        ----------
-        num_points : int | None
-            Generate this many times from zero through the maximum
-            train/test observed time. Mutually exclusive with target_times.
-        target_times : ndarray | None
-            Explicit integration grid within the CIF horizon.
-            Unsorted times are sorted with a warning. If neither grid option
-            is supplied, use unique test censoring times; at least two are needed.
-        IPCW_weighted : bool
-            Use training-based IPCW, defaulting to True.
-            Fully observed test data automatically use plain scoring.
-        integration_method : str
-            Case-insensitive 'trapz' (default) or 'simpson'.
-        draw_figure : bool
-            Also return the Brier curve figure and axes.
-
-        Returns
-        -------
-        float | tuple[float, tuple[plt.Figure, plt.Axes]]
-            The integral divided by the time span, or (ibs, (fig, ax)) when
-            draw_figure is True. Every predicted cause receives equal weight.
-
-        References
-        ----------
-        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
-        """
-        return self._integrated_brier_score(
-            None,
-            num_points,
-            target_times,
-            IPCW_weighted,
-            integration_method,
-            draw_figure,
-        )
-
-    def integrated_brier_score_per_event(
+    def concordance_per_event(
         self,
         event_of_interest: int = 1,
-        num_points: int | None = None,
-        target_times: np.ndarray | None = None,
-        IPCW_weighted: bool = True,
-        integration_method: str = "trapz",
-        draw_figure: bool = False,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        ties: str = "Risk",
+        method: str = "Naive",
+        control_definition: str = "NotCase",
+        tau: float | None = None,
+        *,
+        predict_risk_method: str = "RMTL",
+        target_time: float | None = None,
+    ) -> tuple[float, float, float]:
         """
-        Integrate a cause-specific Brier score over a time grid.
+        Calculate concordance for one cause using positive RMTL by default.
 
-        This integrates the competing-risk prediction error in [2]_ over the
-        selected time interval, using the IPCW approach in [1]_ when enabled.
+        The ``NotCase`` definition follows Wolbers et al. [1]_. ``EventFree``
+        restricts controls to subjects still event-free at the anchor time.
 
         Parameters
         ----------
-        event_of_interest : int
+        event_of_interest : int, default=1
             Integer cause label from 1 through n_causes.
-        num_points : int | None
-            Generate times from zero through the maximum train/test
-            observed time. Mutually exclusive with target_times.
-        target_times : ndarray | None
-            Explicit grid within the CIF horizon, sorted with a
-            warning if needed. With neither grid option, infer unique test
-            censoring times; at least two are needed.
-        IPCW_weighted : bool
-            Use training-based IPCW, defaulting to True.
-            Fully observed test data automatically use plain scoring.
-        integration_method : str
-            Case-insensitive 'trapz' (default) or 'simpson'.
-        draw_figure : bool
-            Also return the Brier curve figure and axes.
+        ties : {"None", "Time", "Risk", "All"}, default="Risk"
+            Tie policy; see ``concordance``.
+        method : {"Naive", "IPCW"}, default="Naive"
+            Unit pair weights or training-based inverse censoring weights.
+        control_definition : {"NotCase", "EventFree"}, default="NotCase"
+            Control definition at each selected-cause anchor time; see
+            ``concordance``. Independent of the prediction target_time.
+        tau : float, optional
+            Strict anchor cutoff and RMTL integration horizon. None uses the
+            final prediction time for RMTL and applies no pair truncation.
+            For CIF, tau only truncates pairs.
+        predict_risk_method : {"RMTL", "CIF"}, default="RMTL"
+            Positive RMTL up to tau or CIF probability at target_time, computed
+            from the evaluator's CIF curves on each call.
+        target_time : float, optional
+            Required for CIF and omitted for RMTL. Must be finite,
+            non-negative and within the prediction grid.
 
         Returns
         -------
-        float | tuple[float, tuple[plt.Figure, plt.Axes]]
-            The cause-specific integral divided by the grid's time span, or
-            (ibs, (fig, ax)) when draw_figure is True.
+        c_index, num_concordant_pairs, num_total_pairs : tuple of float
+            Per-cause concordance and pair counts, including half credit for
+            retained ties. Counts are weighted for IPCW.
 
         References
         ----------
-        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
-           Expected Brier Score in General Survival Models with Right-Censored
-           Event Times". Biometrical Journal, 48(6), 1029-1040.
-           https://doi.org/10.1002/bimj.200610301
-        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
-           "Quantifying the predictive accuracy of time-to-event models in the
-           presence of competing risks". Biometrical Journal, 53(1), 88-112.
-           https://doi.org/10.1002/bimj.201000073
+        .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
+           Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
+           Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
         """
         self._check_event_of_interest(event_of_interest)
-        return self._integrated_brier_score(
-            event_of_interest,
-            num_points,
-            target_times,
-            IPCW_weighted,
-            integration_method,
-            draw_figure,
+        risks = self.predict_risks(
+            predict_risk_method,
+            tau,
+            target_time,
+            event_of_interest=event_of_interest,
         )
-
-    def _integrated_brier_score(
-        self,
-        event_of_interest: int | None,
-        num_points: int | None,
-        target_times: np.ndarray | None,
-        ipcw: bool,
-        integration_method: str,
-        draw_figure: bool,
-    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
-        """
-        Resolve the common grid, evaluate once, then integrate and optionally plot.
-
-        Parameters
-        ----------
-        event_of_interest : int | None
-            Positive cause label to evaluate; None requests the mean across all predicted causes.
-        num_points : int | None
-            Number of equally spaced evaluation times; mutually exclusive with target_times.
-        target_times : ndarray | None
-            One-dimensional array of non-negative evaluation times.
-        ipcw : bool
-            Whether to apply inverse probability of censoring weights estimated from the training outcomes.
-        integration_method : str
-            Numerical integration rule, "trapz" or "simpson".
-        draw_figure : bool
-            Whether to create a Matplotlib figure and return it with the score.
-
-        Returns
-        -------
-        float | tuple[float, tuple[plt.Figure, plt.Axes]]
-            Integrated Brier score; when draw_figure is True, return (score, (figure, axes)).
-        """
-        target_times = _brier_time_grid(
-            self.event_times,
-            self.event_indicators,
-            self.train_event_times,
-            num_points,
-            target_times,
+        return concordance_cr_per_event(
+            predicted_risks=risks,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            method=method,
+            control_definition=control_definition,
+            ties=ties,
+            tau=tau,
+            event_of_interest=event_of_interest,
         )
-        scores = self._brier_score_multiple_points(
-            target_times, ipcw, event_of_interest
-        )
-        ibs = _integrate_brier_scores(scores, target_times, integration_method)
-        if not draw_figure:
-            return ibs
-        fig, ax = _plot_curves(
-            target_times,
-            scores,
-            [f"IBS = {ibs:.3f}"],
-            title="Integrated Brier Score",
-            x_label="Time",
-            y_label="Brier Score",
-            marker="o",
-        )
-        return ibs, (fig, ax)
 
     def auc(
         self,
@@ -1122,213 +753,286 @@ class CompetingRisksEvaluator:
             event_of_interest, target_time, method, control_definition
         )
 
-    def concordance(
+    def brier_score(
         self,
-        ties: str = "Risk",
-        method: str = "Naive",
-        control_definition: str = "NotCase",
-        tau: float | None = None,
-        reduction: str = "mean",
-        return_details: bool = False,
-        *,
-        predict_risk_method: str = "RMTL",
         target_time: float | None = None,
-    ) -> float | tuple[float, dict]:
+        IPCW_weighted: bool = True,
+    ) -> float:
         """
-        Calculate competing-risks concordance across all predicted causes.
+        Calculate the mean cause-specific Brier score at one time.
 
-        The ``NotCase`` definition follows Wolbers et al. [1]_. ``EventFree``
-        restricts controls to subjects still event-free at the anchor time.
+        Each component uses the competing-risk prediction error in [1]_.
+        The evaluator averages these scores equally across predicted causes.
 
         Parameters
         ----------
-        ties : {"None", "Time", "Risk", "All"}, default="Risk"
-            Tie policy from ``concordance_cr_per_event``. Risk ties receive
-            half credit by default; selected-cause event-time ties are excluded.
-        method : {"Naive", "IPCW"}, default="Naive"
-            Unit pair weights or inverse censoring weights estimated from
-            the training outcomes supplied at initialization.
-        control_definition : {"NotCase", "EventFree"}, default="NotCase"
-            NotCase includes competing events before or at each anchor time
-            as controls; EventFree excludes them. Both include later subjects
-            and censorings exactly at the anchor. Case-insensitive.
-        tau : float, optional
-            Only selected-cause anchors with event time strictly below tau
-            contribute. Also sets the RMTL integration horizon, which must lie
-            within the prediction grid. None uses the final prediction time
-            for RMTL and applies no pair truncation. For CIF, tau only
-            truncates pairs.
-        reduction : {"mean", "pooled"}, default="mean"
-            Equal-weight mean of per-cause scores or pooling of pair counts.
-            The mean is NaN if any cause has undefined concordance.
-        return_details : bool, default=False
-            Also return per-cause scores, concordant counts and total counts,
-            keyed by cause label, as in ``concordance_cr``.
-        predict_risk_method : {"RMTL", "CIF"}, default="RMTL"
-            Positive area under each CIF up to tau, or CIF probability at
-            target_time. Computed from the evaluator's CIF curves on each call.
-        target_time : float, optional
-            Shared finite, non-negative prediction time within the grid.
-            Required for CIF; must be omitted for RMTL.
+        target_time : float | None
+            Finite time within the CIF horizon. None uses
+            default_target_time, the median available train/test observed time.
+        IPCW_weighted : bool
+            Use training-based IPCW. Defaults to True. Fully
+            observed test data automatically use plain scoring.
 
         Returns
         -------
-        c_index : float
-            Aggregated competing-risks concordance.
-        details : dict, optional
-            Per-cause scores and counts; counts are weighted for IPCW.
+        float
+            Equal-weight mean across every predicted cause.
 
         References
         ----------
-        .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
-           Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
-           Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
+        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
         """
-        risks = self.predict_risks(predict_risk_method, tau, target_time)
-        return concordance_cr(
-            predicted_risks=risks,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            method=method,
-            control_definition=control_definition,
-            ties=ties,
-            tau=tau,
-            reduction=reduction,
-            return_details=return_details,
-        )
-
-    def concordance_per_event(
-        self,
-        event_of_interest: int = 1,
-        ties: str = "Risk",
-        method: str = "Naive",
-        control_definition: str = "NotCase",
-        tau: float | None = None,
-        *,
-        predict_risk_method: str = "RMTL",
-        target_time: float | None = None,
-    ) -> tuple[float, float, float]:
-        """
-        Calculate concordance for one cause using positive RMTL by default.
-
-        The ``NotCase`` definition follows Wolbers et al. [1]_. ``EventFree``
-        restricts controls to subjects still event-free at the anchor time.
-
-        Parameters
-        ----------
-        event_of_interest : int, default=1
-            Integer cause label from 1 through n_causes.
-        ties : {"None", "Time", "Risk", "All"}, default="Risk"
-            Tie policy; see ``concordance``.
-        method : {"Naive", "IPCW"}, default="Naive"
-            Unit pair weights or training-based inverse censoring weights.
-        control_definition : {"NotCase", "EventFree"}, default="NotCase"
-            Control definition at each selected-cause anchor time; see
-            ``concordance``. Independent of the prediction target_time.
-        tau : float, optional
-            Strict anchor cutoff and RMTL integration horizon. None uses the
-            final prediction time for RMTL and applies no pair truncation.
-            For CIF, tau only truncates pairs.
-        predict_risk_method : {"RMTL", "CIF"}, default="RMTL"
-            Positive RMTL up to tau or CIF probability at target_time, computed
-            from the evaluator's CIF curves on each call.
-        target_time : float, optional
-            Required for CIF and omitted for RMTL. Must be finite,
-            non-negative and within the prediction grid.
-
-        Returns
-        -------
-        c_index, num_concordant_pairs, num_total_pairs : tuple of float
-            Per-cause concordance and pair counts, including half credit for
-            retained ties. Counts are weighted for IPCW.
-
-        References
-        ----------
-        .. [1] Wolbers, M.; Blanche, P.; Koller, M. T.; Witteman, J. C. M.;
-           Gerds, T. A. (2014). "Concordance for prognostic models with competing risks".
-           Biostatistics, 15(3), 526-539. https://doi.org/10.1093/biostatistics/kxt059
-        """
-        self._check_event_of_interest(event_of_interest)
-        risks = self.predict_risks(
-            predict_risk_method,
-            tau,
-            target_time,
-            event_of_interest=event_of_interest,
-        )
-        return concordance_cr_per_event(
-            predicted_risks=risks,
-            event_times=self.event_times,
-            event_indicators=self.event_indicators,
-            train_event_times=self.train_event_times,
-            train_event_indicators=self.train_event_indicators,
-            method=method,
-            control_definition=control_definition,
-            ties=ties,
-            tau=tau,
-            event_of_interest=event_of_interest,
-        )
-
-    def integrated_calibration_index(
-        self,
-        target_time: float | None = None,
-        event_of_interest: int = 1,
-        knots: int = 3,
-        draw_figure: bool = True,
-        figure_range: tuple | None = None,
-    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
-        """
-        Estimate a selected cause's smoothed calibration curve and ICI.
-
-        The Fine-Gray calibration model follows Austin et al. [1]_. It uses
-        evaluation outcomes to estimate censoring weights; training outcomes
-        are not needed for the fit.
-
-        Parameters
-        ----------
-        target_time : float | None, default=None
-            Finite, non-negative time within the CIF prediction grid.
-            None uses default_target_time.
-        event_of_interest : int, default=1
-            Integer cause label from 1 through n_causes.
-        knots : int, default=3
-            Total restricted cubic spline knot count, at least three.
-            Nonconstant risks must support distinct knots and a full-rank fit.
-        draw_figure : bool, default=True
-            Return a calibration plot without displaying it.
-        figure_range : tuple, optional
-            Plot limits (x_min, x_max, y_min, y_max).
-
-        Returns
-        -------
-        dict or tuple[dict, tuple[plt.Figure, plt.Axes]]
-            ICI, E50, E90, E_max, and curve data; optionally figure and axes.
-            An unobserved cause has a zero calibrated curve. Constant risks
-            use the selected-cause Aalen-Johansen incidence estimate.
-
-        References
-        ----------
-        .. [1] Austin et al. (2022). "Graphical calibration curves and the
-           integrated calibration index (ICI) for competing risk models".
-           Diagnostic and Prognostic Research, 6, 2.
-           https://doi.org/10.1186/s41512-021-00114-6
-        """
-        self._check_event_of_interest(event_of_interest)
         if target_time is None:
             target_time = self.default_target_time
-        probabilities = self.predict_risks(
-            "CIF", target_time=target_time, event_of_interest=event_of_interest
+        target_time = validate_time_point(target_time, "target_time")
+        return float(
+            self.brier_score_multiple_points(np.array([target_time]), IPCW_weighted)[0]
         )
-        return integrated_calibration_index_cr(
-            probabilities,
-            self.event_times,
-            self.event_indicators,
-            target_time,
-            event_of_interest=event_of_interest,
-            knots=knots,
-            draw_figure=draw_figure,
-            figure_range=figure_range,
+
+    def brier_score_per_event(
+        self,
+        event_of_interest: int = 1,
+        target_time: float | None = None,
+        IPCW_weighted: bool = True,
+    ) -> float:
+        """
+        Calculate a cause-specific Brier score at one time.
+
+        The competing-risk prediction error follows [2]_, extending the IPCW
+        approach in [1]_.
+
+        Parameters
+        ----------
+        event_of_interest : int
+            Integer cause label from 1 through n_causes.
+        target_time : float | None
+            Finite time within the CIF horizon. None uses
+            default_target_time, the median available train/test observed time.
+        IPCW_weighted : bool
+            Use training-based IPCW, defaulting to True.
+            Fully observed test data automatically use plain scoring.
+
+        Returns
+        -------
+        float
+            Brier score for the selected cause, including competing-event
+            negative outcomes. An absent cause still has a defined score.
+
+        References
+        ----------
+        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
+        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
+        """
+        if target_time is None:
+            target_time = self.default_target_time
+        target_time = validate_time_point(target_time, "target_time")
+        return float(
+            self.brier_score_multiple_points_per_event(
+                np.array([target_time]), event_of_interest, IPCW_weighted
+            )[0]
+        )
+
+    def brier_score_multiple_points(
+        self,
+        target_times: np.ndarray,
+        IPCW_weighted: bool = True,
+    ) -> np.ndarray:
+        """
+        Calculate mean cause-specific Brier scores at multiple times.
+
+        Each component uses the competing-risk prediction error in [1]_.
+        The evaluator averages these scores equally across predicted causes.
+
+        Parameters
+        ----------
+        target_times : ndarray
+            Finite, non-negative times within the CIF horizon.
+            Scores follow this order, including repeated times.
+        IPCW_weighted : bool
+            Use training-based IPCW, defaulting to True.
+            Fully observed test data automatically use plain scoring.
+
+        Returns
+        -------
+        ndarray
+            A vector of equal-weight means across all predicted causes. Earlier
+            censorings contribute zero; the denominator is the full test size.
+            IPCW fits one censoring model for all causes and times.
+
+        References
+        ----------
+        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
+        """
+        return self._brier_score_multiple_points(target_times, IPCW_weighted, None)
+
+    def brier_score_multiple_points_per_event(
+        self,
+        target_times: np.ndarray,
+        event_of_interest: int = 1,
+        IPCW_weighted: bool = True,
+    ) -> np.ndarray:
+        """
+        Calculate a selected cause's Brier scores at multiple times.
+
+        The competing-risk prediction error follows [2]_, extending the IPCW
+        approach in [1]_.
+
+        Parameters
+        ----------
+        target_times : ndarray
+            Finite, non-negative times within the CIF horizon.
+        event_of_interest : int
+            Integer cause label from 1 through n_causes.
+        IPCW_weighted : bool
+            Use training-based IPCW, defaulting to True.
+            Fully observed test data automatically use plain scoring.
+
+        Returns
+        -------
+        ndarray
+            One score per target time, including competing events as negative
+            outcomes. Earlier censorings contribute zero; divide by full test size.
+
+        References
+        ----------
+        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
+        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
+        """
+        self._check_event_of_interest(event_of_interest)
+        return self._brier_score_multiple_points(
+            target_times, IPCW_weighted, event_of_interest
+        )
+
+    def integrated_brier_score(
+        self,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
+        IPCW_weighted: bool = True,
+        integration_method: str = "trapz",
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """
+        Integrate the mean cause-specific Brier score over a time grid.
+
+        This integrates the equal-weight mean of the cause-specific prediction
+        errors in [1]_ over the selected time interval.
+
+        Parameters
+        ----------
+        num_points : int | None
+            Generate this many times from zero through the maximum
+            train/test observed time. Mutually exclusive with target_times.
+        target_times : ndarray | None
+            Explicit integration grid within the CIF horizon.
+            Unsorted times are sorted with a warning. If neither grid option
+            is supplied, use unique test censoring times; at least two are needed.
+        IPCW_weighted : bool
+            Use training-based IPCW, defaulting to True.
+            Fully observed test data automatically use plain scoring.
+        integration_method : str
+            Case-insensitive 'trapz' (default) or 'simpson'.
+        draw_figure : bool
+            Also return the Brier curve figure and axes.
+
+        Returns
+        -------
+        float | tuple[float, tuple[plt.Figure, plt.Axes]]
+            The integral divided by the time span, or (ibs, (fig, ax)) when
+            draw_figure is True. Every predicted cause receives equal weight.
+
+        References
+        ----------
+        .. [1] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
+        """
+        return self._integrated_brier_score(
+            None,
+            num_points,
+            target_times,
+            IPCW_weighted,
+            integration_method,
+            draw_figure,
+        )
+
+    def integrated_brier_score_per_event(
+        self,
+        event_of_interest: int = 1,
+        num_points: int | None = None,
+        target_times: np.ndarray | None = None,
+        IPCW_weighted: bool = True,
+        integration_method: str = "trapz",
+        draw_figure: bool = False,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """
+        Integrate a cause-specific Brier score over a time grid.
+
+        This integrates the competing-risk prediction error in [2]_ over the
+        selected time interval, using the IPCW approach in [1]_ when enabled.
+
+        Parameters
+        ----------
+        event_of_interest : int
+            Integer cause label from 1 through n_causes.
+        num_points : int | None
+            Generate times from zero through the maximum train/test
+            observed time. Mutually exclusive with target_times.
+        target_times : ndarray | None
+            Explicit grid within the CIF horizon, sorted with a
+            warning if needed. With neither grid option, infer unique test
+            censoring times; at least two are needed.
+        IPCW_weighted : bool
+            Use training-based IPCW, defaulting to True.
+            Fully observed test data automatically use plain scoring.
+        integration_method : str
+            Case-insensitive 'trapz' (default) or 'simpson'.
+        draw_figure : bool
+            Also return the Brier curve figure and axes.
+
+        Returns
+        -------
+        float | tuple[float, tuple[plt.Figure, plt.Axes]]
+            The cause-specific integral divided by the grid's time span, or
+            (ibs, (fig, ax)) when draw_figure is True.
+
+        References
+        ----------
+        .. [1] Gerds, T. A.; Schumacher, M. (2006). "Consistent Estimation of the
+           Expected Brier Score in General Survival Models with Right-Censored
+           Event Times". Biometrical Journal, 48(6), 1029-1040.
+           https://doi.org/10.1002/bimj.200610301
+        .. [2] Schoop, R.; Beyersmann, J.; Schumacher, M.; Binder, H. (2011).
+           "Quantifying the predictive accuracy of time-to-event models in the
+           presence of competing risks". Biometrical Journal, 53(1), 88-112.
+           https://doi.org/10.1002/bimj.201000073
+        """
+        self._check_event_of_interest(event_of_interest)
+        return self._integrated_brier_score(
+            event_of_interest,
+            num_points,
+            target_times,
+            IPCW_weighted,
+            integration_method,
+            draw_figure,
         )
 
     def one_calibration(
@@ -1412,6 +1116,143 @@ class CompetingRisksEvaluator:
             p_value,
             details["observed_probabilities"],
             details["expected_probabilities"],
+        )
+
+    def integrated_calibration_index(
+        self,
+        target_time: float | None = None,
+        event_of_interest: int = 1,
+        knots: int = 3,
+        draw_figure: bool = True,
+        figure_range: tuple | None = None,
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
+        """
+        Estimate a selected cause's smoothed calibration curve and ICI.
+
+        The Fine-Gray calibration model follows Austin et al. [1]_. It uses
+        evaluation outcomes to estimate censoring weights; training outcomes
+        are not needed for the fit.
+
+        Parameters
+        ----------
+        target_time : float | None, default=None
+            Finite, non-negative time within the CIF prediction grid.
+            None uses default_target_time.
+        event_of_interest : int, default=1
+            Integer cause label from 1 through n_causes.
+        knots : int, default=3
+            Total restricted cubic spline knot count, at least three.
+            Nonconstant risks must support distinct knots and a full-rank fit.
+        draw_figure : bool, default=True
+            Return a calibration plot without displaying it.
+        figure_range : tuple, optional
+            Plot limits (x_min, x_max, y_min, y_max).
+
+        Returns
+        -------
+        dict or tuple[dict, tuple[plt.Figure, plt.Axes]]
+            ICI, E50, E90, E_max, and curve data; optionally figure and axes.
+            An unobserved cause has a zero calibrated curve. Constant risks
+            use the selected-cause Aalen-Johansen incidence estimate.
+
+        References
+        ----------
+        .. [1] Austin et al. (2022). "Graphical calibration curves and the
+           integrated calibration index (ICI) for competing risk models".
+           Diagnostic and Prognostic Research, 6, 2.
+           https://doi.org/10.1186/s41512-021-00114-6
+        """
+        self._check_event_of_interest(event_of_interest)
+        if target_time is None:
+            target_time = self.default_target_time
+        probabilities = self.predict_risks(
+            "CIF", target_time=target_time, event_of_interest=event_of_interest
+        )
+        return integrated_calibration_index_cr(
+            probabilities,
+            self.event_times,
+            self.event_indicators,
+            target_time,
+            event_of_interest=event_of_interest,
+            knots=knots,
+            draw_figure=draw_figure,
+            figure_range=figure_range,
+        )
+
+    def cr_d_calibration(
+        self,
+        num_bins: int = 100,
+        alpha: float = 2,
+        method: str = "integral",
+        reduction: str = "sum",
+        return_details: bool = False,
+        *,
+        pred_event_probs: NumericArrayLike | None = None,
+    ) -> float | tuple[float, dict]:
+        """
+        Calculate CR-D-calibration from interpolated CIF predictions.
+
+        CR-D-calibration follows [1]_. The ``sum`` reduction matches the
+        paper's definition; ``mean`` and ``max`` provide alternative reductions.
+
+        Parameters
+        ----------
+        num_bins : int, default=100
+            Number of equal-width intervals in the calibration risk grid.
+        alpha : float, default=2
+            Finite exponent at least 1 for the integral norm. `alpha=1`: area under
+            the absolute-error curve; errors contribute linearly.
+            `alpha=2` (default): root integrated squared error;
+            Ignored for KS.
+        method : {"integral", "ks"}, default="integral"
+            Integral norm or maximum grid deviation from the identity curve.
+        reduction : {"sum", "mean", "max"}, default="sum"
+            Aggregation of per-cause scores. Sum follows the paper's definition.
+        return_details : bool, default=False
+            Include per-cause scores and calibration curves. KS details also
+            include heuristic p-values and Bonferroni adjustments.
+        pred_event_probs : NumericArrayLike, shape (n_samples, n_causes), optional
+            Eventual cause probabilities F_k(infinity), summing to one per
+            subject. Defaults to the final CIF values, which require a long
+            enough prediction horizon that remaining survival is negligible.
+            Supply these probabilities explicitly for a shorter horizon.
+
+        Returns
+        -------
+        score : float
+            Aggregated calibration error. Lower is better.
+        details : dict, optional
+            The same diagnostic information as the standalone metric.
+
+        References
+        ----------
+        .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
+           "On the Calibration of Survival Models with Competing Risks".
+           Proceedings of the 29th International Conference on Artificial Intelligence
+           and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
+           https://proceedings.mlr.press/v300/alberge26a.html
+        """
+        cifs = np.empty(self.pred_cifs.shape[:2], dtype=float)
+        for i, time in enumerate(self.event_times):
+            for k, curve in enumerate(self.pred_cifs[i]):
+                cifs[i, k] = interpolated_curve(
+                    self.time_coordinates, curve, self.interpolation
+                )(time)
+        # Bound interpolation roundoff by the valid CIF endpoints.
+        cifs = np.clip(cifs, 0, self.pred_cifs[:, :, -1])
+        survs = np.clip(1 - cifs.sum(axis=1), 0, 1)
+        if pred_event_probs is None:
+            pred_event_probs = self.pred_cifs[:, :, -1]
+        return cr_d_calibration(
+            pred_cifs=cifs,
+            event_indicators=self.event_indicators,
+            pred_event_probs=pred_event_probs,
+            pred_survs=survs,
+            num_bins=num_bins,
+            alpha=alpha,
+            method=method,
+            reduction=reduction,
+            return_details=return_details,
         )
 
     def aj_calibration(
@@ -1544,80 +1385,136 @@ class CompetingRisksEvaluator:
         )
         return score, (fig, ax)
 
-    def cr_d_calibration(
+    def plot_cif_curves(
         self,
-        num_bins: int = 100,
-        alpha: float = 2,
-        method: str = "integral",
-        reduction: str = "sum",
-        return_details: bool = False,
+        curve_indices: int | list[int],
+        event_of_interest: int | list[int] | None = None,
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
+        x_label: str = "Time",
+        y_label: str = "Cumulative incidence",
         *,
-        pred_event_probs: NumericArrayLike | None = None,
-    ) -> float | tuple[float, dict]:
+        ax: plt.Axes | None = None,
+        **kwargs: Any,
+    ) -> tuple[plt.Figure, plt.Axes]:
         """
-        Calculate CR-D-calibration from interpolated CIF predictions.
-
-        CR-D-calibration follows [1]_. The ``sum`` reduction matches the
-        paper's definition; ``mean`` and ``max`` provide alternative reductions.
+        Plot selected samples' cause-specific cumulative incidence curves.
 
         Parameters
         ----------
-        num_bins : int, default=100
-            Number of equal-width intervals in the calibration risk grid.
-        alpha : float, default=2
-            Finite exponent at least 1 for the integral norm. `alpha=1`: area under
-            the absolute-error curve; errors contribute linearly.
-            `alpha=2` (default): root integrated squared error;
-            Ignored for KS.
-        method : {"integral", "ks"}, default="integral"
-            Integral norm or maximum grid deviation from the identity curve.
-        reduction : {"sum", "mean", "max"}, default="sum"
-            Aggregation of per-cause scores. Sum follows the paper's definition.
-        return_details : bool, default=False
-            Include per-cause scores and calibration curves. KS details also
-            include heuristic p-values and Bonferroni adjustments.
-        pred_event_probs : NumericArrayLike, shape (n_samples, n_causes), optional
-            Eventual cause probabilities F_k(infinity), summing to one per
-            subject. Defaults to the final CIF values, which require a long
-            enough prediction horizon that remaining survival is negligible.
-            Supply these probabilities explicitly for a shorter horizon.
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        event_of_interest : int or list of int, optional
+            One-based cause labels. None includes all predicted causes.
+        color : str or list of str, optional
+            One shared color or one color per plotted sample/cause combination,
+            ordered by sample, then cause. By default, colors identify causes
+            and line styles identify samples, cycling through four styles.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Probabilities default to [0, 1.02].
+        x_label, y_label : str
+            Axis labels, defaulting to Time and Cumulative incidence.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs : Any
+            Matplotlib line options. An explicit linestyle overrides the
+            sample styles; label overrides the generated sample/cause labels.
 
         Returns
         -------
-        score : float
-            Aggregated calibration error. Lower is better.
-        details : dict, optional
-            The same diagnostic information as the standalone metric.
-
-        References
-        ----------
-        .. [1] Alberge, J.; Haugomat, T.; Varoquaux, G.; Abécassis, J. (2026).
-           "On the Calibration of Survival Models with Competing Risks".
-           Proceedings of the 29th International Conference on Artificial Intelligence
-           and Statistics, Proceedings of Machine Learning Research, 300, 1837-1845.
-           https://proceedings.mlr.press/v300/alberge26a.html
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Stored CIF values
+            are connected directly, without interpolation or extrapolation.
         """
-        cifs = np.empty(self.pred_cifs.shape[:2], dtype=float)
-        for i, time in enumerate(self.event_times):
-            for k, curve in enumerate(self.pred_cifs[i]):
-                cifs[i, k] = interpolated_curve(
-                    self.time_coordinates, curve, self.interpolation
-                )(time)
-        # Bound interpolation roundoff by the valid CIF endpoints.
-        cifs = np.clip(cifs, 0, self.pred_cifs[:, :, -1])
-        survs = np.clip(1 - cifs.sum(axis=1), 0, 1)
-        if pred_event_probs is None:
-            pred_event_probs = self.pred_cifs[:, :, -1]
-        return cr_d_calibration(
-            pred_cifs=cifs,
-            event_indicators=self.event_indicators,
-            pred_event_probs=pred_event_probs,
-            pred_survs=survs,
-            num_bins=num_bins,
-            alpha=alpha,
-            method=method,
-            reduction=reduction,
-            return_details=return_details,
+        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
+        if event_of_interest is None:
+            causes = np.arange(self.pred_cifs.shape[1])
+        else:
+            causes = (
+                _validate_plot_indices(
+                    event_of_interest,
+                    self.pred_cifs.shape[1],
+                    "event_of_interest",
+                    one_based=True,
+                )
+                - 1
+            )
+        curves = self.pred_cifs[indices[:, None], causes[None, :], :].reshape(
+            -1, self.time_coordinates.size
+        )
+        labels = [f"Sample {i} · Cause {k + 1}" for i in indices for k in causes]
+        if color is None:
+            color = [f"C{k % 10}" for k in causes] * indices.size
+        styles = ("-", "--", ":", "-.")
+        line_styles = [
+            styles[i % len(styles)] for i in range(indices.size) for _ in causes
+        ]
+        return _plot_curves(
+            self.time_coordinates,
+            curves,
+            labels,
+            title="Predicted cumulative incidence",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
+            y_lim=(0, 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            line_styles=line_styles,
+            **kwargs,
+        )
+
+    def plot_survival_curves(
+        self,
+        curve_indices: int | list[int],
+        color: str | list[str] | None = None,
+        x_lim: float | tuple[float, float] | None = None,
+        y_lim: float | tuple[float, float] | None = None,
+        x_label: str = "Time",
+        y_label: str = "Survival probability",
+        *,
+        ax: plt.Axes | None = None,
+        **kwargs: Any,
+    ) -> tuple[plt.Figure, plt.Axes]:
+        """
+        Plot overall event-free survival, 1 minus the sum of cause-specific CIFs.
+
+        Parameters
+        ----------
+        curve_indices : int or list of int
+            Zero-based sample indices, plotted in the supplied order.
+        color : str or list of str, optional
+            One shared color or one color per selected curve.
+        x_lim, y_lim : float or tuple of float, optional
+            Axis limits. Survival probabilities default to [0, 1.02].
+        x_label, y_label : str
+            Axis labels, defaulting to Time and Survival probability.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to reuse. Otherwise create a new figure.
+        **kwargs : Any
+            Matplotlib line options, including label overrides.
+
+        Returns
+        -------
+        fig, ax : tuple
+            Figure and axes, without displaying the plot. Predictions are
+            connected on their stored grid without extrapolation.
+        """
+        indices = _validate_plot_indices(curve_indices, self.pred_cifs.shape[0])
+        survs = np.clip(1 - self.pred_cifs[indices].sum(axis=1, dtype=float), 0, 1)
+        return _plot_curves(
+            self.time_coordinates,
+            survs,
+            [f"Sample {i}" for i in indices],
+            title="Predicted event-free survival",
+            x_label=x_label,
+            y_label=y_label,
+            color=color,
+            x_lim=(0, float(self.time_coordinates[-1])) if x_lim is None else x_lim,
+            y_lim=(0, 1.02) if y_lim is None else y_lim,
+            ax=ax,
+            **kwargs,
         )
 
     def _check_event_of_interest(self, event_of_interest: int) -> None:
@@ -1635,3 +1532,106 @@ class CompetingRisksEvaluator:
             or not 1 <= event_of_interest <= self.pred_cifs.shape[1]
         ):
             raise ValueError("event_of_interest must be an integer from 1 to n_causes.")
+
+    def _integrated_brier_score(
+        self,
+        event_of_interest: int | None,
+        num_points: int | None,
+        target_times: np.ndarray | None,
+        ipcw: bool,
+        integration_method: str,
+        draw_figure: bool,
+    ) -> float | tuple[float, tuple[plt.Figure, plt.Axes]]:
+        """
+        Resolve the common grid, evaluate once, then integrate and optionally plot.
+
+        Parameters
+        ----------
+        event_of_interest : int | None
+            Positive cause label to evaluate; None requests the mean across all predicted causes.
+        num_points : int | None
+            Number of equally spaced evaluation times; mutually exclusive with target_times.
+        target_times : ndarray | None
+            One-dimensional array of non-negative evaluation times.
+        ipcw : bool
+            Whether to apply inverse probability of censoring weights estimated from the training outcomes.
+        integration_method : str
+            Numerical integration rule, "trapz" or "simpson".
+        draw_figure : bool
+            Whether to create a Matplotlib figure and return it with the score.
+
+        Returns
+        -------
+        float | tuple[float, tuple[plt.Figure, plt.Axes]]
+            Integrated Brier score; when draw_figure is True, return (score, (figure, axes)).
+        """
+        target_times = _brier_time_grid(
+            self.event_times,
+            self.event_indicators,
+            self.train_event_times,
+            num_points,
+            target_times,
+        )
+        scores = self._brier_score_multiple_points(
+            target_times, ipcw, event_of_interest
+        )
+        ibs = _integrate_brier_scores(scores, target_times, integration_method)
+        if not draw_figure:
+            return ibs
+        fig, ax = _plot_curves(
+            target_times,
+            scores,
+            [f"IBS = {ibs:.3f}"],
+            title="Integrated Brier Score",
+            x_label="Time",
+            y_label="Brier Score",
+            marker="o",
+        )
+        return ibs, (fig, ax)
+
+    def _brier_score_multiple_points(
+        self,
+        target_times: np.ndarray,
+        ipcw: bool,
+        event_of_interest: int | None,
+    ) -> np.ndarray:
+        """
+        Predict CIFs and dispatch to aggregate or selected-cause scoring.
+
+        Parameters
+        ----------
+        target_times : ndarray
+            One-dimensional array of non-negative evaluation times.
+        ipcw : bool
+            Whether to apply inverse probability of censoring weights estimated from the training outcomes.
+        event_of_interest : int | None
+            Positive cause label to evaluate; None requests the mean across all predicted causes.
+
+        Returns
+        -------
+        ndarray
+            Mean Brier score across causes, or the selected-cause score, at each target time.
+        """
+        probabilities = self.predict_cifs(target_times, event_of_interest)
+        if np.all(self.event_indicators > 0):
+            ipcw = False
+        metric = (
+            brier_multiple_points_cr
+            if event_of_interest is None
+            else brier_multiple_points_cr_per_event
+        )
+        options = (
+            {}
+            if event_of_interest is None
+            else {"event_of_interest": event_of_interest}
+        )
+        return metric(
+            pred_mat=probabilities,
+            event_times=self.event_times,
+            event_indicators=self.event_indicators,
+            train_event_times=self.train_event_times,
+            train_event_indicators=self.train_event_indicators,
+            target_times=target_times,
+            ipcw=ipcw,
+            **options,
+        )
