@@ -108,17 +108,20 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
     @property
     def default_target_time(self) -> float:
         """
-        Median observed time across the available training and test outcomes.
+        Median observed time clamped to the common prediction horizon.
 
         Returns
         -------
         float
-            Median observed time in the combined training and test outcomes, or the test outcomes alone.
+            Median observed time in the combined training and test outcomes, or the test outcomes alone,
+            capped at the earliest final grid time across subjects.
         """
         times = self.event_times
         if self.train_event_times is not None:
             times = np.concatenate((times, self.train_event_times))
-        return float(np.quantile(times, 0.5))
+        return float(
+            min(np.quantile(times, 0.5), np.min(self.time_coordinates[..., -1]))
+        )
 
     def concordance(
         self,
@@ -318,7 +321,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         target_time : Numeric | None
             Evaluation time. If None, use the median observed time
             of the combined training and test sets, or just the test set
-            when training outcomes are unavailable.
+            when training outcomes are unavailable, clamped to the common prediction horizon.
         method : str
             "Naive" (default), "IPCW", or its alias "Uno", case-insensitive. IPCW requires
             training outcomes, assumes independent censoring, and weights
@@ -377,7 +380,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         ----------
         target_time : Numeric | None
             Evaluation time, defaulting to the median observed
-            time of the available training and test outcomes.
+            time of the available training and test outcomes, clamped to the common prediction horizon.
         method : str
             "Naive" (default), "IPCW", or its alias "Uno", case-insensitive.
 
@@ -415,7 +418,8 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         ----------
         target_time : float, int, or None, default=None
             Time point at which the Brier score is to be calculated. If None, the Brier score is calculated at the
-            median time of the test event/censor times and, when available, the training event/censor times.
+            median time of the test event/censor times and, when available, the training event/censor times,
+            clamped to the common prediction horizon.
         IPCW_weighted : bool, default=True
             Whether to use IPCW weighting for the Brier score.
 
@@ -815,7 +819,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         ----------
         target_time : Numeric | None, default=None
             Evaluation time. None uses default_target_time, the median observed
-            time across available training and test outcomes.
+            time across available training and test outcomes, clamped to the common prediction horizon.
         num_bins : int, default=10
             Number of bins used to calculate the one calibration score.
         binning_strategy : str
@@ -914,7 +918,7 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
         ----------
         target_time : Numeric | None, default=None
             Evaluation time. None uses default_target_time, the median observed
-            time across available training and test outcomes.
+            time across available training and test outcomes, clamped to the common prediction horizon.
         knots : int, default=3
             Total restricted cubic spline knot count, at least three.
             Nonconstant risks must support distinct knots and an identifiable fit.

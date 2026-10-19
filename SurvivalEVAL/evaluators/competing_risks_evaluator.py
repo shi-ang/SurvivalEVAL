@@ -248,17 +248,18 @@ class CompetingRisksEvaluator:
     @property
     def default_target_time(self) -> float:
         """
-        Median observed time across the available training and test outcomes.
+        Median observed time clamped to the prediction horizon.
 
         Returns
         -------
         float
-            Median observed time in the combined training and test outcomes, or the test outcomes alone.
+            Median observed time in the combined training and test outcomes, or the test outcomes alone,
+            capped at the final grid time.
         """
         times = self.event_times
         if self.train_event_times is not None:
             times = np.concatenate((times, self.train_event_times))
-        return float(np.median(times))
+        return float(min(np.median(times), self.time_coordinates[-1]))
 
     def predict_cifs(
         self,
@@ -577,7 +578,7 @@ class CompetingRisksEvaluator:
         ----------
         target_time : float | None
             Finite, non-negative horizon within the prediction grid.
-            Defaults to the median of available training and test outcomes.
+            Defaults to the median of available training and test outcomes, clamped to the prediction horizon.
         method : str
             "Naive" (default) or "IPCW", case-insensitive. IPCW requires
             training outcomes and assumes independent censoring.
@@ -768,7 +769,7 @@ class CompetingRisksEvaluator:
         ----------
         target_time : float | None
             Finite time within the CIF horizon. None uses
-            default_target_time, the median available train/test observed time.
+            default_target_time, the median available train/test observed time clamped to the prediction horizon.
         IPCW_weighted : bool
             Use training-based IPCW. Defaults to True. Fully
             observed test data automatically use plain scoring.
@@ -810,7 +811,7 @@ class CompetingRisksEvaluator:
             Integer cause label from 1 through n_causes.
         target_time : float | None
             Finite time within the CIF horizon. None uses
-            default_target_time, the median available train/test observed time.
+            default_target_time, the median available train/test observed time clamped to the prediction horizon.
         IPCW_weighted : bool
             Use training-based IPCW, defaulting to True.
             Fully observed test data automatically use plain scoring.
@@ -1054,7 +1055,7 @@ class CompetingRisksEvaluator:
         ----------
         target_time : float | None
             Finite, non-negative time within the prediction grid.
-            None uses default_target_time, the median available observed time.
+            None uses default_target_time, the median available observed time clamped to the prediction horizon.
         event_of_interest : int
             Integer cause label from 1 through n_causes.
         num_bins : int
