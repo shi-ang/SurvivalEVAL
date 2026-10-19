@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from SurvivalEVAL.evaluations.calibration.distributional import ksd_calibration
 from SurvivalEVAL.evaluations.calibration.single_time import one_calibration
 from SurvivalEVAL.evaluations.util import predict_prob_from_curve
 from SurvivalEVAL.evaluators import (
@@ -625,9 +626,22 @@ def test_calibration_metrics(evaluator_data):
     plt.close(d_hist_fig)
     plt.close(d_pp_fig)
 
-    ksd_p, ksd_details = evaluator.ksd_calibration(return_details=True)
+    ksd_p, ksd_details = evaluator.ksd_calibration(
+        return_details=True, n_resamples=199, seed=14
+    )
     assert np.isfinite(ksd_p)
     assert "figure" in ksd_details
+    predicted = evaluator.predict_probability_from_curve(evaluator.event_times)
+    expected_support = np.r_[0.0, np.unique(np.r_[0.0, 1.0 - predicted]), 1.0]
+    assert ksd_calibration(
+        predicted, evaluator.event_indicators, n_resamples=199, seed=14
+    ) == (
+        ksd_p,
+        ksd_details["statistics"],
+    )
+    np.testing.assert_allclose(
+        ksd_details["empirical_distribution"][0], expected_support
+    )
     ksd_fig, _ = ksd_details["figure"]
     plt.close(ksd_fig)
 

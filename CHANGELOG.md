@@ -18,6 +18,12 @@
 
 ### Correctness and behavior changes
 
+- Correct single-event K-S D-calibration to fit Kaplan–Meier on CDF probabilities
+  `F(t) = 1 - S(t)`, preserving right censoring and completing the step CDF with
+  endpoints (0, 0) and (1, 1). Replace the uncensored KS reference p-value with
+  an approximate null bootstrap using independent reverse-KM censoring.
+  Add `n_resamples` and `seed` controls. Returned empirical distributions and
+  plots now use CDF probabilities; inputs remain survival probabilities.
 - Use left-limit censoring survival `G(t-)` consistently in IPCW metrics. Original
   events leave reverse-KM risk sets before tied censorings. Reject nonpositive or
   nonfinite censoring probabilities for observations contributing to a score.
@@ -92,17 +98,15 @@ Update imports that used the former module layout:
 - IPCW, ICI, and variance-adjusted one-calibration can produce different numerical
   results from 0.8.x. Recompute stored baselines when upgrading; do not compare
   old and new scores as though their estimation conventions were identical.
+- Single-event K-S D-calibration statistics now include the completed upper tail,
+  and p-values use 999 bootstrap samples by default. Set `seed` for reproducible
+  p-values; increase `n_resamples` for finer resolution.
 
 ### Known limitations
 
 - `MultiStateEvaluator` is exported as a scaffold and has no prediction or metric
   methods. The multi-state AJ estimator is implemented; multi-state evaluation
   metrics are not yet available.
-- Single-event `ksd_calibration` currently applies right-censoring KM to
-  transformed survival probabilities, although right-censored times imply
-  left-censored survival probabilities. Its statistic and p-value can be
-  misleading for censored data. This release documents the existing limitation;
-  use binned D-calibration and calibration curves for those diagnostics.
 - The existing log-transformation ordering TODO in interval point-error scoring
   (`mean_error_ic(log_scale=True)`) remains unresolved.
 

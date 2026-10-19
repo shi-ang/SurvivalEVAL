@@ -634,12 +634,17 @@ def ksd_calibration(
     pred_probs: np.ndarray,
     event_indicators: np.ndarray,
     return_details: bool = False,
+    *,
+    n_resamples: int = 999,
+    seed: int | None = None,
 ) -> tuple[float, float] | tuple[float, dict]:
     """
     Calculate the K-S D-Calibration score.
 
-    The KS metric is motivated by the work in [1]_. Here, the
-    distribution of predicted probabilities is estimated with Kaplan-Meier.
+    The KS metric is motivated by the work in [1, 2]_. Kaplan-Meier estimates
+    the distribution of CDF probabilities ``F(t) = 1 - S(t)``, which remain
+    right-censored when event times are right-censored. A null bootstrap [2]_
+    accounts for independent censoring when estimating the p-value.
 
     Parameters
     ----------
@@ -650,14 +655,35 @@ def ksd_calibration(
         censored observation.
     return_details : bool
         Whether to return the detailed information including the empirical distribution and the figure.
+    n_resamples : int, default=999
+        Positive number of bootstrap samples. The minimum p-value is
+        ``1 / (n_resamples + 1)``.
+    seed : int or None, default=None
+        Seed for the local random number generator.
 
     Returns
     -------
     p_value : float
-        Asymptotic Kolmogorov-Smirnov calibration p-value.
+        Approximate bootstrap calibration p-value.
     statistic_or_details : float or dict
         Kolmogorov-Smirnov statistic when return_details is False. Otherwise, a dictionary
         containing statistics, p_value, empirical_distribution, and figure.
+        The empirical distribution and figure use CDF probabilities ``F(t)``,
+        with endpoints (0, 0) and (1, 1).
+
+    Raises
+    ------
+    ValueError
+        If probabilities and indicators are not matching 1D arrays, their
+        values are invalid, or n_resamples is not a positive integer.
+
+    Notes
+    -----
+    Each bootstrap sample draws uniform event probabilities and independent
+    censoring probabilities from reverse Kaplan-Meier. Remaining censoring
+    mass is placed at 1. Both observed and simulated KM CDFs retain their
+    steps and place remaining event mass at 1. The p-value is
+    ``(1 + number of bootstrap statistics >= observed) / (n_resamples + 1)``.
 
     References
     ----------
@@ -665,19 +691,45 @@ def ksd_calibration(
        "KSP: Kolmogorov-Smirnov metric-based Post-Hoc Calibration for
        Survival Analysis". Advances in Neural Information Processing Systems, 38.
        https://doi.org/10.52202/085713-0827
+    .. [2] Simonsen, M. R.; Waagepetersen, R. P. (2025).
+       "A-calibration: assessment of prediction models for survival data under censoring".
+       BMC Medical Research Methodology, 25, 236.
+       https://link.springer.com/article/10.1186/s12874-025-02671-6
+    .. [3] Besalu, M.; Langohr, K.; Francisco, M.; Garcia-Fernandez, A.;
+       Gomez Melis, G. (2025). "R package GofCens: Goodness-of-Fit Methods for
+       Right-Censored Data". The R Journal.
+       https://journal.r-project.org/articles/RJ-2025-026/
     """
-    assert len(pred_probs) == len(
-        event_indicators
-    ), "The length of pred_probs and event_indicators should have same length."
+    pred_probs = check_and_convert_probabilities(pred_probs, "pred_probs")
+    event_indicators = check_and_convert_event_indicators(event_indicators)
+    if pred_probs.shape != event_indicators.shape:
+        raise ValueError("pred_probs and event_indicators must be matching 1D arrays.")
+    if (
+        isinstance(n_resamples, (bool, np.bool_))
+        or not isinstance(n_resamples, (int, np.integer))
+        or n_resamples < 1
+    ):
+        raise ValueError("n_resamples must be a positive integer.")
 
-    n = len(pred_probs)
-    km = KaplanMeier(pred_probs, event_indicators)
-    x_support = km.survival_times
-    cdf_values = km.cumulative_dens
-
+    cdf_probs = 1.0 - pred_probs
+    x_support, cdf_values = _ksd_km_curve(cdf_probs, event_indicators)
     D_n = discrepancy_to_uniform(x_support, cdf_values)
 
-    p_value = ks_pvalue(D_n, n)
+    censor_km = KaplanMeier(cdf_probs, event_indicators, reverse=True)
+    censor_support = np.r_[censor_km.survival_times, 1.0]
+    censor_weights = np.diff(np.r_[0.0, censor_km.cumulative_dens, 1.0])
+    rng = np.random.default_rng(seed)
+    exceedances = 0
+    # Count theoretically tied statistics together despite floating-point roundoff.
+    threshold = D_n * (1 - 100 * np.finfo(float).eps)
+    for _ in range(n_resamples):
+        events = rng.uniform(size=pred_probs.size)
+        censoring = rng.choice(censor_support, size=pred_probs.size, p=censor_weights)
+        x_boot, cdf_boot = _ksd_km_curve(
+            np.minimum(events, censoring), events <= censoring
+        )
+        exceedances += discrepancy_to_uniform(x_boot, cdf_boot) >= threshold
+    p_value = float((1 + exceedances) / (n_resamples + 1))
 
     if return_details:
         fig, ax = plt.subplots()
@@ -695,7 +747,7 @@ def ksd_calibration(
             [0, 1], [0, 1], label="Ideal", linestyle="--", color="grey", linewidth=2
         )
         ax.legend()
-        ax.set_xlabel(r"Survival Probability $S(t_i \mid x)$")
+        ax.set_xlabel(r"CDF Probability $F(t_i \mid x)$")
         ax.set_ylabel("Cumulative Distribution Function")
         fig.tight_layout()
 
@@ -791,3 +843,27 @@ def ksd_cal_ic(
         return p_value, details
 
     return p_value, D_n
+
+
+def _ksd_km_curve(
+    cdf_probs: np.ndarray,
+    event_indicators: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Fit a KM CDF with explicit probability-support endpoints.
+
+    Parameters
+    ----------
+    cdf_probs : ndarray, shape (n_samples,)
+        CDF probabilities at observed event or censoring times.
+    event_indicators : ndarray, shape (n_samples,)
+        Binary indicators for observed events.
+
+    Returns
+    -------
+    support, cdf : tuple of ndarray
+        Step-curve coordinates starting at (0, 0) and ending at (1, 1).
+        Repeated boundary coordinates preserve any jumps at 0 or 1.
+    """
+    km = KaplanMeier(cdf_probs, event_indicators)
+    return np.r_[0.0, km.survival_times, 1.0], np.r_[0.0, km.cumulative_dens, 1.0]

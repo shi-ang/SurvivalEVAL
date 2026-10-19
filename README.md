@@ -294,7 +294,7 @@ These metrics evaluate the full predicted survival curve.
 | IPCW integrated Brier score | Integrates IPCW Brier scores over a time grid. | `evl.integrated_brier_score(IPCW_weighted=True)` | [Graf et al.](https://pubmed.ncbi.nlm.nih.gov/10474158/) |
 | Survival-AUPRC | Scores full survival distributions using area under the precision-recall curve. | `evl.auprc()` | [Avati et al.](https://proceedings.mlr.press/v115/avati20a.html) |
 | D-calibration | Tests whether predicted survival probabilities at event times follow a uniform distribution. | `evl.d_calibration()` | [Haider et al.](https://jmlr.org/papers/volume21/18-772/18-772.pdf) |
-| K-S D-calibration | Kolmogorov-Smirnov version of D-calibration. | `evl.ksd_calibration()` | [Qi et al.](https://ojs.aaai.org/index.php/AAAI-SS/article/view/27713) |
+| K-S D-calibration | Maximum KM-CDF deviation from uniformity with a censoring-aware bootstrap p-value. | `evl.ksd_calibration(n_resamples=999, seed=42)` | N/A |
 | KM calibration | Compares the average predicted survival curve with the Kaplan-Meier curve. | `evl.km_calibration()` | [Chapfuwa et al.](https://ieeexplore.ieee.org/abstract/document/9244076/) |
 | Cox-Snell residuals | Uses cumulative hazard at the observed time to check goodness of fit. | `evl.residuals(method="CoxSnell")` | [Cox and Snell](https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1968.tb00724.x) |
 | Modified Cox-Snell residuals | Adds an excess residual for censored subjects. | `evl.residuals(method="Modified CoxSnell-v1")` or `evl.residuals(method="Modified CoxSnell-v2")` | [Collett](https://www.taylorfrancis.com/books/mono/10.1201/b18041/modelling-survival-data-medical-research-david-collett) |
@@ -449,12 +449,6 @@ step estimate, independently of the linear tail used by `km.predict`.
 - `MultiStateEvaluator` is an exported scaffold without prediction or metric
   methods. Multi-state transition-probability estimation is available through
   `AalenJohansenMultiState`; multi-state evaluation metrics are not yet implemented.
-- Single-event `ksd_calibration` applies right-censoring Kaplan–Meier to transformed
-  survival probabilities, although right-censored times imply left-censored
-  survival probabilities. The resulting statistic and p-value can be misleading
-  with censored outcomes. Use binned D-calibration and calibration curves for
-  those diagnostics. The [single-event notebook](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/SingleEvent_Example.ipynb)
-  explains this existing limitation.
 
 ## Citing This Work
 

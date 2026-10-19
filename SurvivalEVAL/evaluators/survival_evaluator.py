@@ -1064,25 +1064,42 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
     def ksd_calibration(
         self,
         return_details: bool = False,
+        *,
+        n_resamples: int = 999,
+        seed: int | None = None,
     ) -> tuple[float, float] | tuple[float, dict]:
         """
         Calculate the KSD calibration score from the predicted survival curve.
 
-        The KS calibration metric is motivated by [1]_. Here, the distribution
-        of predicted probabilities is estimated with Kaplan-Meier.
+        The KS calibration metric is motivated by [1]_. Kaplan-Meier estimates
+        the distribution of CDF probabilities ``F(t) = 1 - S(t)``, preserving
+        the right-censoring direction of event times.
 
         Parameters
         ----------
         return_details : bool, default=False
             Whether to return detailed calibration information, including plots and statistics.
+        n_resamples : int, default=999
+            Positive number of null bootstrap samples used to estimate the p-value.
+        seed : int or None, default=None
+            Seed for the local random number generator.
 
         Returns
         -------
         p_value : float
-            Asymptotic Kolmogorov-Smirnov calibration p-value.
+            Approximate bootstrap calibration p-value.
         statistic_or_details : float or dict
             Kolmogorov-Smirnov statistic when return_details is False. Otherwise, a dictionary
             containing statistics, p_value, empirical_distribution, and figure.
+            The empirical distribution and figure use CDF probabilities ``F(t)``,
+            with endpoints (0, 0) and (1, 1).
+
+        Notes
+        -----
+        The null bootstrap assumes independent censoring on the transformed
+        probability scale and treats predictions as fixed. It draws uniform
+        event probabilities and censoring probabilities from reverse KM,
+        applying the same endpoint convention to every sample.
 
         References
         ----------
@@ -1096,6 +1113,8 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             pred_probs=predict_probs,
             event_indicators=self.event_indicators,
             return_details=return_details,
+            n_resamples=n_resamples,
+            seed=seed,
         )
 
     def km_calibration(
