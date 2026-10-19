@@ -24,10 +24,8 @@ The package is designed around evaluator classes:
 - `SingleTimeEvaluator`: probabilities at one target time.
 - `QuantileRegEvaluator`: predicted event-time quantiles.
 
-The public tests and examples show typical model integrations. See
-[examples](examples) for notebooks covering lifelines, pycox, scikit-survival,
-quantile prediction, point prediction, interpolation choices, and monotonicity
-handling.
+See [Examples](#examples) for comprehensive metric walkthroughs, model
+integrations, and practical guides.
 
 ## Metric Guide
 
@@ -185,6 +183,34 @@ coverage, coverage_gap, average_width = evl.coverage(
     method="linear",
 )
 ```
+
+## Examples
+
+### Comprehensive Guides
+
+| Notebook | What it covers |
+| --- | --- |
+| [Single-event metrics](examples/SingleEvent_Example.ipynb) | All metric families, censoring methods, residuals, and calibration diagnostics. |
+| [Competing-risks metrics](examples/CompetingRisks_Example.ipynb) | Cause-specific and aggregate discrimination, Brier scores, and calibration from predicted CIFs. |
+
+### Model Integrations
+
+| Notebook | What it covers |
+| --- | --- |
+| [lifelines](examples/Lifelines_Example.ipynb) | Fit a Cox model and evaluate its survival DataFrame with `LifelinesEvaluator`. |
+| [pycox](examples/Pycox_Example.ipynb) | Train a LogisticHazard model and evaluate its discrete-time predictions with `PycoxEvaluator`. |
+| [scikit-survival](examples/Scikit-survival_Example.ipynb) | Evaluate Cox model step functions with `ScikitSurvivalEvaluator`. |
+| [auton-survival](examples/PySurvival_auton-survival_Example.ipynb) | Evaluate Deep Survival Machines array predictions with `SurvivalEvaluator`. |
+| [Point predictions](examples/PointEvaluator_Example.ipynb) | Evaluate survival-SVM event-time predictions with `PointEvaluator`. |
+
+### Practical Guides
+
+| Notebook | What it covers |
+| --- | --- |
+| [Cross-validation calibration](examples/Calibration_for_CrossValidation_Example.ipynb) | Pool out-of-fold predictions for calibration diagnostics. |
+| [Reverse Kaplan–Meier and IPCW](examples/Reverse_Kaplan_Meier_IPCW.ipynb) | Understand censoring ties, left-limit weights, and their effects on IPCW metrics. |
+| [Interpolation methods](examples/Compare_Interpolation_Methods.ipynb) | Compare curve shapes and timings for linear, cubic, PCHIP, and R's Hyman-filtered interpolation. |
+| [Nonmonotonic curves](examples/Dealing_Non-Monotonic_Curves.ipynb) | Compare ceil, floor, isotonic, and bootstrap corrections for survival curves. |
 
 ## Single-Event Right-Censored Metrics
 
