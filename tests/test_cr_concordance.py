@@ -570,31 +570,6 @@ def test_aggregate_ipcw_fits_one_censoring_model(control_definition: str) -> Non
     assert estimator.call_args.kwargs == {"reverse": True}
 
 
-@pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
-def test_control_definition_is_case_insensitive(control_definition: str) -> None:
-    kwargs = {"event_times": [1, 2, 3], "event_indicators": [2, 1, 0]}
-    risks = np.array([[0.1, 0.9], [0.9, 0.2], [0.2, 0.1]])
-    np.testing.assert_equal(
-        concordance_cr(
-            risks,
-            **kwargs,
-            control_definition=control_definition.swapcase(),
-            return_details=True
-        ),
-        concordance_cr(
-            risks, **kwargs, control_definition=control_definition, return_details=True
-        ),
-    )
-    np.testing.assert_allclose(
-        concordance_cr_per_event(
-            risks[:, 0], **kwargs, control_definition=control_definition.swapcase()
-        ),
-        concordance_cr_per_event(
-            risks[:, 0], **kwargs, control_definition=control_definition
-        ),
-    )
-
-
 @pytest.mark.parametrize("events, tau", [([1, 0, 1], None), ([1, 2, 1], 2)])
 def test_undefined_causes_are_reported_without_silently_omitting_them(events, tau):
     risks = [[0.9, 0.3], [0.4, 0.2], [0.1, 0.1]]

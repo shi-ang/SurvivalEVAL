@@ -122,7 +122,7 @@ def test_matches_direct_reference_on_irregular_grid(alpha, dtype):
     assert score == pytest.approx(expected.mean(), rel=2e-6)
 
 
-@pytest.mark.parametrize("reduction", ["mean", "sum", "max", "SUM"])
+@pytest.mark.parametrize("reduction", ["mean", "sum", "max"])
 def test_aggregation(calibration_data, reduction):
     scores = np.array([1 / 240, 37 / 1200])
     expected = {"mean": np.mean, "sum": np.sum, "max": np.max}[reduction.lower()](

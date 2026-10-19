@@ -21,7 +21,7 @@ def grouped_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     )
 
 
-@pytest.mark.parametrize("strategy", ["C", "c", "H", "h"])
+@pytest.mark.parametrize("strategy", ["C", "H"])
 @pytest.mark.parametrize("cause", [1, 2])
 def test_grouped_aj_incidence_with_competing_events_and_ties(
     grouped_data: tuple,

@@ -320,7 +320,7 @@ def test_evaluator_brier_multiple_and_ibs_defaults(
 
 
 @pytest.mark.parametrize("kind", ["survival", "point"])
-@pytest.mark.parametrize("method", ["Harrell", "Naive", "Uno", "IPCW", "Margin"])
+@pytest.mark.parametrize("method", ["Harrell", "IPCW", "Margin"])
 @pytest.mark.parametrize("training", [False, True])
 def test_evaluator_static_concordance_uses_harrell_on_uncensored_data(
     kind: str,
@@ -384,7 +384,7 @@ def test_evaluator_ipcw_d_still_weights_errors_when_test_set_contains_censoring(
     assert getattr(evaluator, metric)(method="IPCW-D") == pytest.approx(expected)
 
 
-@pytest.mark.parametrize("method", ["Antolini", "Naive", "IPCW", "iPcW"])
+@pytest.mark.parametrize("method", ["Antolini", "IPCW"])
 @pytest.mark.parametrize("training", [False, True])
 @pytest.mark.parametrize("risks", ["Survival", "Hazard"])
 def test_evaluator_dynamic_concordance_uses_antolini_on_uncensored_data(

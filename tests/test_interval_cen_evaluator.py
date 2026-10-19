@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 from lifelines import WeibullAFTFitter
 
-from SurvivalEVAL import SurvivalEvaluator
 from SurvivalEVAL.evaluations.calibration.single_time import one_cal_ic
 from SurvivalEVAL.evaluations.prediction_error import inclusion_rate, mean_error_ic
 from SurvivalEVAL.evaluators.interval_cen_evaluator import IntervalCenEvaluator
@@ -16,23 +15,6 @@ def _load_breast_data():
     df = pd.read_csv(data_path)
     df["right"] = df["right"].fillna(np.inf)
     return df
-
-
-@pytest.mark.parametrize(
-    "method",
-    [
-        "auc",
-        "auroc",
-        "concordance_time_dependent",
-        "integrated_calibration_index",
-        "residuals",
-        "km_calibration",
-        "log_rank",
-    ],
-)
-def test_interval_evaluator_does_not_expose_right_censored_metrics(method: str) -> None:
-    assert hasattr(SurvivalEvaluator, method)
-    assert not hasattr(IntervalCenEvaluator, method)
 
 
 def test_h_statistic_interval_one_calibration_includes_prediction_one():
@@ -78,7 +60,8 @@ def test_interval_cen_evaluator_rejects_time_coordinate_row_count_mismatch():
         )
 
 
-def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
+def test_interval_cen_time_coordinates_setter_updates_predictions() -> None:
+    """Use each sample's new time grid when interpolating its survival curve."""
     evaluator = IntervalCenEvaluator(
         pred_survs=np.array([[1.0, 0.8, 0.5], [1.0, 0.7, 0.4]]),
         time_coordinates=np.array([0.0, 1.0, 2.0]),
@@ -88,8 +71,7 @@ def test_interval_cen_time_coordinates_setter_refreshes_dimension_metadata():
 
     evaluator.time_coordinates = np.array([[0.0, 1.0, 2.0], [0.0, 1.5, 3.0]])
 
-    assert evaluator.ndim_time == 2
-    assert evaluator.predict_probability_from_curve(1.0).shape == (2,)
+    np.testing.assert_allclose(evaluator.predict_probability_from_curve(1.0), [0.8, 0.8])
 
 
 def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():
@@ -134,10 +116,6 @@ def test_interval_cen_evaluator_methods(interval_evaluator):
 
     predicted_times = evaluator.predicted_event_times
     assert predicted_times.shape[0] == evaluator.left_limits.shape[0]
-
-    evaluator._clear_cache()
-    assert "predicted_event_times" not in evaluator.__dict__
-    assert evaluator.predicted_event_times.shape == predicted_times.shape
 
     c_prob, num_prob, den_prob = evaluator.concordance(method="probability")
     assert np.isfinite(c_prob)

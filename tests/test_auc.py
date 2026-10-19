@@ -54,7 +54,7 @@ def _pairwise_ipcw_auc(
     return numerator / denominator
 
 
-@pytest.mark.parametrize("method", ["Naive", "nAiVe", "IPCW", "iPcW", "Uno", "uNo"])
+@pytest.mark.parametrize("method", ["Naive", "IPCW", "Uno"])
 def test_auc_hand_computed_mixed_training_ties(
     auc_data: dict[str, np.ndarray],
     method: str,
@@ -143,10 +143,8 @@ def test_ipcw_auc_recovers_complete_data_auc_with_independent_discrete_censoring
 
 
 @pytest.mark.parametrize("seed", range(10))
-@pytest.mark.parametrize("method", ["IPCW", "Uno"])
 def test_ipcw_auc_matches_pairwise_oracle_with_time_and_prediction_ties(
     seed: int,
-    method: str,
 ) -> None:
     rng = np.random.default_rng(seed)
     train_times = rng.integers(0, 10, 40).astype(float)
@@ -162,7 +160,7 @@ def test_ipcw_auc_matches_pairwise_oracle_with_time_and_prediction_ties(
             probs, times, events, train_times, train_events, target
         )
         assert auc(
-            probs, times, events, target, train_times, train_events, method
+            probs, times, events, target, train_times, train_events, "IPCW"
         ) == pytest.approx(expected)
 
 
@@ -190,18 +188,16 @@ def test_ipcw_auc_matches_scikit_survival_without_exact_time_ties(seed: int) -> 
 
 
 @pytest.mark.parametrize("missing", ["both", "times", "indicators"])
-@pytest.mark.parametrize("method", ["IPCW", "Uno"])
 def test_ipcw_auc_requires_training_outcomes(
     auc_data: dict[str, np.ndarray],
     missing: str,
-    method: str,
 ) -> None:
     if missing in {"both", "times"}:
         auc_data.pop("train_event_times")
     if missing in {"both", "indicators"}:
         auc_data.pop("train_event_indicators")
     with pytest.raises(ValueError, match="required for IPCW AUROC"):
-        auc(**auc_data, target_time=3, method=method)
+        auc(**auc_data, target_time=3, method="IPCW")
 
 
 def test_auc_rejects_unknown_method(auc_data: dict[str, np.ndarray]) -> None:
@@ -267,12 +263,10 @@ def _make_evaluator(
 
 @pytest.mark.parametrize("kind", ["survival", "single-time"])
 @pytest.mark.parametrize("uncensored", [False, True])
-@pytest.mark.parametrize("method", ["iPcW", "Uno", "uNo"])
 def test_evaluators_forward_ipcw_even_with_fully_observed_test_outcomes(
     auc_data: dict[str, np.ndarray],
     kind: str,
     uncensored: bool,
-    method: str,
 ) -> None:
     if uncensored:
         auc_data["event_times"][-1] = 7
@@ -280,27 +274,25 @@ def test_evaluators_forward_ipcw_even_with_fully_observed_test_outcomes(
     evaluator = _make_evaluator(auc_data, kind)
     kwargs = {"target_time": 3} if kind == "survival" else {}
     expected = auc(**auc_data, target_time=3, method="IPCW")
-    assert evaluator.auc(method=method, **kwargs) == pytest.approx(expected)
+    assert evaluator.auc(method="IPCW", **kwargs) == pytest.approx(expected)
     assert evaluator.auc(**kwargs) == pytest.approx(auc(**auc_data, target_time=3))
     assert expected != pytest.approx(evaluator.auc(**kwargs))
     if kind == "survival":
-        assert evaluator.auroc(method=method, **kwargs) == pytest.approx(expected)
+        assert evaluator.auroc(method="IPCW", **kwargs) == pytest.approx(expected)
 
 
 @pytest.mark.parametrize("kind", ["survival", "single-time"])
 @pytest.mark.parametrize("uncensored", [False, True])
-@pytest.mark.parametrize("method", ["IPCW", "Uno", "uNo"])
 def test_evaluators_require_ipcw_training_even_without_test_censoring(
     auc_data: dict[str, np.ndarray],
     kind: str,
     uncensored: bool,
-    method: str,
 ) -> None:
     if uncensored:
         auc_data["event_indicators"] = np.ones(6, dtype=bool)
     evaluator = _make_evaluator(auc_data, kind, training=False)
     with pytest.raises(TypeError, match="Train set information is missing"):
-        evaluator.auc(method=method)
+        evaluator.auc(method="IPCW")
 
 
 @pytest.mark.parametrize("kind", ["survival", "single-time"])

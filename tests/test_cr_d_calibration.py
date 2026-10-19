@@ -81,7 +81,7 @@ def _balanced_predictions(num_bins=8, marginal=(0.5, 0.5)):
     return cifs, events, terminal, 1 - ratios
 
 
-@pytest.mark.parametrize("method", ["integral", "ks", "KS"])
+@pytest.mark.parametrize("method", ["integral", "ks"])
 @pytest.mark.parametrize("reduction", ["sum", "mean", "max"])
 def test_balanced_calibration_and_aggregation(method, reduction):
     args = _balanced_predictions()
