@@ -178,9 +178,10 @@ class PointEvaluator:
     ) -> float:
         """
         Calculate the MAE score for the test set.
-
+        
+        The ``Hinge`` method uses the one-sided censored-target loss in [1]_.
         The ``IPCW-D``, ``IPCW-T``, and ``Pseudo_obs`` MAE formulations are
-        described in [1]_. For truncated ``Margin`` error, see [2]_.
+        described in [2]_. For truncated ``Margin`` error, see [3]_.
 
         Parameters
         ----------
@@ -204,13 +205,16 @@ class PointEvaluator:
 
         References
         ----------
-        .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+        .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+           Targets". ICDM, 655-660.
+           https://ieeexplore.ieee.org/document/4470306/
+        .. [2] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
            Ranganath, R.; Henao, R.; Greiner, R. (2023).
            "An Effective Meaningful Way to Evaluate Survival Models".
            Proceedings of the 40th International Conference on Machine Learning,
            Proceedings of Machine Learning Research, 202, 28244-28276.
            https://proceedings.mlr.press/v202/qi23b.html
-        .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+        .. [3] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
            Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
            Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
            Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,

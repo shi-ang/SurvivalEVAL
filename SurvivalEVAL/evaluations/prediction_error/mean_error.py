@@ -49,8 +49,9 @@ def mean_error(
     method : str, default="Hinge"
         Method of handling censorship.
         Options are "Uncensored", "Hinge", "Margin", "IPCW-T", "IPCW-D", and "Pseudo_obs".
+        The ``Hinge`` method uses the one-sided censored-target loss in [1]_.
         The MAE formulations of "IPCW-D", "IPCW-T", and "Pseudo_obs" are described
-        in Sections 3.4, 3.5, and 3.6 of [1]_, respectively.
+        in Sections 3.4, 3.5, and 3.6 of [2]_, respectively.
         IPCW-D weights observed-event errors by 1/G(event_time-) from reverse KM
         fitted on training outcomes, with linear extrapolation beyond follow-up.
         Nonpositive or nonfinite contributing probabilities raise ValueError.
@@ -64,7 +65,7 @@ def mean_error(
         Whether to show the progress bar.
     truncation_time : float | None
         Optional upper limit for event-time errors in Margin, IPCW-T, IPCW-D, and Pseudo_obs calculations.
-        For the Margin method, see the L1-margin-truncated metric in [2]_.
+        For the Margin method, see the L1-margin-truncated metric in [3]_.
 
     Returns
     -------
@@ -73,13 +74,16 @@ def mean_error(
 
     References
     ----------
-    .. [1] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
+    .. [1] Shivaswamy, Chu and Jansche (2007). "A Support Vector Approach to Censored
+       Targets". ICDM, 655-660.
+       https://ieeexplore.ieee.org/document/4470306/
+    .. [2] Qi, S.-A.; Kumar, N.; Farrokh, M.; Sun, W.; Kuan, L.-H.;
        Ranganath, R.; Henao, R.; Greiner, R. (2023).
        "An Effective Meaningful Way to Evaluate Survival Models".
        Proceedings of the 40th International Conference on Machine Learning,
        Proceedings of Machine Learning Research, 202, 28244-28276.
        https://proceedings.mlr.press/v202/qi23b.html
-    .. [2] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
+    .. [3] Sun, W.; Kalmady, S. V.; Qi, S.-A.; Sepehrvand, N.; Hindle, A.;
        Greiner, R.; Kaul, P. (2024). "Predicting Individual Survival Distributions
        Using ECG: A Deep Learning Approach Utilizing Features Extracted by a
        Learned Diagnostic Model". Proceedings of the AAAI Symposium Series,
