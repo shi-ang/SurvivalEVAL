@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.stats import chisquare
 
-from SurvivalEVAL.Evaluations.Calibration.Distributional import (
+from SurvivalEVAL.evaluations.calibration.distributional import (
     create_censor_hist,
     d_calibration,
 )

@@ -12,8 +12,8 @@ from scipy.integrate import simpson, trapezoid
 # Insert at the beginning to prioritize local version over installed package
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from SurvivalEVAL.Evaluations.PredictionError import brier_multiple_points_ic
-from SurvivalEVAL.Evaluators.IntervalCenEvaluator import IntervalCenEvaluator
+from SurvivalEVAL.evaluations.prediction_error import brier_multiple_points_ic
+from SurvivalEVAL.evaluators.interval_cen_evaluator import IntervalCenEvaluator
 
 
 def ibs_hinge_ic(

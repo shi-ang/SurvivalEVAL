@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.Discrimination.SingleTime.AreaUnderROCurve import auc
-from SurvivalEVAL.Evaluations.Others import cov
+from SurvivalEVAL.evaluations.discrimination.single_time.area_under_ro_curve import auc
+from SurvivalEVAL.evaluations.others import cov
 
 
 def test_auc_treats_censored_at_target_time_as_event_free():

@@ -1,4 +1,4 @@
-from SurvivalEVAL.Evaluations.Calibration import (
+from SurvivalEVAL.evaluations.calibration import (
     aj_calibration,
     aj_calibration_per_event,
     coverage_ic,
@@ -15,7 +15,7 @@ from SurvivalEVAL.Evaluations.Calibration import (
     one_calibration_cr,
     residuals,
 )
-from SurvivalEVAL.Evaluations.Discrimination import (
+from SurvivalEVAL.evaluations.discrimination import (
     auc,
     auc_cr,
     auc_cr_per_event,
@@ -25,8 +25,8 @@ from SurvivalEVAL.Evaluations.Discrimination import (
     concordance_ic,
     concordance_time_dependent,
 )
-from SurvivalEVAL.Evaluations.Others import auprc_ic, auprc_right_censor
-from SurvivalEVAL.Evaluations.PredictionError import (
+from SurvivalEVAL.evaluations.others import auprc_ic, auprc_right_censor
+from SurvivalEVAL.evaluations.prediction_error import (
     brier_multiple_points,
     brier_multiple_points_cr,
     brier_multiple_points_cr_per_event,
@@ -35,7 +35,7 @@ from SurvivalEVAL.Evaluations.PredictionError import (
     mean_error,
     mean_error_ic,
 )
-from SurvivalEVAL.Evaluators import (
+from SurvivalEVAL.evaluators import (
     CompetingRisksEvaluator,
     DistributionEvaluator,
     IntervalCenEvaluator,

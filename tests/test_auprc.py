@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.interpolate import interp1d
 
-import SurvivalEVAL.Evaluations.Others.AreaUnderPRCurve as auprc_module
+import SurvivalEVAL.evaluations.others.area_under_pr_curve as auprc_module
 
 
 def _scipy_cdf_row(cdf, times, targets, left_fill=None):

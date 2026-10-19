@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.PredictionError import mean_error
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+from SurvivalEVAL.evaluations.prediction_error import mean_error
+from SurvivalEVAL.nonparametric_estimator.single_event import KaplanMeier
 
 
 @pytest.mark.parametrize(

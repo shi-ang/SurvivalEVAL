@@ -4,10 +4,10 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
+from SurvivalEVAL.nonparametric_estimator.competing_risks import (
     AalenJohansenCompetingRisks,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+from SurvivalEVAL.nonparametric_estimator.single_event import KaplanMeier
 
 
 def test_km_greenwood_variance_shapes_sides_and_step_tail() -> None:
@@ -113,11 +113,11 @@ def test_variance_queries_reuse_fitted_counts() -> None:
     aj = AalenJohansenCompetingRisks(2).fit(times, events)
     with (
         patch(
-            "SurvivalEVAL.NonparametricEstimator.SingleEvent.KaplanMeier._compute_event_counts",
+            "SurvivalEVAL.nonparametric_estimator.single_event.kaplan_meier._compute_event_counts",
             side_effect=AssertionError("recount"),
         ),
         patch(
-            "SurvivalEVAL.NonparametricEstimator.CompetingRisks.AalenJohansen.np.sort",
+            "SurvivalEVAL.nonparametric_estimator.competing_risks.aalen_johansen.np.sort",
             side_effect=AssertionError("resort"),
         ),
     ):

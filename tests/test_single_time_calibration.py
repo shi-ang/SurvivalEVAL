@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import IntervalCenEvaluator, SingleTimeEvaluator, SurvivalEvaluator
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import (
+from SurvivalEVAL.evaluations.calibration.single_time import (
     integrated_calibration_index,
     one_cal_ic,
     one_calibration,

@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_calibration
-from SurvivalEVAL.Evaluators import (
+from SurvivalEVAL.evaluations.calibration.single_time import one_calibration
+from SurvivalEVAL.evaluators import (
     IntervalCenEvaluator,
     PointEvaluator,
     PycoxEvaluator,

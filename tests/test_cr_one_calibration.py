@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import CompetingRisksEvaluator, one_calibration_cr
-from SurvivalEVAL.Evaluations.Calibration.SingleTime import one_calibration
+from SurvivalEVAL.evaluations.calibration.single_time import one_calibration
 
 
 @pytest.fixture

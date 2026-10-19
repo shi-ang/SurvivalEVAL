@@ -3,19 +3,19 @@ import tracemalloc
 import numpy as np
 import pytest
 
-import SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance as td_concordance
+import SurvivalEVAL.evaluations.discrimination.distributional.time_dependent_concordance as td_concordance
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
+from SurvivalEVAL.evaluations.discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )
-from SurvivalEVAL.Evaluations.Discrimination.Distributional.TimeDependentConcordance import (
+from SurvivalEVAL.evaluations.discrimination.distributional.time_dependent_concordance import (
     _select_risk_anchors,
     _time_dependent_risk_counts,
     _time_dependent_risk_counts_from_predictions,
     concordance_time_dependent,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+from SurvivalEVAL.nonparametric_estimator.single_event import KaplanMeier
 
 
 def _add_time_dependent_pair(

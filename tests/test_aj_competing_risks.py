@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from lifelines import AalenJohansenFitter, KaplanMeierFitter
 
-from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
+from SurvivalEVAL.nonparametric_estimator.competing_risks import (
     AalenJohansenCompetingRisks,
 )
 

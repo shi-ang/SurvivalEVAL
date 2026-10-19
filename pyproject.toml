@@ -70,6 +70,10 @@ addopts = ["--ignore=tests/private"]
 [tool.isort]
 profile = "black"
 
+[tool.ruff.lint.pep8-naming]
+# Keep the established public import name; internal modules use snake_case.
+extend-ignore-names = ["SurvivalEVAL"]
+
 [project.optional-dependencies]
 dev = [
     "black>=26.3.1",

@@ -386,7 +386,7 @@ The `"Tsouprou-conditional"` method requires test and train covariates through
 
 ## Other Evaluators And Helper APIs
 
-Evaluator classes live in `SurvivalEVAL.Evaluators`, with one class per module.
+Evaluator classes live in `SurvivalEVAL.evaluators`, with one class per module.
 Import them from that package or directly from `SurvivalEVAL`, for example:
 
 ```python
@@ -398,28 +398,32 @@ from SurvivalEVAL import SurvivalEvaluator
 | `PointEvaluator` | Evaluates already-computed point survival-time predictions with concordance, MAE, MSE, RMSE, and log-rank tests. | `PointEvaluator(predicted_times, event_times, event_indicators, ...)` |
 | `SingleTimeEvaluator` | Evaluates already-computed survival probabilities at one target time with AUC, Brier score, one-calibration, and ICI. | `SingleTimeEvaluator(predicted_probs, event_times, event_indicators, ...)` |
 | `QuantileRegEvaluator` | Converts event-time quantile predictions into survival curves and reuses right-censored survival-curve metrics. | `QuantileRegEvaluator(predicted_quantiles, quantile_levels, ...)` |
-| Lower-level functions | Most evaluator methods are also available under `SurvivalEVAL.Evaluations` for advanced use cases. | `SurvivalEVAL.Evaluations.concordance(...)` |
+| Lower-level functions | Evaluation metrics are also available under `SurvivalEVAL.evaluations` for advanced use cases. | `SurvivalEVAL.evaluations.discrimination.concordance(...)` |
 
-`SurvivalEVAL.Evaluations.OtherMetrics` includes research helpers such as
+`SurvivalEVAL.evaluations.others` includes research helpers such as
 calibration slope and coefficient of variation.
 
 ## Nonparametric Estimators
 
 ### Single-event models
 
-The `SurvivalEVAL.NonparametricEstimator.SingleEvent` module includes:
+The `SurvivalEVAL.nonparametric_estimator.single_event` module includes:
+
+```python
+from SurvivalEVAL.nonparametric_estimator import single_event
+```
 
 | Method | Description | Code | Paper Link |
 | --- | --- | --- | --- |
-| Kaplan-Meier | Nonparametric estimator of the marginal survival function. | `SingleEvent.KaplanMeier(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
-| Kaplan-Meier area | Kaplan-Meier estimator with area/best-guess utilities for censored survival times. | `SingleEvent.KaplanMeierArea(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
-| Nelson-Aalen | Nonparametric estimator of the cumulative hazard function. | `SingleEvent.NelsonAalen(...)` | [Nelson](https://www.jstor.org/stable/2958850) |
-| Copula Graphic | Estimates survival under dependent censoring with a specified copula. | `SingleEvent.CopulaGraphic(...)` | [Emura and Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
-| Turnbull | EM estimator for interval-censored survival data. | `SingleEvent.TurnbullEstimator(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
-| Turnbull lifelines adapter | Lifelines-backed Turnbull estimator wrapper. | `SingleEvent.TurnbullEstimatorLifelines(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
-| Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.NonparametricEstimator.SingleEvent.Fiducial.fit_fiducial_interval_censor(...)` | [Cui](https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2252143) |
+| Kaplan-Meier | Nonparametric estimator of the marginal survival function. | `single_event.KaplanMeier(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
+| Kaplan-Meier area | Kaplan-Meier estimator with area/best-guess utilities for censored survival times. | `single_event.KaplanMeierArea(...)` | [Kaplan and Meier](https://www.jstor.org/stable/2281868) |
+| Nelson-Aalen | Nonparametric estimator of the cumulative hazard function. | `single_event.NelsonAalen(...)` | [Nelson](https://www.jstor.org/stable/2958850) |
+| Copula Graphic | Estimates survival under dependent censoring with a specified copula. | `single_event.CopulaGraphic(...)` | [Emura and Chen](https://link.springer.com/book/10.1007/978-981-10-7164-5) |
+| Turnbull | EM estimator for interval-censored survival data. | `single_event.TurnbullEstimator(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Turnbull lifelines adapter | Lifelines-backed Turnbull estimator wrapper. | `single_event.TurnbullEstimatorLifelines(...)` | [Turnbull](https://www.jstor.org/stable/2285518) |
+| Fiducial interval-censoring fitter | Fiducial estimator for interval-censored CDF samples and summaries. | `SurvivalEVAL.nonparametric_estimator.single_event.fiducial.fit_fiducial_interval_censor(...)` | [Cui](https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2252143) |
 
-For censoring survival, use `SingleEvent.KaplanMeier(times, event_indicators, reverse=True)`
+For censoring survival, use `single_event.KaplanMeier(times, event_indicators, reverse=True)`
 with the original event indicators (`1` = observed event, `0` = censored). Original events
 leave the risk set before tied censorings. IPCW metrics use this reverse KM estimate.
 `predict(times)` returns right-continuous `G(t)`; `predict(times, side="left")`
@@ -441,7 +445,7 @@ include unobserved causes or fit data containing only censorings; otherwise it i
 inferred on each fit.
 
 ```python
-from SurvivalEVAL.NonparametricEstimator.CompetingRisks import AalenJohansenCompetingRisks
+from SurvivalEVAL.nonparametric_estimator.competing_risks import AalenJohansenCompetingRisks
 
 aj = AalenJohansenCompetingRisks(n_causes=2).fit(
     times=[1, 1, 1, 2, 3], events=[1, 2, 0, 2, 0]
@@ -464,7 +468,7 @@ computes the negative outgoing hazard on the diagonal itself. Total departures
 cannot exceed the corresponding risk set.
 
 ```python
-from SurvivalEVAL.NonparametricEstimator.MultiState import AalenJohansenMultiState
+from SurvivalEVAL.nonparametric_estimator.multi_state import AalenJohansenMultiState
 
 aj = AalenJohansenMultiState(n_states=2).fit(
     event_times=[1, 2],

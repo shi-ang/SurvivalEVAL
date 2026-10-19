@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import concordance, concordance_cr, concordance_cr_per_event
-from SurvivalEVAL.Evaluations.Discrimination._concordance_utils import (
+from SurvivalEVAL.evaluations.discrimination._concordance_utils import (
     _ConcordanceCounts,
     _finalize_counts,
 )
@@ -551,7 +551,7 @@ def test_excluding_competing_controls_can_make_a_cause_undefined() -> None:
 @pytest.mark.parametrize("control_definition", ["NotCase", "EventFree"])
 def test_aggregate_ipcw_fits_one_censoring_model(control_definition: str) -> None:
     module = importlib.import_module(
-        "SurvivalEVAL.Evaluations.Discrimination.Static.Concordance"
+        "SurvivalEVAL.evaluations.discrimination.static.concordance"
     )
     with patch.object(module, "KaplanMeier", wraps=module.KaplanMeier) as estimator:
         concordance_cr(

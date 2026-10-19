@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.NonparametricEstimator.CompetingRisks import (
+from SurvivalEVAL.nonparametric_estimator.competing_risks import (
     AalenJohansenCompetingRisks,
 )
-from SurvivalEVAL.NonparametricEstimator.MultiState import AalenJohansenMultiState
+from SurvivalEVAL.nonparametric_estimator.multi_state import AalenJohansenMultiState
 
 
 def test_multistate_product_with_return_transitions():

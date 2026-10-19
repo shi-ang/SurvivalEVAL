@@ -6,15 +6,15 @@ import pytest
 from lifelines import WeibullAFTFitter
 
 from SurvivalEVAL import SurvivalEvaluator
-from SurvivalEVAL.Evaluations.PredictionError import (
+from SurvivalEVAL.evaluations.prediction_error import (
     brier_multiple_points,
     brier_multiple_points_ic,
     brier_score_ic,
 )
-from SurvivalEVAL.Evaluations.PredictionError.BrierScore import (
+from SurvivalEVAL.evaluations.prediction_error.brier_score import (
     _predict_survival_at_observed_times,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import KaplanMeier
+from SurvivalEVAL.nonparametric_estimator.single_event import KaplanMeier
 
 
 def test_ipcw_brier_and_ibs_use_reverse_km_for_mixed_training_ties():

@@ -326,7 +326,7 @@ def test_cr_auc_default_target_and_readonly_inputs(
 
 def test_cr_auc_fits_one_censoring_model(cr_auc_data: dict[str, np.ndarray]) -> None:
     module = importlib.import_module(
-        "SurvivalEVAL.Evaluations.Discrimination.SingleTime.AreaUnderROCurve"
+        "SurvivalEVAL.evaluations.discrimination.single_time.area_under_ro_curve"
     )
     data = dict(
         cr_auc_data,
@@ -475,7 +475,7 @@ def test_cr_evaluator_auc_matches_standalone(
             **outcomes,
             **options,
         )
-        module = importlib.import_module("SurvivalEVAL.Evaluators.CompetingRisksEvaluator")
+        module = importlib.import_module("SurvivalEVAL.evaluators.competing_risks_evaluator")
         with patch.object(
             module, "interpolated_curve", wraps=module.interpolated_curve
         ) as interpolate:

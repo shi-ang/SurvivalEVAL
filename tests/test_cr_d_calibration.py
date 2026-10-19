@@ -4,7 +4,7 @@ from scipy.integrate import trapezoid
 from scipy.stats import kstwobign
 
 from SurvivalEVAL import cr_d_calibration, cr_d_calibration_per_event
-from SurvivalEVAL.Evaluations.Calibration.Distributional import d_calibration
+from SurvivalEVAL.evaluations.calibration.distributional import d_calibration
 
 
 def _direct_curve(cifs, events, terminal, survival, cause, rho):

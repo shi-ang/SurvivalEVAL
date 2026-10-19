@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.Evaluations.Discrimination import (
+from SurvivalEVAL.evaluations.discrimination import (
     auc,
     concordance,
     concordance_time_dependent,

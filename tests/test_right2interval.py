@@ -4,7 +4,7 @@ from IntervalCensorDGP import right_censor_to_interval
 from matplotlib import pyplot as plt
 
 from SurvivalEVAL import IntervalCenEvaluator
-from SurvivalEVAL.Evaluations.util import check_monotonicity
+from SurvivalEVAL.evaluations.util import check_monotonicity
 
 print("Test convert_right_censor_to_interval_censor")
 

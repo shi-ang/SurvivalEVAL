@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from lifelines import NelsonAalenFitter
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+from SurvivalEVAL.nonparametric_estimator.single_event import (
     CopulaGraphic,
     KaplanMeier,
     NelsonAalen,

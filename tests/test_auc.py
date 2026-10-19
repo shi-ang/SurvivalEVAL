@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import SingleTimeEvaluator, SurvivalEvaluator
-from SurvivalEVAL.Evaluations.Discrimination import auc
+from SurvivalEVAL.evaluations.discrimination import auc
 
 
 @pytest.fixture

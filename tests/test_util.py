@@ -3,12 +3,12 @@ import pandas as pd
 import pytest
 import torch
 
-from SurvivalEVAL.Evaluations.Others import (
+from SurvivalEVAL.evaluations.others import (
     auprc_ic,
     auprc_right_censored_grid,
     auprc_uncensored_grid,
 )
-from SurvivalEVAL.Evaluations.util import (
+from SurvivalEVAL.evaluations.util import (
     align_curve_and_time_coordinates,
     check_and_convert,
     check_and_convert_event_data,

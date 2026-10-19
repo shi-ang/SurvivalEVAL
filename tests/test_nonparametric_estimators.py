@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+from SurvivalEVAL.nonparametric_estimator.single_event import (
     CopulaGraphic,
     KaplanMeier,
     KaplanMeierArea,

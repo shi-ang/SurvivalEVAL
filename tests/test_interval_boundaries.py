@@ -9,16 +9,16 @@ import numpy as np
 import pytest
 
 from SurvivalEVAL import IntervalCenEvaluator
-from SurvivalEVAL.Evaluations.Calibration.Distributional import (
+from SurvivalEVAL.evaluations.calibration.distributional import (
     coverage_ic,
     create_censor_hist,
     create_interval_c_hist,
 )
-from SurvivalEVAL.Evaluations.util import (
+from SurvivalEVAL.evaluations.util import (
     predict_multi_probs_from_curve,
     predict_prob_from_curve,
 )
-from SurvivalEVAL.NonparametricEstimator.SingleEvent import (
+from SurvivalEVAL.nonparametric_estimator.single_event import (
     KaplanMeier,
     TurnbullEstimatorLifelines,
 )
