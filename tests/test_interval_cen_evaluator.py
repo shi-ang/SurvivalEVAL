@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -8,13 +6,6 @@ from lifelines import WeibullAFTFitter
 from SurvivalEVAL.evaluations.calibration.single_time import one_cal_ic
 from SurvivalEVAL.evaluations.prediction_error import inclusion_rate, mean_error_ic
 from SurvivalEVAL.evaluators.interval_cen_evaluator import IntervalCenEvaluator
-
-
-def _load_breast_data():
-    data_path = Path(__file__).resolve().parents[1] / "data" / "breast.csv"
-    df = pd.read_csv(data_path)
-    df["right"] = df["right"].fillna(np.inf)
-    return df
 
 
 def test_h_statistic_interval_one_calibration_includes_prediction_one():
@@ -90,7 +81,13 @@ def test_interval_cen_pred_survs_setter_rejects_prediction_row_count_mismatch():
 
 @pytest.fixture(scope="module")
 def interval_evaluator():
-    df = _load_breast_data()
+    rng = np.random.default_rng(42)
+    covariate = rng.normal(size=100)
+    event_times = rng.weibull(2, size=100) * np.exp(2 + 0.3 * covariate)
+    # Unit-spaced visits observe finite intervals; follow-up ends at time 12.
+    left = np.minimum(np.floor(event_times), 12)
+    right = np.where(event_times < 12, left + 1, np.inf)
+    df = pd.DataFrame({"left": left, "right": right, "covariate": covariate})
     train_df = df.iloc[:60].copy()
     test_df = df.iloc[60:].copy()
 

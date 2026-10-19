@@ -55,6 +55,8 @@
   configuration, prediction, discrimination, prediction error, calibration, other
   metrics, plotting, then private helpers.
 - Add pytest CI on Python 3.10 and 3.13, plus Ruff, isort, and Black checks.
+  Make interval evaluator integration data deterministic and self-contained,
+  removing the test suite's dependency on an untracked local CSV.
 
 ### Migrating from 0.8.x
 
