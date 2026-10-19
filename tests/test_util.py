@@ -16,7 +16,6 @@ from SurvivalEVAL.evaluations.util import (
     check_and_convert_probabilities,
     check_monotonicity,
     make_monotonic,
-    predict_multi_probs_from_curve,
     predict_prob_from_curve,
     predict_rmst,
     survival_to_quantile,
@@ -698,14 +697,18 @@ def test_make_monotonic_rejects_invalid_inputs(curves, times, kwargs, message):
         make_monotonic(curves, times, **kwargs)
 
 
-def test_predict_prob_from_curve_pads_time_grid_starting_after_zero():
+@pytest.mark.parametrize("target_time, expected", [(0, 1), (0.5, 0.9), (1, 0.8)])
+def test_predict_prob_from_curve_pads_time_grid_starting_after_zero(
+    target_time: float,
+    expected: float,
+) -> None:
     prob = predict_prob_from_curve(
         survival_curve=np.array([0.8, 0.5, 0.2]),
         times_coordinate=np.array([1.0, 2.0, 3.0]),
-        target_time=0.5,
+        target_time=target_time,
     )
 
-    assert prob == pytest.approx(0.9)
+    assert prob == pytest.approx(expected)
 
 
 def test_predict_prob_from_curve_accepts_curve_below_one_at_origin():
@@ -775,23 +778,20 @@ def test_validate_time_points_reuses_compatible_numpy_array():
     assert validated is time_points
 
 
-def test_predict_multi_probs_from_curve_pads_time_grid_starting_after_zero():
-    probs = predict_multi_probs_from_curve(
-        survival_curve=np.array([0.8, 0.5, 0.2]),
-        times_coordinate=np.array([1.0, 2.0, 3.0]),
-        target_times=np.array([0.0, 0.5, 1.0]),
-    )
-
-    np.testing.assert_allclose(probs, [1.0, 0.9, 0.8])
-
-
-def test_predict_multi_probs_from_curve_rejects_negative_target_times():
-    with pytest.raises(ValueError, match="non-negative"):
-        predict_multi_probs_from_curve(
-            survival_curve=np.array([1.0, 0.8, 0.5]),
-            times_coordinate=np.array([0.0, 1.0, 2.0]),
-            target_times=np.array([0.5, -0.1]),
-        )
+@pytest.mark.parametrize(
+    "curves, times",
+    [
+        (np.array([[1, 0.8, 0.5]]), np.array([0, 1, 2])),
+        (np.array([1, 0.8, 0.5]), np.array([[0, 1, 2]])),
+        (np.array([[1, 0.8, 0.5]]), np.array([[0, 1, 2]])),
+    ],
+)
+def test_predict_prob_from_curve_rejects_non_1d_inputs(
+    curves: np.ndarray,
+    times: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError, match="must be 1-D arrays"):
+        predict_prob_from_curve(curves, times, 1.0)
 
 
 def test_survival_to_quantile_rejects_increasing_survival_probabilities():

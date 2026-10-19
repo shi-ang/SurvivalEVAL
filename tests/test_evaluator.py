@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from SurvivalEVAL.evaluations.calibration.single_time import one_calibration
+from SurvivalEVAL.evaluations.util import predict_prob_from_curve
 from SurvivalEVAL.evaluators import (
     IntervalCenEvaluator,
     LifelinesEvaluator,
@@ -221,6 +222,44 @@ def test_multi_curve_prediction_methods_reject_invalid_target_times(evaluator_da
 
     with pytest.raises(ValueError, match="1-D array"):
         evaluator.predict_multi_hazards_from_curve(np.array([[1.0, 2.0]]))
+
+
+@pytest.mark.parametrize("layout", ["shared_times", "shared_curve", "per_sample"])
+@pytest.mark.parametrize("interpolation", ["Linear", "Pchip"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_multi_curve_predictions_match_individual_curves(
+    layout: str,
+    interpolation: str,
+    dtype: type,
+) -> None:
+    """Preserve row alignment, dtype, target order, and finite and infinite tails."""
+    curves = np.array([[1, 0.7, 0.4], [1, 1, 1]], dtype=dtype)
+    times = np.array([[0, 2, 4], [0, 3, 6]], dtype=dtype)
+    if layout == "shared_times":
+        times = times[0]
+    elif layout == "shared_curve":
+        curves = curves[0]
+    for values in (curves, times):
+        values.flags.writeable = False
+    evaluator = SurvivalEvaluator(
+        curves, times, [1, 2], [1, 1], interpolation=interpolation
+    )
+    targets = np.array([np.inf, 0, 0.5, 2, 5, 2, 20, np.inf])
+    sample_curves, sample_times = np.broadcast_arrays(curves, times)
+    with np.errstate(divide="raise", invalid="raise", over="raise"):
+        expected = np.array(
+            [
+                [
+                    predict_prob_from_curve(curve, grid, target, interpolation)
+                    for target in targets
+                ]
+                for curve, grid in zip(sample_curves, sample_times)
+            ],
+            dtype=dtype,
+        )
+        actual = evaluator.predict_multi_probabilities_from_curve(targets)
+    assert actual.dtype == dtype
+    np.testing.assert_allclose(actual, expected)
 
 
 def test_predict_multi_hazards_from_curve_uses_grid_intervals_not_target_order():

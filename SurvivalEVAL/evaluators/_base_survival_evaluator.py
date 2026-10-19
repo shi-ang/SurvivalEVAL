@@ -11,11 +11,11 @@ import numpy as np
 
 from SurvivalEVAL.evaluations.custom_types import NumericArrayLike
 from SurvivalEVAL.evaluations.util import (
+    _predict_multi_probs_from_curve,
     align_curve_and_time_coordinates,
     check_and_convert,
     predict_mean_st,
     predict_median_st,
-    predict_multi_probs_from_curve,
     predict_prob_from_curve,
     predict_rmst,
     survival_to_quantile,
@@ -364,41 +364,24 @@ class _BaseSurvivalEvaluator:
         """
         target_times = validate_time_points(target_times, input_name="target_times")
 
-        if self.ndim_surv == 2 and self.ndim_time == 1:
-            n_samples = self._pred_survs.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
-            )
+        if self.ndim_time == 1:
+            return _predict_multi_probs_from_curve(
+                self._pred_survs,
+                self.time_coordinates,
+                target_times,
+                self.interpolation,
+            ).astype(self._pred_survs.dtype, copy=False)
 
-            for i, curve in enumerate(self._pred_survs):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    curve, self.time_coordinates, target_times, self.interpolation
-                )
-        elif self.ndim_surv == 1 and self.ndim_time == 2:
-            n_samples = self._time_coordinates.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
+        curves, time_grids = np.broadcast_arrays(
+            self._pred_survs, self.time_coordinates
+        )
+        prob_mat = np.empty(
+            (self._n_samples, target_times.size), dtype=self._pred_survs.dtype
+        )
+        for i, (curve, times) in enumerate(zip(curves, time_grids)):
+            prob_mat[i] = _predict_multi_probs_from_curve(
+                curve, times, target_times, self.interpolation
             )
-
-            for i, times in enumerate(self._time_coordinates):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    self._pred_survs, times, target_times, self.interpolation
-                )
-        elif self.ndim_surv == 2 and self.ndim_time == 2:
-            n_samples = self._pred_survs.shape[0]
-            prob_mat = np.empty(
-                (n_samples, target_times.shape[0]), dtype=self._pred_survs.dtype
-            )
-
-            for i in range(n_samples):
-                prob_mat[i] = predict_multi_probs_from_curve(
-                    self._pred_survs[i, :],
-                    self._time_coordinates[i, :],
-                    target_times,
-                    self.interpolation,
-                )
-        else:
-            raise TypeError("Dimensional error")
 
         return prob_mat
 
@@ -715,7 +698,7 @@ class _BaseSurvivalEvaluator:
         )
         if risks == "survival":
             predicted_risks = np.asarray(
-                predict_multi_probs_from_curve(
+                _predict_multi_probs_from_curve(
                     survival_curve, time_grid, target_times, self.interpolation
                 ),
                 dtype=self._pred_survs.dtype,

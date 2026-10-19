@@ -644,10 +644,10 @@ def interpolated_curve(
 
     Parameters
     ----------
-    times_coordinate : ndarray
+    times_coordinate : ndarray, shape = (n_times,)
         Strictly increasing time coordinates for the curve.
-    curve : ndarray
-        Curve values corresponding to the time coordinates.
+    curve : ndarray, shape = (..., n_times)
+        Curve values corresponding to the time coordinates along the last axis.
     interpolation : str
         Curve interpolation method, "Linear" or "Pchip".
 
@@ -662,7 +662,7 @@ def interpolated_curve(
             times_coordinate, curve, kind="linear", fill_value="extrapolate"
         )
     elif interpolation == "pchip":
-        spline = PchipInterpolator(times_coordinate, curve)
+        spline = PchipInterpolator(times_coordinate, curve, axis=-1)
     else:
         raise ValueError("interpolation must be one of ['Linear', 'Pchip']")
     return spline
@@ -706,65 +706,58 @@ def predict_prob_from_curve(
         Predicted probability of survival at the target time point.
     """
     target_time = validate_time_point(target_time, input_name="target_time")
+    survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
+    if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
+        raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
+
     return float(
-        predict_multi_probs_from_curve(
+        _predict_multi_probs_from_curve(
             survival_curve, times_coordinate, np.array([target_time]), interpolation
         )[0]
     )
 
 
-def predict_multi_probs_from_curve(
+def _predict_multi_probs_from_curve(
     survival_curve: np.ndarray,
     times_coordinate: np.ndarray,
-    target_times: NumericArrayLike,
-    interpolation: str = "Linear",
+    target_times: np.ndarray,
+    interpolation: str,
 ) -> np.ndarray:
     """
-    Predict the probability of survival at multiple time points from the survival curve.
-
-    The survival curve is
-    interpolated using the specified interpolation method ('Linear' or 'Pchip').
-    If the input time grid does not start at 0, a time-zero point with survival
-    probability 1 is prepended before interpolation.
-    If a target time is greater than the largest time coordinate, the probability
-    is extrapolated by the linear function through (0, 1) and the last grid point.
-    Survival at positive infinity is defined as 0, including for flat curves.
+    Interpolate validated, zero-padded survival curves on a shared time grid.
 
     Parameters
     ----------
-    survival_curve : ndarray
-        Survival curve. 1-D array of survival probabilities.
-    times_coordinate : ndarray
-        Time points corresponding to the survival curve. 1-D array of time
-        points. Values must be non-negative. If the first value is greater than
-        0, `(0, 1)` is prepended to the curve.
-    target_times : NumericArrayLike
-        Non-negative time points at which to predict the probability of survival.
+    survival_curve : ndarray, shape = (..., n_times)
+        Survival probabilities with the time axis last.
+    times_coordinate : ndarray, shape = (n_times,)
+        Validated, strictly increasing time grid starting at zero.
+    target_times : ndarray, shape = (n_target_times,)
+        Validated non-negative times, possibly including positive infinity.
     interpolation : str
-        The monotonic cubic interpolation method. One of ['Linear', 'Pchip']. Default: 'Linear'.
-        If 'Linear', use the interp1d method from scipy.interpolate.
-        If 'Pchip', use the PchipInterpolator from scipy.interpolate.
+        Curve interpolation method, "Linear" or "Pchip".
 
     Returns
     -------
-    predict_probabilities : ndarray
-        Predicted probabilities of survival at the target time points.
+    ndarray, shape = (..., n_target_times)
+        Survival probabilities with linear tails and zero survival at infinity.
     """
-    survival_curve, times_coordinate = zero_padding(survival_curve, times_coordinate)
-    if survival_curve.ndim != 1 or times_coordinate.ndim != 1:
-        raise ValueError("survival_curve and times_coordinate must be 1-D arrays.")
-    target_times = validate_time_points(target_times, input_name="target_times")
-
     spline = interpolated_curve(times_coordinate, survival_curve, interpolation)
 
     max_time = float(times_coordinate[-1])
     finite = np.isfinite(target_times)
-    predict_probabilities = np.zeros(target_times.shape, dtype=float)
+    predict_probabilities = np.zeros(
+        (*survival_curve.shape[:-1], target_times.size), dtype=float
+    )
     within_grid = finite & (target_times <= max_time)
-    predict_probabilities[within_grid] = spline(target_times[within_grid])
+    predict_probabilities[..., within_grid] = spline(target_times[within_grid])
     after_grid = finite & (target_times > max_time)
-    predict_probabilities[after_grid] = np.maximum(
-        1 - (1 - float(survival_curve[-1])) * target_times[after_grid] / max_time, 0
+    predict_probabilities[..., after_grid] = np.maximum(
+        1
+        - (1 - survival_curve[..., -1:].astype(float))
+        * target_times[after_grid]
+        / max_time,
+        0,
     )
     return predict_probabilities
 
@@ -1066,55 +1059,6 @@ def predict_median_st_ind(
         slope = (1 - min_prob) / (0 - max_time)
         median_st = -0.5 / slope
     return median_st
-
-
-def quantile_to_survival(
-    quantile_levels: np.ndarray,
-    quantile_predictions: np.ndarray,
-    time_coordinates: np.ndarray,
-    interpolate: str = "Pchip",
-) -> np.ndarray:
-    """
-    Convert predicted event-time quantiles to survival probabilities on a time grid.
-
-    Parameters
-    ----------
-    quantile_levels : ndarray
-        Increasing cumulative event-probability levels, with shape (n_quantiles,).
-    quantile_predictions : ndarray
-        Predicted event-time quantiles, with shape (n_samples, n_quantiles).
-    time_coordinates : ndarray
-        Time coordinates matching the last axis of the predicted curves.
-    interpolate : str
-        Curve interpolation method, "Linear" or "Pchip".
-
-    Returns
-    -------
-    ndarray
-        Survival probabilities with shape (n_samples, n_times), using a linear tail beyond the last quantile.
-    """
-    survival_level = 1 - quantile_levels
-    slope = -quantile_levels[-1] / quantile_predictions[:, -1]
-    surv_pred = np.empty((quantile_predictions.shape[0], time_coordinates.shape[0]))
-    for i in range(quantile_predictions.shape[0]):
-        # fit an interpolation function to the cdf
-        spline = interpolated_curve(
-            quantile_predictions[i, :], survival_level, interpolate
-        )
-
-        # if the quantile level is beyond last cdf, we extrapolate the
-        beyond_prob_idx = np.where(time_coordinates > quantile_predictions[i, -1])[0]
-        surv_pred[i] = spline(time_coordinates)
-        surv_pred[i, beyond_prob_idx] = np.clip(
-            time_coordinates[beyond_prob_idx] * slope[i] + 1, a_min=0, a_max=1
-        )
-
-    # sanity checks
-    assert np.all(surv_pred >= 0), "Survival predictions contain negative."
-    assert check_monotonicity(
-        surv_pred, direction="decreasing"
-    ), "Survival predictions are not nonincreasing."
-    return surv_pred
 
 
 def survival_to_quantile(
