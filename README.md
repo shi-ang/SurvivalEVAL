@@ -17,6 +17,7 @@ outputs.
 The package is designed around evaluator classes:
 
 - `SurvivalEvaluator`: general right-censored survival-curve predictions.
+- `CompetingRisksEvaluator`: cause-specific cumulative incidence predictions.
 - `LifelinesEvaluator`, `PycoxEvaluator`, and `ScikitSurvivalEvaluator`: adapters
   for common model-output formats.
 - `IntervalCenEvaluator`: interval-censored survival-curve predictions.
@@ -75,6 +76,13 @@ tests before committing `pyproject.toml`, `requirements.txt`, and `uv.lock` toge
 when they change. Explicit security minimums also apply to `pip` installations;
 the lockfile itself only controls uv project environments. Dependabot checks for
 uv dependency updates weekly.
+
+### Upgrading to 0.9.0
+
+This release reorganizes module paths, removes unused utilities, and corrects
+several metric estimation conventions. Root evaluator imports remain available.
+See the [migration guide](https://github.com/shi-ang/SurvivalEVAL/blob/main/CHANGELOG.md#migrating-from-08x)
+before comparing results with earlier releases.
 
 ## Input Conventions
 
@@ -190,27 +198,27 @@ coverage, coverage_gap, average_width = evl.coverage(
 
 | Notebook | What it covers |
 | --- | --- |
-| [Single-event metrics](examples/SingleEvent_Example.ipynb) | All metric families, censoring methods, residuals, and calibration diagnostics. |
-| [Competing-risks metrics](examples/CompetingRisks_Example.ipynb) | Cause-specific and aggregate discrimination, Brier scores, and calibration from predicted CIFs. |
+| [Single-event metrics](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/SingleEvent_Example.ipynb) | All metric families, censoring methods, residuals, and calibration diagnostics. |
+| [Competing-risks metrics](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/CompetingRisks_Example.ipynb) | Cause-specific and aggregate discrimination, Brier scores, and calibration from predicted CIFs. |
 
 ### Model Integrations
 
 | Notebook | What it covers |
 | --- | --- |
-| [lifelines](examples/Lifelines_Example.ipynb) | Fit a Cox model and evaluate its survival DataFrame with `LifelinesEvaluator`. |
-| [pycox](examples/Pycox_Example.ipynb) | Train a LogisticHazard model and evaluate its discrete-time predictions with `PycoxEvaluator`. |
-| [scikit-survival](examples/Scikit-survival_Example.ipynb) | Evaluate Cox model step functions with `ScikitSurvivalEvaluator`. |
-| [auton-survival](examples/PySurvival_auton-survival_Example.ipynb) | Evaluate Deep Survival Machines array predictions with `SurvivalEvaluator`. |
-| [Point predictions](examples/PointEvaluator_Example.ipynb) | Evaluate survival-SVM event-time predictions with `PointEvaluator`. |
+| [lifelines](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Lifelines_Example.ipynb) | Fit a Cox model and evaluate its survival DataFrame with `LifelinesEvaluator`. |
+| [pycox](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Pycox_Example.ipynb) | Train a LogisticHazard model and evaluate its discrete-time predictions with `PycoxEvaluator`. |
+| [scikit-survival](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Scikit-survival_Example.ipynb) | Evaluate Cox model step functions with `ScikitSurvivalEvaluator`. |
+| [auton-survival](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/PySurvival_auton-survival_Example.ipynb) | Evaluate Deep Survival Machines array predictions with `SurvivalEvaluator`. |
+| [Point predictions](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/PointEvaluator_Example.ipynb) | Evaluate survival-SVM event-time predictions with `PointEvaluator`. |
 
 ### Practical Guides
 
 | Notebook | What it covers |
 | --- | --- |
-| [Cross-validation calibration](examples/Calibration_for_CrossValidation_Example.ipynb) | Pool out-of-fold predictions for calibration diagnostics. |
-| [Reverse Kaplan–Meier and IPCW](examples/Reverse_Kaplan_Meier_IPCW.ipynb) | Understand censoring ties, left-limit weights, and their effects on IPCW metrics. |
-| [Interpolation methods](examples/Compare_Interpolation_Methods.ipynb) | Compare curve shapes and timings for linear, cubic, PCHIP, and R's Hyman-filtered interpolation. |
-| [Nonmonotonic curves](examples/Dealing_Non-Monotonic_Curves.ipynb) | Compare ceil, floor, isotonic, and bootstrap corrections for survival curves. |
+| [Cross-validation calibration](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Calibration_for_CrossValidation_Example.ipynb) | Pool out-of-fold predictions for calibration diagnostics. |
+| [Reverse Kaplan–Meier and IPCW](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Reverse_Kaplan_Meier_IPCW.ipynb) | Understand censoring ties, left-limit weights, and their effects on IPCW metrics. |
+| [Interpolation methods](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Compare_Interpolation_Methods.ipynb) | Compare curve shapes and timings for linear, cubic, PCHIP, and R's Hyman-filtered interpolation. |
+| [Nonmonotonic curves](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/Dealing_Non-Monotonic_Curves.ipynb) | Compare ceil, floor, isotonic, and bootstrap corrections for survival curves. |
 
 ## Single-Event Right-Censored Metrics
 
@@ -218,7 +226,7 @@ Right-censored survival-curve evaluators include `SurvivalEvaluator`,
 `LifelinesEvaluator`, `PycoxEvaluator`, `ScikitSurvivalEvaluator`, and
 `QuantileRegEvaluator`.
 
-See the executed [single-event metrics notebook](examples/SingleEvent_Example.ipynb)
+See the executed [single-event metrics notebook](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/SingleEvent_Example.ipynb)
 for all metric families, censoring-method comparisons, and calibration diagnostics.
 
 ### Point Prediction Discrimination
@@ -301,7 +309,7 @@ These metrics evaluate the full predicted survival curve.
 It supports per-cause and aggregated concordance, AUC, Brier scores, integrated Brier scores, single-time calibration,
 ICI, AJ-calibration, and CR-D-calibration, including KS deviations.
 
-See the executed [competing risks notebook](examples/CompetingRisks_Example.ipynb)
+See the executed [competing risks notebook](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/CompetingRisks_Example.ipynb)
 for a complete walkthrough with per-cause results, aggregation, and calibration plots.
 
 In the tables, `t` is a fixed evaluation horizon, `times` is an explicit evaluation grid,
@@ -435,6 +443,18 @@ step estimate, independently of the linear tail used by `km.predict`.
 | --- | --- | --- | --- |
 | Aalen–Johansen for competing risks | Estimates overall survival and cause-specific cumulative incidence functions from right-censored times and cause labels. | `SurvivalEVAL.nonparametric_estimator.competing_risks.AalenJohansenCompetingRisks(n_causes=2)` | [Aalen and Johansen](https://www.jstor.org/stable/4615704) |
 | Aalen–Johansen for multi-state models | Estimates transition probability matrices from aggregated risk sets and transition counts. | `SurvivalEVAL.nonparametric_estimator.multi_state.AalenJohansenMultiState(n_states=3)` | [Aalen and Johansen](https://www.jstor.org/stable/4615704) |
+
+## Known Limitations
+
+- `MultiStateEvaluator` is an exported scaffold without prediction or metric
+  methods. Multi-state transition-probability estimation is available through
+  `AalenJohansenMultiState`; multi-state evaluation metrics are not yet implemented.
+- Single-event `ksd_calibration` applies right-censoring Kaplan–Meier to transformed
+  survival probabilities, although right-censored times imply left-censored
+  survival probabilities. The resulting statistic and p-value can be misleading
+  with censored outcomes. Use binned D-calibration and calibration curves for
+  those diagnostics. The [single-event notebook](https://github.com/shi-ang/SurvivalEVAL/blob/main/examples/SingleEvent_Example.ipynb)
+  explains this existing limitation.
 
 ## Citing This Work
 
