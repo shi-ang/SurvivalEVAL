@@ -932,7 +932,8 @@ class SurvivalEvaluator(_BaseSurvivalEvaluator):
             Evaluation time. None uses default_target_time, the median observed
             time across available training and test outcomes.
         knots : int, default=3
-            The number of knots to use for the spline fit in the ICI calculation.
+            Total restricted cubic spline knot count, at least three.
+            Nonconstant risks must support distinct knots and an identifiable fit.
         draw_figure : bool, default=True
             Whether to draw the figure of the ICI.
         figure_range : tuple, default=None

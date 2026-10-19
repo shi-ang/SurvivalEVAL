@@ -340,7 +340,8 @@ class SingleTimeEvaluator:
         Parameters
         ----------
         knots : int, default=3
-            The number of knots to use for the spline fit. If None, the number of knots is automatically determined.
+            Total restricted cubic spline knot count, at least three.
+            Nonconstant risks must support distinct knots and an identifiable fit.
         draw_figure : bool, default=True
             Whether to create a figure showing the graphical calibration curve.
         figure_range : tuple, optional

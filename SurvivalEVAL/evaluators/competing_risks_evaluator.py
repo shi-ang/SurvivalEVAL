@@ -13,6 +13,7 @@ from SurvivalEVAL.evaluations.calibration import (
     aj_calibration,
     aj_calibration_per_event,
     cr_d_calibration,
+    integrated_calibration_index_cr,
     one_calibration_cr,
 )
 from SurvivalEVAL.evaluations.calibration.single_time.util import (
@@ -1267,6 +1268,67 @@ class CompetingRisksEvaluator:
             ties=ties,
             tau=tau,
             event_of_interest=event_of_interest,
+        )
+
+    def integrated_calibration_index(
+        self,
+        target_time: float | None = None,
+        event_of_interest: int = 1,
+        knots: int = 3,
+        draw_figure: bool = True,
+        figure_range: tuple | None = None,
+    ) -> dict | tuple[dict, tuple[plt.Figure, plt.Axes]]:
+        """
+        Estimate a selected cause's smoothed calibration curve and ICI.
+
+        The Fine-Gray calibration model follows Austin et al. [1]_. It uses
+        evaluation outcomes to estimate censoring weights; training outcomes
+        are not needed for the fit.
+
+        Parameters
+        ----------
+        target_time : float | None, default=None
+            Finite, non-negative time within the CIF prediction grid.
+            None uses default_target_time.
+        event_of_interest : int, default=1
+            Integer cause label from 1 through n_causes.
+        knots : int, default=3
+            Total restricted cubic spline knot count, at least three.
+            Nonconstant risks must support distinct knots and a full-rank fit.
+        draw_figure : bool, default=True
+            Return a calibration plot without displaying it.
+        figure_range : tuple, optional
+            Plot limits (x_min, x_max, y_min, y_max).
+
+        Returns
+        -------
+        dict or tuple[dict, tuple[plt.Figure, plt.Axes]]
+            ICI, E50, E90, E_max, and curve data; optionally figure and axes.
+            An unobserved cause has a zero calibrated curve. Constant risks
+            use the selected-cause Aalen-Johansen incidence estimate.
+
+        References
+        ----------
+        .. [1] Austin et al. (2022). "Graphical calibration curves and the
+           integrated calibration index (ICI) for competing risk models".
+           Diagnostic and Prognostic Research, 6, 2.
+           https://doi.org/10.1186/s41512-021-00114-6
+        """
+        self._check_event_of_interest(event_of_interest)
+        if target_time is None:
+            target_time = self.default_target_time
+        probabilities = self.predict_risks(
+            "CIF", target_time=target_time, event_of_interest=event_of_interest
+        )
+        return integrated_calibration_index_cr(
+            probabilities,
+            self.event_times,
+            self.event_indicators,
+            target_time,
+            event_of_interest=event_of_interest,
+            knots=knots,
+            draw_figure=draw_figure,
+            figure_range=figure_range,
         )
 
     def one_calibration(

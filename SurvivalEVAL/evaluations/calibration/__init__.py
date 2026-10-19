@@ -15,6 +15,7 @@ from .distributional import (
 )
 from .single_time import (
     integrated_calibration_index,
+    integrated_calibration_index_cr,
     one_cal_ic,
     one_calibration,
     one_calibration_cr,
@@ -28,12 +29,13 @@ __all__ = [
     "cr_d_calibration_per_event",
     "d_cal_ic",
     "d_calibration",
+    "integrated_calibration_index",
+    "integrated_calibration_index_cr",
     "km_calibration",
     "ksd_cal_ic",
     "ksd_calibration",
-    "residuals",
-    "integrated_calibration_index",
     "one_cal_ic",
     "one_calibration",
     "one_calibration_cr",
+    "residuals",
 ]

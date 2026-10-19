@@ -1,9 +1,10 @@
-"""Shared calibration-curve diagnostics for evaluator reports."""
+"""Shared probability transforms, spline bases, and calibration-curve diagnostics."""
 
 from __future__ import annotations
 
 import numpy as np
 from matplotlib import pyplot as plt
+from patsy import dmatrix
 
 from SurvivalEVAL.evaluations.util import fit_least_squares
 from SurvivalEVAL.evaluations.util_plots import pp_plot
@@ -80,3 +81,95 @@ def _maximum_local_deviation(
         1.0, slopes, out=np.full(slopes.shape, np.inf), where=slopes != 0
     )
     return float(np.max(np.maximum(slopes, inverse_slopes)))
+
+
+def _restricted_cubic_spline(
+    x: np.ndarray,
+    evaluation_x: np.ndarray,
+    knots: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Build and standardize a restricted cubic spline basis.
+
+    Derive knots, centering, and scaling from x and reuse them when evaluating
+    evaluation_x. Any transformation of the covariate belongs to the caller.
+
+    Restricted cubic splines constrain the tails to be linear [1]_. Percentile
+    knot placement follows the Hmisc rule [2]_, without its small-sample or
+    tied-value adjustments. Patsy's centered natural cubic basis [3]_
+    represents the same spline space.
+
+    Parameters
+    ----------
+    x : ndarray, shape (n_samples,)
+        Finite, nonconstant training covariate values.
+    evaluation_x : ndarray, shape (n_evaluation,)
+        Finite covariate values at which to evaluate the fitted basis.
+    knots : int
+        Total knot count, including the two boundary knots.
+
+    Returns
+    -------
+    tuple[ndarray, ndarray]
+        Training and evaluation designs, each with knots - 1
+        columns. Both use the training knots, centering, and scaling.
+
+    References
+    ----------
+    .. [1] Harrell, F. E. "Regression Modeling Strategies", course notes,
+       Section 2.4.5, "Restricted Cubic Splines".
+       https://hbiostat.org/rmsc/genreg
+    .. [2] Harrell, F. E. Hmisc documentation, "rcspline.eval: Restricted
+       Cubic Spline Design Matrix", knot-location specification.
+       https://github.com/harrelfe/Hmisc/blob/master/man/rcspline.eval.Rd
+    .. [3] Patsy documentation, "patsy.builtins.cr".
+       https://patsy.readthedocs.io/en/latest/builtins-reference.html#patsy.builtins.cr
+    """
+    outer = 0.1 if knots == 3 else 0.05 if knots <= 6 else 0.025
+    locations = np.quantile(x, np.linspace(outer, 1 - outer, knots))
+    if np.unique(x).size < knots or np.unique(locations).size < knots:
+        raise ValueError(
+            "Values do not support the requested distinct spline knots."
+        )
+    settings = {
+        "interior_knots": locations[1:-1],
+        "lower": locations[0],
+        "upper": locations[-1],
+    }
+    design = dmatrix(
+        "cr(x, knots=interior_knots, lower_bound=lower, upper_bound=upper, constraints='center') - 1",
+        {"x": x, **settings},
+    )
+    evaluation = np.asarray(
+        dmatrix(
+            design.design_info,
+            {"x": evaluation_x, **settings},
+        )
+    )
+    center, scale = np.mean(design, axis=0), np.std(design, axis=0)
+    if np.any(scale == 0):
+        raise ValueError("Values produce a rank-deficient spline design.")
+    design = (np.asarray(design) - center) / scale
+    if np.linalg.matrix_rank(design) < design.shape[1]:
+        raise ValueError("Values produce a rank-deficient spline design.")
+    return design, (evaluation - center) / scale
+
+
+def _cloglog(probabilities: np.ndarray) -> np.ndarray:
+    """
+    Apply the complementary log-log transform with finite boundaries.
+
+    Parameters
+    ----------
+    probabilities : ndarray
+        Event probabilities in [0, 1].
+
+    Returns
+    -------
+    ndarray
+        Float64 values of log(-log(1 - p)), preserving the input shape.
+        Inputs are not modified; clipping to [1e-10, 1 - 1e-10] is performed
+        after conversion to float64 to handle float32 boundaries safely.
+    """
+    probabilities = np.clip(np.asarray(probabilities, dtype=float), 1e-10, 1 - 1e-10)
+    return np.log(-np.log1p(-probabilities))

@@ -112,13 +112,10 @@ def test_ici_constant_predictions_use_kaplan_meier(probability, dtype):
         plt.close(fig)
 
 
-@pytest.mark.parametrize("levels", [None, 2, 3])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_ici_mixed_boundary_predictions_are_finite(levels, dtype):
+def test_ici_mixed_boundary_predictions_are_finite(dtype):
     rng = np.random.default_rng(17)
     predictions = rng.uniform(0.05, 0.95, 120)
-    if levels is not None:
-        predictions = np.floor(predictions * levels) / (levels - 1)
     predictions[:2] = [0.0, 1.0]
     predictions = predictions.astype(dtype)
     with warnings.catch_warnings():

@@ -84,6 +84,16 @@
     zero. False uses expected-binomial HL/DN scoring. Use right-continuous,
     stepwise calibration estimates and include events at the target time.
 
+18. Add selected-cause `integrated_calibration_index_cr` and
+    `CompetingRisksEvaluator.integrated_calibration_index` using a Fine-Gray
+    calibration model. Share restricted cubic spline construction, Efron
+    partial-likelihood/baseline fitting, error summaries, and plots with survival
+    ICI. Correct survival ICI's previous B-spline and Breslow baseline, changing
+    existing numerical results. Require integer knot counts of at least three
+    and reject unsupported nonconstant risks rather than reducing complexity.
+    Retain exact KM/AJ constant-risk estimates and stepwise baseline predictions.
+    Add reproducible R reference fixtures for censoring and ties. No new dependencies.
+
 ## 2026-10-08: Version 0.8.7
 
 1. Handle event-probability boundaries in ICI with a finite complementary log-log transform, preserving original
