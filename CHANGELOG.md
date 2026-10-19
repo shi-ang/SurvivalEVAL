@@ -1,8 +1,8 @@
 # CHANGELOG
 
-## Version 0.9.0
+## 2026-10-19: Version 0.9.0
 
-### New features
+### Key new features
 
 - Add `CompetingRisksEvaluator` for cause-specific CIF predictions, with naive/IPCW
   concordance and AUC, Brier scores and IBS, AJ-based one-calibration, Fine-Gray
@@ -16,7 +16,7 @@
 - Add comprehensive single-event and competing-risk notebooks and refresh all
   eleven examples with explanations, plots, and metric interpretation.
 
-### Correctness and behavior changes
+### Bug fixes and behavior changes
 
 - Correct single-event K-S D-calibration to fit Kaplan–Meier on CDF probabilities
   `F(t) = 1 - S(t)`, preserving right censoring and completing the step CDF with

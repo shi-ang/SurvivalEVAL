@@ -14,6 +14,9 @@ It supports right-censored and interval-censored outcomes, predicted survival
 curves, point predictions, single-time probabilities, and quantile-regression
 outputs.
 
+> [!NOTE]
+> SurvivalEVAL is under active development, so its API may change slightly between releases.
+
 The package is designed around evaluator classes:
 
 - `SurvivalEvaluator`: general right-censored survival-curve predictions.
