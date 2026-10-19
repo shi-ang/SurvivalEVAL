@@ -1,24 +1,13 @@
-<p align="center">
-  <a href="https://github.com/shi-ang/SurvivalEVAL/">
-    <img
-      alt="SurvivalEVAL logo"
-      src="https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/logo.png"
-      width="755"
-      height="200"></a>
-</p>
+# SurvivalEVAL
+
+[![SurvivalEVAL logo][logo-image]][repository]
 
 -----------------
 
-<p align="center">
-  <a href="https://pypi.org/project/SurvivalEVAL/">
-    <img alt="PyPI" src="https://img.shields.io/pypi/v/SurvivalEVAL"></a>
-  <a href="https://pypi.org/project/SurvivalEVAL/">
-    <img alt="Python Version" src="https://img.shields.io/badge/python-3.10%2B-blue.svg"></a>
-  <a href="https://opensource.org/license/gpl-3-0">
-    <img alt="License" src="https://img.shields.io/badge/license-GPLv3-blue.svg"></a>
-  <a href="https://github.com/shi-ang/SurvivalEVAL/issues">
-    <img alt="Maintenance" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg"></a>
-</p>
+[![PyPI][pypi-badge]][pypi]
+[![Python Version][python-badge]][pypi]
+[![License][license-badge]][license]
+[![Maintenance][maintenance-badge]][issues]
 
 SurvivalEVAL is a Python 3.10+ package for evaluating survival analysis predictions.
 It supports right-censored and interval-censored outcomes, predicted survival
@@ -52,10 +41,7 @@ SurvivalEVAL groups metrics by prediction target:
 - Interval-censored metrics evaluate survival curves against observed event
   intervals.
 
-<p align="center">
-  <a href="https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png">
-    <img alt="Visualization of the evaluation metrics" src="https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/all_metrics.png"></a>
-</p>
+[![Visualization of the evaluation metrics][metrics-image]][metrics-page]
 
 ## Installation
 
@@ -510,3 +496,15 @@ journal = {Proceedings of the AAAI Symposium Series},
 doi = {10.1609/aaaiss.v2i1.27713}
 }
 ```
+
+[repository]: https://github.com/shi-ang/SurvivalEVAL/
+[logo-image]: https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/logo.png
+[pypi]: https://pypi.org/project/SurvivalEVAL/
+[pypi-badge]: https://img.shields.io/pypi/v/SurvivalEVAL
+[python-badge]: https://img.shields.io/badge/python-3.10%2B-blue.svg
+[license]: https://opensource.org/license/gpl-3-0
+[license-badge]: https://img.shields.io/badge/license-GPLv3-blue.svg
+[issues]: https://github.com/shi-ang/SurvivalEVAL/issues
+[maintenance-badge]: https://img.shields.io/badge/Maintained%3F-yes-green.svg
+[metrics-page]: https://github.com/shi-ang/SurvivalEVAL/blob/main/all_metrics.png
+[metrics-image]: https://raw.githubusercontent.com/shi-ang/SurvivalEVAL/main/all_metrics.png
