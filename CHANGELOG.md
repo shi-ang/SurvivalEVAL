@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Unreleased
+
+### Bug fixes and behavior changes
+
+- Average the IPCW-D mean error over the full test set instead of over the
+  observed events only, matching Eq. (5) of Qi et al. (2023). Scores were
+  previously inflated by a factor of `n / n_events`.
+
 ## 2026-10-19: Version 0.9.0
 
 ### Key new features
