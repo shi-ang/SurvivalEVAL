@@ -221,14 +221,14 @@ def test_ipcw_d_matches_uncensored_mean_without_censoring(error_type: str) -> No
     predicted_times = np.array([1.0, 3.0, 9.0, 12.0])
     event_times = np.array([2.0, 4.0, 6.0, 8.0])
     event_indicators = np.ones(4, dtype=bool)
-    kwargs = dict(
-        predicted_times=predicted_times,
-        event_times=event_times,
-        event_indicators=event_indicators,
-        train_event_times=event_times,
-        train_event_indicators=event_indicators,
-        error_type=error_type,
-    )
+    kwargs = {
+        "predicted_times": predicted_times,
+        "event_times": event_times,
+        "event_indicators": event_indicators,
+        "train_event_times": event_times,
+        "train_event_indicators": event_indicators,
+        "error_type": error_type,
+    }
     assert mean_error(method="IPCW-D", **kwargs) == pytest.approx(
         mean_error(method="Uncensored", **kwargs)
     )
