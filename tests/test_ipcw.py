@@ -66,7 +66,7 @@ def _score(metric: str, times: np.ndarray, target: float) -> float:
         ("concordance", 8 / 89),
         ("dynamic", 8 / 89),
         ("competing", 8 / 89),
-        ("error", 11 / 4),
+        ("error", 11 / 6),
     ],
 )
 def test_ipcw_metrics_share_positive_linear_extrapolation(
@@ -376,9 +376,10 @@ def test_evaluator_ipcw_d_still_weights_errors_when_test_set_contains_censoring(
         predictions[evaluator.event_indicators]
         - evaluator.event_times[evaluator.event_indicators]
     )
-    # Observed events at 2 and 6 have inverse censoring weights 1 and 3.
+    # Observed events at 2 and 6 have inverse censoring weights 1 and 3, and the
+    # weighted sum is averaged over all three test subjects.
     losses = np.abs(errors) if metric == "mae" else np.square(errors)
-    expected = np.mean(losses * np.array([1.0, 3.0]))
+    expected = np.sum(losses * np.array([1.0, 3.0])) / evaluator.event_times.size
     if metric == "rmse":
         expected = np.sqrt(expected)
     assert getattr(evaluator, metric)(method="IPCW-D") == pytest.approx(expected)

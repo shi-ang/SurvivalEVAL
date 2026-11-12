@@ -6,7 +6,7 @@ from SurvivalEVAL.nonparametric_estimator.single_event import KaplanMeier
 
 
 @pytest.mark.parametrize(
-    "error_type, expected", [("absolute", 10 / 3), ("squared", 31 / 3)]
+    "error_type, expected", [("absolute", 10 / 4), ("squared", 31 / 4)]
 )
 def test_ipcw_d_uses_reverse_km_for_mixed_training_ties(error_type, expected):
     value = mean_error(
@@ -161,6 +161,7 @@ def test_ipcw_d_uses_original_event_times_before_loss_truncation() -> None:
     for array in (times, events, predictions, train_times, train_events):
         array.flags.writeable = False
     # After loss truncation at 5, event errors are 1, 2, 1; weights remain 1, 3/2, 3.
+    # The weighted sum of 7 is averaged over all four test subjects.
     assert mean_error(
         predictions,
         times,
@@ -169,7 +170,7 @@ def test_ipcw_d_uses_original_event_times_before_loss_truncation() -> None:
         train_events,
         method="IPCW-D",
         truncation_time=5.0,
-    ) == pytest.approx(7 / 3)
+    ) == pytest.approx(7 / 4)
 
 
 def test_ipcw_d_rejects_no_observed_events() -> None:
@@ -197,3 +198,37 @@ def test_ipcw_d_rejects_nonbinary_event_indicators(invalid_training: bool) -> No
             train_events,
             method="IPCW-D",
         )
+
+
+def test_ipcw_d_normalizes_by_the_full_test_set() -> None:
+    # Reverse KM on the training data is 1 up to 4 and 2/3 afterwards, so the events
+    # at 2 and 6 carry inverse censoring weights 1 and 3/2 and weighted errors 1 and 3.
+    value = mean_error(
+        predicted_times=np.array([1.0, 3.0, 8.0]),
+        event_times=np.array([2.0, 4.0, 6.0]),
+        event_indicators=np.array([True, False, True]),
+        train_event_times=np.array([2.0, 4.0, 6.0, 8.0]),
+        train_event_indicators=np.array([True, False, True, True]),
+        method="IPCW-D",
+    )
+    assert value == pytest.approx(4 / 3)
+    # Averaging over the observed events instead would give 4 / 2.
+    assert value != pytest.approx(4 / 2)
+
+
+@pytest.mark.parametrize("error_type", ["absolute", "squared"])
+def test_ipcw_d_matches_uncensored_mean_without_censoring(error_type: str) -> None:
+    predicted_times = np.array([1.0, 3.0, 9.0, 12.0])
+    event_times = np.array([2.0, 4.0, 6.0, 8.0])
+    event_indicators = np.ones(4, dtype=bool)
+    kwargs = {
+        "predicted_times": predicted_times,
+        "event_times": event_times,
+        "event_indicators": event_indicators,
+        "train_event_times": event_times,
+        "train_event_indicators": event_indicators,
+        "error_type": error_type,
+    }
+    assert mean_error(method="IPCW-D", **kwargs) == pytest.approx(
+        mean_error(method="Uncensored", **kwargs)
+    )

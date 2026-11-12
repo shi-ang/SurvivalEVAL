@@ -53,7 +53,8 @@ def mean_error(
         The MAE formulations of "IPCW-D", "IPCW-T", and "Pseudo_obs" are described
         in Sections 3.4, 3.5, and 3.6 of [2]_, respectively.
         IPCW-D weights observed-event errors by 1/G(event_time-) from reverse KM
-        fitted on training outcomes, with linear extrapolation beyond follow-up.
+        fitted on training outcomes, with linear extrapolation beyond follow-up,
+        and averages them over all test samples.
         Nonpositive or nonfinite contributing probabilities raise ValueError.
     weighted : bool, default=True
         Whether to use weighting scheme for MAE.
@@ -250,7 +251,11 @@ def mean_error(
             errors = np.log(event_times) - np.log(predicted_times)
         else:
             errors = event_times - predicted_times
-        return (error_func(errors)[event_indicators] * event_weights).mean()
+        # Qi et al. (2023), Eq. (5): the weighted event errors are averaged over
+        # the full test set, not over the observed events only.
+        return float(
+            (error_func(errors)[event_indicators] * event_weights).sum() / n_test
+        )
     elif method == "pseudo_obs":
         # Calculate the best guess time (surrogate time) by the contribution of the censored subjects to KM curve
         n_train = train_event_times.size
