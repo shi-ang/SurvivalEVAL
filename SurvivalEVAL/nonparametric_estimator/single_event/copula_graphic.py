@@ -83,19 +83,19 @@ class CopulaGraphic:
 
         with np.errstate(divide="ignore"):
             # ignore division by zero warnings,
-            # such warnings are expected when the last time point has an event so the event_diff is 0.
-            # but we will set the last point to 0 anyway.
+            # such warnings are expected when the last time point has no remaining survivors
+            # (event_diff == 0), matching compound.Cox's convention.
             if type == "clayton":
                 diff_ = (event_diff / self.n_samples) ** (-alpha) - (
                     self.population_count / self.n_samples
                 ) ** (-alpha)
-                diff_[-1] = 0
+                diff_[event_diff == 0] = 0
                 self.survival_probabilities = (1.0 + np.cumsum(diff_)) ** (-1.0 / alpha)
             elif type == "gumbel":
                 diff_ = (-np.log(event_diff / self.n_samples)) ** (alpha + 1) - (
                     -np.log(self.population_count / self.n_samples)
                 ) ** (alpha + 1)
-                diff_[-1] = 0
+                diff_[event_diff == 0] = 0
                 self.survival_probabilities = np.exp(
                     -(np.cumsum(diff_) ** (1 / (1 + alpha)))
                 )
@@ -104,7 +104,7 @@ class CopulaGraphic:
                     (np.exp(-alpha * event_diff / self.n_samples) - 1)
                     / (np.exp(-alpha * self.population_count / self.n_samples) - 1)
                 )
-                log_diff_[-1] = 0
+                log_diff_[event_diff == 0] = 0
                 self.survival_probabilities = (
                     -1
                     / alpha
