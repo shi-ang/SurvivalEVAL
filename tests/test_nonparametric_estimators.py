@@ -208,6 +208,44 @@ def test_copula_graphic_does_not_duplicate_observed_time_zero():
     np.testing.assert_allclose(estimator.survival_times, [0.0, 2.0])
 
 
+@pytest.mark.parametrize("copula_type", ["Clayton", "Gumbel", "Frank"])
+def test_copula_graphic_preserves_last_time_event_with_tied_censoring(copula_type):
+    times = np.array([1.0, 2.0, 3.0, 3.0])
+    indicators = np.array([1, 1, 1, 0])
+
+    km = KaplanMeier(times, indicators)
+    cg_indep = CopulaGraphic(times, indicators, alpha=1e-6, type=copula_type)
+    np.testing.assert_allclose(
+        cg_indep.survival_probabilities, km.survival_probabilities, atol=1e-5
+    )
+
+    cg_dep = CopulaGraphic(times, indicators, alpha=2.0, type=copula_type)
+    assert np.all(np.isfinite(cg_dep.survival_probabilities))
+    assert cg_dep.survival_probabilities[-1] < cg_dep.survival_probabilities[-2]
+
+
+@pytest.mark.parametrize("copula_type", ["Clayton", "Gumbel", "Frank"])
+def test_copula_graphic_single_time_with_tied_event_and_censoring(copula_type):
+    times = np.array([5.0, 5.0, 5.0, 5.0])
+    indicators = np.array([1, 1, 0, 0])
+
+    km = KaplanMeier(times, indicators)
+    cg = CopulaGraphic(times, indicators, alpha=1e-6, type=copula_type)
+    np.testing.assert_allclose(
+        cg.survival_probabilities, km.survival_probabilities, atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("copula_type", ["Clayton", "Gumbel", "Frank"])
+def test_copula_graphic_keeps_previous_survival_when_no_survivors_remain(copula_type):
+    times = np.array([1.0, 2.0, 3.0])
+    indicators = np.array([1, 1, 1])
+
+    cg = CopulaGraphic(times, indicators, alpha=2.0, type=copula_type)
+    assert np.all(np.isfinite(cg.survival_probabilities))
+    assert cg.survival_probabilities[-1] == pytest.approx(cg.survival_probabilities[-2])
+
+
 def test_turnbull_estimator_keeps_pre_event_baseline():
     estimator = TurnbullEstimator().fit(
         left=np.array([1.0, 2.0]),
